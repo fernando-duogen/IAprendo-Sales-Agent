@@ -1,0 +1,30 @@
+# ============================================================================
+# Dependências MÍNIMAS para Migrations
+# ============================================================================
+# Instale apenas o essencial para executar as migrations 001 e 002
+# Instalação: python -m pip install -r requirements_minimal.txt
+# ============================================================================
+
+# Database
+supabase>=2.9.0
+
+# Data Processing (para ler CSV)
+pandas>=2.2.0
+
+# Configuration
+python-dotenv>=1.0.1
+
+# Logging
+python-json-logger>=2.0.7
+
+# IA (para futura qualificação)
+anthropic>=0.39.0
+
+# HTTP (dependência do Anthropic/Supabase)
+httpx>=0.27.0
+requests>=2.31.0
+
+# ============================================================================
+# Estas são as dependências MÍNIMAS
+# Após migrations funcionarem, instale requirements.txt completo
+# ============================================================================
