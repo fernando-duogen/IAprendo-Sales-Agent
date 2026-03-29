@@ -24,8 +24,17 @@ import os
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
-# Carrega variáveis do arquivo .env
+# Carrega variáveis do arquivo .env (local)
 load_dotenv(override=True)
+
+# Streamlit Cloud: copiar secrets para os.environ (se disponivel)
+try:
+    import streamlit as st
+    for key, value in st.secrets.items():
+        if isinstance(value, str) and key not in os.environ:
+            os.environ[key] = value
+except Exception:
+    pass  # Nao esta rodando no Streamlit ou sem secrets
 
 
 class Settings:
