@@ -4,8 +4,21 @@ Componentes visuais reutilizaveis e CSS global.
 Importar em cada pagina: from theme import apply_theme, metric_card, ...
 """
 
+import os
 import streamlit as st
 from typing import Optional
+
+
+def _sync_secrets_to_env():
+    """Copia st.secrets para os.environ (Streamlit Cloud compatibility).
+    No Streamlit Cloud, as variaveis ficam em st.secrets em vez de .env.
+    Esta funcao faz a ponte para que config/settings.py funcione."""
+    try:
+        for key, value in st.secrets.items():
+            if isinstance(value, str) and key not in os.environ:
+                os.environ[key] = value
+    except Exception:
+        pass  # Nao tem secrets (rodando local com .env)
 
 
 # ============================================================================
@@ -514,6 +527,7 @@ h3 { font-size: 18px !important; }
 
 def apply_theme():
     """Aplica tema Material Design. Chamar no inicio de cada pagina."""
+    _sync_secrets_to_env()
     st.set_page_config(
         page_title="IAprendo Sales",
         page_icon="🎓",
@@ -525,6 +539,7 @@ def apply_theme():
 
 def apply_theme_no_config():
     """Aplica CSS sem set_page_config (para paginas que nao sao a principal)."""
+    _sync_secrets_to_env()
     st.markdown(MATERIAL_CSS, unsafe_allow_html=True)
 
 
