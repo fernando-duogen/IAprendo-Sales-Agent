@@ -22,19 +22,27 @@ Usage:
 
 import os
 from typing import List, Dict, Any
-from dotenv import load_dotenv
 
-# Carrega variáveis do arquivo .env (local)
-load_dotenv(override=True)
+# =====================================================================
+# ORDEM CRITICA: Streamlit secrets PRIMEIRO, depois .env
+# No Streamlit Cloud nao existe .env, entao os secrets sao a unica fonte.
+# Os secrets devem ser copiados para os.environ ANTES de load_dotenv e
+# ANTES da classe Settings ser definida (atributos de classe sao avaliados
+# no momento da definicao via os.getenv).
+# =====================================================================
 
-# Streamlit Cloud: copiar secrets para os.environ (se disponivel)
+# Passo 1: Streamlit Cloud secrets → os.environ
 try:
     import streamlit as st
     for key, value in st.secrets.items():
-        if isinstance(value, str) and key not in os.environ:
+        if isinstance(value, str):
             os.environ[key] = value
 except Exception:
     pass  # Nao esta rodando no Streamlit ou sem secrets
+
+# Passo 2: .env local (nao sobrescreve o que ja veio dos secrets)
+from dotenv import load_dotenv
+load_dotenv(override=False)
 
 
 class Settings:

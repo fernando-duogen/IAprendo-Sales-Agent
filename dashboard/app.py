@@ -1,8 +1,17 @@
 """IAprendo Sales Agent - Central de Comando (Material Design)."""
+import os
 import streamlit as st
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
+
+# === Streamlit Cloud: copiar secrets para os.environ ANTES de tudo ===
+try:
+    for _k, _v in st.secrets.items():
+        if isinstance(_v, str):
+            os.environ[_k] = _v
+except Exception:
+    pass
 
 ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
