@@ -654,21 +654,21 @@ def score_color(score: int) -> str:
 
 
 def pipeline_stepper(stages: list):
-    """Renderiza stepper horizontal de pipeline usando colunas do Streamlit.
-    stages: [{"label": "Raw", "count": 51, "color": "#9E9E9E"}, ...]
+    """Renderiza stepper horizontal como cards compactos com barra de cor.
+    stages: [{"label": "Novas", "count": 51, "color": "#9E9E9E"}, ...]
     """
     cols = st.columns(len(stages))
     for i, (col, stage) in enumerate(zip(cols, stages)):
         with col:
-            arrow = " →" if i < len(stages) - 1 else ""
             st.markdown(
-                f'<div style="text-align:center;padding:8px 4px">'
-                f'<span style="display:inline-block;width:32px;height:32px;border-radius:50%;'
-                f'background:{stage["color"]};color:white;font-weight:700;font-size:14px;'
-                f'line-height:32px;text-align:center">{i+1}</span>'
-                f'<div style="font-size:18px;font-weight:700;color:#212121;margin-top:4px">{stage["count"]}</div>'
-                f'<div style="font-size:11px;font-weight:500;color:#757575">{stage["label"]}{arrow}</div>'
-                f'</div>',
+                f'<p style="text-align:center;background:#FFFFFF;border-radius:10px;'
+                f'padding:12px 6px 10px 6px;margin:0;'
+                f'box-shadow:0 1px 3px rgba(0,0,0,0.07);'
+                f'border-top:3px solid {stage["color"]}">'
+                f'<span style="font-size:11px;font-weight:600;color:{stage["color"]};'
+                f'text-transform:uppercase;letter-spacing:0.3px">{stage["label"]}</span><br/>'
+                f'<span style="font-size:22px;font-weight:700;color:#212121">{stage["count"]}</span>'
+                f'</p>',
                 unsafe_allow_html=True,
             )
 
