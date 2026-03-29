@@ -128,16 +128,13 @@ try:
         for i, stage in enumerate(KANBAN_STAGES):
             with cols[i]:
                 # Column header
+                count = len(stages[stage["key"]])
                 st.markdown(
-                    f'<div style="background:{stage["color"]}15;border-left:4px solid {stage["color"]};'
-                    f'padding:10px 14px;border-radius:8px;margin-bottom:10px">'
-                    f'<div style="display:flex;align-items:center;gap:6px">'
-                    f'<span class="material-icons-outlined" style="font-size:18px;color:{stage["color"]}">{stage["icon"]}</span>'
-                    f'<strong style="font-size:14px">{stage["label"]}</strong>'
-                    f'<span class="badge" style="background:{stage["color"]}20;color:{stage["color"]};margin-left:auto">'
-                    f'{len(stages[stage["key"]])}</span></div>'
-                    f'<div style="font-size:11px;color:#9E9E9E;margin-top:4px">{stage["desc"]}</div>'
-                    f'</div>',
+                    f'<p style="background:{stage["color"]}12;border-left:4px solid {stage["color"]};'
+                    f'padding:10px 12px;border-radius:8px;margin-bottom:8px">'
+                    f'<strong style="font-size:13px">{stage["label"]}</strong>'
+                    f' <span style="font-size:11px;color:{stage["color"]};font-weight:700">({count})</span><br/>'
+                    f'<span style="font-size:10px;color:#9E9E9E">{stage["desc"]}</span></p>',
                     unsafe_allow_html=True,
                 )
                 items = stages[stage["key"]]
@@ -147,23 +144,15 @@ try:
                 for comp in sorted(items, key=lambda x: x.get("qualification_score") or 0, reverse=True):
                     score = comp.get("qualification_score") or 0
                     name = comp.get("name", "?")
-                    domain = comp.get("email_domain") or ""
                     emails_info = email_map.get(comp["id"], {})
+                    badge = f" ({score})" if score else ""
 
-                    subtitle_parts = []
-                    if domain:
-                        subtitle_parts.append(domain)
-                    if emails_info.get("sent"):
-                        subtitle_parts.append(f"{emails_info['sent']}x")
-                    if emails_info.get("opened"):
-                        subtitle_parts.append("Aberto")
-                    subtitle = " | ".join(subtitle_parts) if subtitle_parts else ""
-
-                    st.markdown(
-                        kanban_card(name=name, subtitle=subtitle, score=score, color=stage["color"]),
-                        unsafe_allow_html=True,
-                    )
-                    if st.button("Ver", key=f"crm_view_{comp['id']}", use_container_width=True):
+                    # Card como botao clicavel
+                    if st.button(
+                        f"{name[:30]}{badge}",
+                        key=f"crm_{comp['id']}",
+                        use_container_width=True,
+                    ):
                         st.session_state["escola_detail_id"] = comp["id"]
                         st.switch_page("pages/3_🏫_Escolas.py")
 
