@@ -62,7 +62,6 @@ st.caption("Organograma de decisores por escola. Hierarquia: Direcao > Coordenac
 # ===========================================================================
 # FILTROS — barra horizontal no topo
 # ===========================================================================
-st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
 col_f1, col_f2, col_f3 = st.columns([3, 1, 1])
 with col_f1:
     search = st.text_input("Buscar escola:", placeholder="Nome da escola...", label_visibility="collapsed")
@@ -71,7 +70,6 @@ with col_f2:
                                    label_visibility="collapsed")
 with col_f3:
     show_limit = st.selectbox("Exibir:", [25, 50, 100], index=0, label_visibility="collapsed")
-st.markdown('</div>', unsafe_allow_html=True)
 
 # ===========================================================================
 # CARREGAR DADOS
@@ -156,37 +154,29 @@ if not filtered:
 st.caption(f"Exibindo {len(filtered)} escolas")
 
 # ===========================================================================
-# FUNCAO DE CARD DE CONTATO — Material Design
+# FUNCAO DE CARD DE CONTATO — Versao simplificada sem div aninhado
 # ===========================================================================
 def render_contact_card_md(ct, h, company_id, col):
-    """Renderiza card de contato estilizado com avatar."""
+    """Renderiza contato como texto simples com botao editar."""
     ct_id = ct.get("id")
     role_detail = ct.get("role", "") or h["label"]
-    email_str = ct.get("email", "")
-    phone_str = ct.get("phone", "")
+    email_str = ct.get("email", "") or "sem email"
+    phone_str = ct.get("phone", "") or ""
     src = ct.get("source", "")
     src_label = SRC_LABELS.get(src, src)
     card_color = h.get("color", COLORS["primary"])
-    has_email = bool(email_str)
-    email_display = email_str if has_email else "sem email"
-    email_color = "#757575" if has_email else COLORS["warning"]
 
     with col:
-        st.markdown(f"""
-        <div class="data-card" style="border-left: 4px solid {card_color};">
-            <div style="display:flex; align-items:center; gap:10px;">
-                {avatar(ct.get('full_name', '?'), card_color)}
-                <div style="flex:1; min-width:0;">
-                    <div style="font-weight:600; font-size:14px; color:#212121; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{ct.get('full_name', '?')}</div>
-                    <div style="font-size:12px; color:#757575; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{role_detail}</div>
-                    <div style="font-size:11px; color:{email_color}; margin-top:2px;">{email_display}</div>
-                    {'<div style="font-size:11px; color:#757575;">' + phone_str + '</div>' if phone_str else ''}
-                </div>
-                <div style="font-size:10px; color:#9E9E9E; text-align:right;">{src_label}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown(
+            f'<p style="background:#FFF;border-radius:8px;padding:10px 12px;margin-bottom:6px;'
+            f'box-shadow:0 1px 2px rgba(0,0,0,0.06);border-left:3px solid {card_color}">'
+            f'<strong style="font-size:13px;color:#212121">{ct.get("full_name", "?")}</strong><br/>'
+            f'<span style="font-size:11px;color:#757575">{role_detail}</span><br/>'
+            f'<span style="font-size:11px;color:#1976D2">{email_str}</span>'
+            f'{"<br/><span style=font-size:11px;color:#757575>" + phone_str + "</span>" if phone_str else ""}'
+            f'</p>',
+            unsafe_allow_html=True,
+        )
         if st.button("Editar", key=f"edit_ct_{ct_id}", use_container_width=True,
                       icon=":material/edit:"):
             st.session_state["editing_contact"] = ct_id
@@ -348,12 +338,12 @@ for company in filtered:
         for col, h in zip(top_cols, top_roles):
             with col:
                 role_contacts = by_type.get(h["key"], [])
-                st.markdown(f"""
-                <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
-                    <span class="material-icons-outlined" style="font-size:18px; color:{h['color']}">{h['icon']}</span>
-                    <span style="font-weight:600; font-size:14px;">{h['label']}</span>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f'<p style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+                    f'<span class="material-icons-outlined" style="font-size:18px;color:{h["color"]}">{h["icon"]}</span>'
+                    f'<strong style="font-size:14px">{h["label"]}</strong></p>',
+                    unsafe_allow_html=True,
+                )
                 if role_contacts:
                     for ct in role_contacts:
                         render_contact_card_md(ct, h, company_id, col)
@@ -366,13 +356,13 @@ for company in filtered:
             role_contacts = by_type.get(h["key"], [])
             if role_contacts:
                 st.markdown("---")
-                st.markdown(f"""
-                <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
-                    <span class="material-icons-outlined" style="font-size:18px; color:{h['color']}">{h['icon']}</span>
-                    <span style="font-weight:600; font-size:14px;">{h['label']}</span>
-                    <span style="font-size:12px; color:#757575;">({len(role_contacts)})</span>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f'<p style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+                    f'<span class="material-icons-outlined" style="font-size:18px;color:{h["color"]}">{h["icon"]}</span>'
+                    f'<strong style="font-size:14px">{h["label"]}</strong>'
+                    f'<span style="font-size:12px;color:#757575">({len(role_contacts)})</span></p>',
+                    unsafe_allow_html=True,
+                )
                 mid_cols = st.columns(min(len(role_contacts), 4))
                 for i, ct in enumerate(role_contacts):
                     render_contact_card_md(ct, h, company_id, mid_cols[i % len(mid_cols)])
@@ -386,13 +376,13 @@ for company in filtered:
 
         if bottom_contacts:
             st.markdown("---")
-            st.markdown(f"""
-            <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
-                <span class="material-icons-outlined" style="font-size:18px; color:{COLORS['on_surface_secondary']}">groups</span>
-                <span style="font-weight:600; font-size:14px;">Apoio e outros</span>
-                <span style="font-size:12px; color:#757575;">({len(bottom_contacts)})</span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f'<p style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+                f'<span class="material-icons-outlined" style="font-size:18px;color:{COLORS["on_surface_secondary"]}">groups</span>'
+                f'<strong style="font-size:14px">Apoio e outros</strong>'
+                f'<span style="font-size:12px;color:#757575">({len(bottom_contacts)})</span></p>',
+                unsafe_allow_html=True,
+            )
             bot_cols = st.columns(min(len(bottom_contacts), 4))
             for i, (h, ct) in enumerate(bottom_contacts):
                 render_contact_card_md(ct, h, company_id, bot_cols[i % len(bot_cols)])

@@ -112,6 +112,12 @@ section[data-testid="stSidebar"] a[aria-selected="true"] {
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
     padding-top: 16px;
 }
+/* Esconder link "app" no sidebar e substituir por "Painel" via CSS */
+section[data-testid="stSidebar"] li:first-child a span { font-size: 0 !important; }
+section[data-testid="stSidebar"] li:first-child a span::after {
+    content: "🏠 Painel";
+    font-size: 14px !important;
+}
 
 /* ===== HEADERS ===== */
 h1, h2, h3, h4, h5, h6 {

@@ -150,27 +150,22 @@ try:
                     domain = comp.get("email_domain") or ""
                     emails_info = email_map.get(comp["id"], {})
 
-                    # Build subtitle
                     subtitle_parts = []
                     if domain:
                         subtitle_parts.append(domain)
                     if emails_info.get("sent"):
-                        subtitle_parts.append(f"Emails: {emails_info['sent']}")
+                        subtitle_parts.append(f"{emails_info['sent']}x")
                     if emails_info.get("opened"):
                         subtitle_parts.append("Aberto")
-                    if emails_info.get("clicked"):
-                        subtitle_parts.append("Clicado")
-                    subtitle = " | ".join(subtitle_parts)
+                    subtitle = " | ".join(subtitle_parts) if subtitle_parts else ""
 
                     st.markdown(
-                        kanban_card(
-                            name=name[:28],
-                            subtitle=subtitle,
-                            score=score,
-                            color=stage["color"],
-                        ),
+                        kanban_card(name=name, subtitle=subtitle, score=score, color=stage["color"]),
                         unsafe_allow_html=True,
                     )
+                    if st.button("Ver", key=f"crm_view_{comp['id']}", use_container_width=True):
+                        st.session_state["escola_detail_id"] = comp["id"]
+                        st.switch_page("pages/3_🏫_Escolas.py")
 
         # Move school between stages
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
