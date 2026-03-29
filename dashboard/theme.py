@@ -112,8 +112,13 @@ section[data-testid="stSidebar"] a[aria-selected="true"] {
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
     padding-top: 16px;
 }
-/* Esconder link "app" no sidebar — o branding IAprendo serve como home */
+/* Esconder link "app" no sidebar — substituido por "Painel" via page_link */
 section[data-testid="stSidebar"] li:first-child { display: none !important; }
+/* Estilo do link Painel customizado */
+section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:first-of-type {
+    font-weight: 600 !important;
+    margin-bottom: 4px !important;
+}
 
 /* ===== HEADERS ===== */
 h1, h2, h3, h4, h5, h6 {
@@ -527,6 +532,12 @@ h3 { font-size: 18px !important; }
 # FUNCOES UTILITARIAS — Componentes reutilizaveis
 # ============================================================================
 
+def _add_sidebar_home():
+    """Adiciona link 'Painel' no topo do sidebar em todas as paginas."""
+    with st.sidebar:
+        st.page_link("app.py", label="🏠 Painel")
+
+
 def apply_theme():
     """Aplica tema Material Design. Chamar no inicio de cada pagina."""
     _sync_secrets_to_env()
@@ -537,12 +548,14 @@ def apply_theme():
         initial_sidebar_state="collapsed",
     )
     st.markdown(MATERIAL_CSS, unsafe_allow_html=True)
+    _add_sidebar_home()
 
 
 def apply_theme_no_config():
     """Aplica CSS sem set_page_config (para paginas que nao sao a principal)."""
     _sync_secrets_to_env()
     st.markdown(MATERIAL_CSS, unsafe_allow_html=True)
+    _add_sidebar_home()
 
 
 def metric_card(label: str, value, color: str = COLORS["primary"], delta: str = "", icon: str = ""):
