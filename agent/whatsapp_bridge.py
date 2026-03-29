@@ -130,6 +130,45 @@ class WhatsAppBridge:
             logger.error(f"Erro ao enviar mensagem para {formatted}: {exc}")
             return {}
 
+    def send_buttons(self, number: str, text: str, buttons: List[str], footer: str = "IAlex") -> Dict[str, Any]:
+        """Envia mensagem com botoes de resposta rapida (max 3).
+
+        Args:
+            number: Numero ou JID do destinatario.
+            text: Texto principal da mensagem.
+            buttons: Lista de textos dos botoes (max 3).
+            footer: Texto de rodape.
+        """
+        url = f"{self.bridge_url}/send-buttons"
+        formatted = number if "@" in number else self.format_number(number)
+        body = {"number": formatted, "text": text, "buttons": buttons[:3], "footer": footer}
+        try:
+            resp = requests.post(url, json=body, timeout=15)
+            return resp.json()
+        except requests.RequestException as exc:
+            logger.error(f"Erro ao enviar botoes: {exc}")
+            return {}
+
+    def send_list(self, number: str, text: str, button_text: str, sections: List[Dict], footer: str = "IAlex") -> Dict[str, Any]:
+        """Envia mensagem com lista de opcoes (max 10 itens).
+
+        Args:
+            number: Numero ou JID do destinatario.
+            text: Texto principal.
+            button_text: Texto do botao que abre a lista.
+            sections: Lista de secoes com rows [{title, description, rowId}].
+            footer: Texto de rodape.
+        """
+        url = f"{self.bridge_url}/send-list"
+        formatted = number if "@" in number else self.format_number(number)
+        body = {"number": formatted, "text": text, "buttonText": button_text, "sections": sections, "footer": footer}
+        try:
+            resp = requests.post(url, json=body, timeout=15)
+            return resp.json()
+        except requests.RequestException as exc:
+            logger.error(f"Erro ao enviar lista: {exc}")
+            return {}
+
     def send_image(self, number: str, image_url: str, caption: str = "") -> Dict[str, Any]:
         """Envia imagem via WhatsApp.
 

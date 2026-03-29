@@ -198,6 +198,65 @@ app.post('/send', async (req, res) => {
     }
 });
 
+// Enviar mensagem com botoes de resposta rapida (max 3 botoes)
+app.post('/send-buttons', async (req, res) => {
+    const { number, text, buttons, footer } = req.body;
+    if (!sock || !connected) return res.json({ error: 'Not connected' });
+    try {
+        const jid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        const buttonRows = (buttons || []).slice(0, 3).map((btn, i) => ({
+            buttonId: `btn_${i}`,
+            buttonText: { displayText: btn },
+            type: 1,
+        }));
+        await sock.sendMessage(jid, {
+            text: text,
+            footer: footer || 'IAlex',
+            buttons: buttonRows,
+            headerType: 1,
+        });
+        res.json({ success: true });
+    } catch (e) {
+        // Fallback: enviar como texto com opcoes numeradas
+        try {
+            const jid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+            const opts = (buttons || []).map((b, i) => `${i+1}. ${b}`).join('\n');
+            await sock.sendMessage(jid, { text: `${text}\n\n${opts}\n\n_Responda com o numero da opcao_` });
+            res.json({ success: true, fallback: true });
+        } catch (e2) {
+            res.json({ error: e2.message });
+        }
+    }
+});
+
+// Enviar mensagem com lista de opcoes (max 10 itens)
+app.post('/send-list', async (req, res) => {
+    const { number, text, buttonText, sections, footer } = req.body;
+    if (!sock || !connected) return res.json({ error: 'Not connected' });
+    try {
+        const jid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        await sock.sendMessage(jid, {
+            text: text,
+            footer: footer || 'IAlex',
+            title: '',
+            buttonText: buttonText || 'Ver opcoes',
+            sections: sections || [],
+        });
+        res.json({ success: true });
+    } catch (e) {
+        // Fallback: enviar como texto com opcoes numeradas
+        try {
+            const jid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+            const items = (sections || []).flatMap(s => (s.rows || []).map(r => r.title));
+            const opts = items.map((t, i) => `${i+1}. ${t}`).join('\n');
+            await sock.sendMessage(jid, { text: `${text}\n\n${opts}\n\n_Responda com o numero da opcao_` });
+            res.json({ success: true, fallback: true });
+        } catch (e2) {
+            res.json({ error: e2.message });
+        }
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`IAlex bridge em http://localhost:${PORT}`);
     console.log(`QR Code page em http://localhost:${PORT}/pair`);

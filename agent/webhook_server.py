@@ -74,6 +74,20 @@ def _is_from_owner(sender: str) -> bool:
     return False
 
 
+def _extract_buttons(reply: str):
+    """Extrai botoes de resposta rapida do texto.
+    Formato: [BOTOES: Sim | Nao | Talvez] no final da mensagem.
+    Retorna (texto_limpo, lista_botoes).
+    """
+    import re
+    match = re.search(r'\[BOTOES:\s*(.+?)\]\s*$', reply)
+    if match:
+        buttons = [b.strip() for b in match.group(1).split("|") if b.strip()][:3]
+        clean = reply[:match.start()].rstrip()
+        return clean, buttons
+    return reply, []
+
+
 def _process_message_async(sender: str, text: str, msg_id: str):
     """Processa mensagem em thread separada para nao bloquear webhook."""
     try:
@@ -91,7 +105,10 @@ def _process_message_async(sender: str, text: str, msg_id: str):
         full_reply = re.sub(r'\*\*(.+?)\*\*', r'*\1*', full_reply)  # **bold** → *bold*
         full_reply = re.sub(r'(?<!\[)#{1,3}\s+', '', full_reply)     # ## headers → remove
 
-        # Enviar resposta via WhatsApp (quebrar se muito longo)
+        # Extrair botoes de resposta rapida (se o Brain incluiu)
+        full_reply, buttons = _extract_buttons(full_reply)
+
+        # Enviar resposta via WhatsApp
         MAX_MSG_LEN = 4000
         if len(full_reply) > MAX_MSG_LEN:
             parts = []
@@ -105,12 +122,17 @@ def _process_message_async(sender: str, text: str, msg_id: str):
             if current:
                 parts.append(current)
 
-            for part in parts:
-                bridge.send_message(sender, part.strip())
+            for i, part in enumerate(parts):
+                if i == len(parts) - 1 and buttons:
+                    bridge.send_buttons(sender, part.strip(), buttons)
+                else:
+                    bridge.send_message(sender, part.strip())
+        elif buttons:
+            bridge.send_buttons(sender, full_reply, buttons)
         else:
             bridge.send_message(sender, full_reply)
 
-        logger.info("IAlex respondeu", extra={"reply_len": len(full_reply)})
+        logger.info("IAlex respondeu", extra={"reply_len": len(full_reply), "buttons": len(buttons)})
 
     except Exception as e:
         logger.error("Erro ao processar mensagem IAlex", extra={"error": str(e)})
