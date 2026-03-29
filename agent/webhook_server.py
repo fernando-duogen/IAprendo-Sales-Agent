@@ -74,6 +74,17 @@ def _is_from_owner(sender: str) -> bool:
     return False
 
 
+def _send_with_buttons(bridge, sender: str, text: str, buttons: list):
+    """Tenta enviar com botoes nativos. Se falhar, envia texto com opcoes numeradas."""
+    result = bridge.send_buttons(sender, text, buttons)
+    if result.get("success"):
+        return
+    # Fallback: texto com opcoes numeradas
+    opts = "\n".join(f"{i+1}. {b}" for i, b in enumerate(buttons))
+    fallback_text = f"{text}\n\n{opts}\n\n_Responda com o numero ou texto da opcao_"
+    bridge.send_message(sender, fallback_text)
+
+
 def _extract_buttons(reply: str):
     """Extrai botoes de resposta rapida do texto.
     Formato: [BOTOES: Sim | Nao | Talvez] no final da mensagem.
@@ -124,11 +135,11 @@ def _process_message_async(sender: str, text: str, msg_id: str):
 
             for i, part in enumerate(parts):
                 if i == len(parts) - 1 and buttons:
-                    bridge.send_buttons(sender, part.strip(), buttons)
+                    _send_with_buttons(bridge, sender, part.strip(), buttons)
                 else:
                     bridge.send_message(sender, part.strip())
         elif buttons:
-            bridge.send_buttons(sender, full_reply, buttons)
+            _send_with_buttons(bridge, sender, full_reply, buttons)
         else:
             bridge.send_message(sender, full_reply)
 

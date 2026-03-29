@@ -2365,8 +2365,48 @@ class Brain:
 
         except Exception as e:
             logger.error("Erro ao processar mensagem", extra={"error": str(e)})
-            return {"reply": f"Ops, deu um erro: {str(e)[:150]}. Tenta de novo?"}
+            # Se erro 400 (historico corrompido), limpar e tentar de novo
+            if "400" in str(e) and "tool" in str(e):
+                logger.warning("Historico corrompido detectado, limpando...")
+                self.conversation_history = [{"role": "user", "content": message}]
+                try:
+                    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + self.conversation_history
+                    response = self.client.chat.completions.create(
+                        model=self.model, max_tokens=2048, messages=messages,
+                        tools=OPENAI_TOOLS, tool_choice="auto",
+                    )
+                    reply = response.choices[0].message.content or ""
+                    self.conversation_history.append({"role": "assistant", "content": reply})
+                    return {"reply": reply}
+                except Exception as e2:
+                    return {"reply": f"Desculpe, tive um problema. Tente novamente. ({str(e2)[:80]})"}
+            return {"reply": "Ops, deu um erro. Tenta de novo?"}
 
     def _trim_history(self) -> None:
         if len(self.conversation_history) > MAX_HISTORY:
             self.conversation_history = self.conversation_history[-MAX_HISTORY:]
+
+        # Validar integridade: garantir que nao comece com tool ou assistant+tool_calls orfao
+        cleaned = []
+        for i, msg in enumerate(self.conversation_history):
+            role = msg.get("role")
+            if role == "tool":
+                # Precisa ter assistant com tool_calls IMEDIATAMENTE antes (ou antes na sequencia)
+                has_parent = False
+                for j in range(len(cleaned) - 1, -1, -1):
+                    if cleaned[j].get("role") == "assistant" and cleaned[j].get("tool_calls"):
+                        has_parent = True
+                        break
+                    if cleaned[j].get("role") == "user":
+                        break  # Se encontrou user antes de assistant+tool_calls, nao tem parent
+                if not has_parent:
+                    continue  # Pular tool orfao
+            elif role == "assistant" and msg.get("tool_calls"):
+                # Assistant com tool_calls precisa ter as respostas tool depois
+                # Se for o ultimo, remover (incompleto)
+                remaining = self.conversation_history[i+1:]
+                has_tool_response = any(r.get("role") == "tool" for r in remaining)
+                if not has_tool_response:
+                    continue  # Pular assistant+tool_calls sem respostas
+            cleaned.append(msg)
+        self.conversation_history = cleaned
