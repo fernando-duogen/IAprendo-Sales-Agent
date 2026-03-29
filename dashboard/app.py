@@ -34,7 +34,7 @@ with st.sidebar:
         '<span style="font-size:11px;color:#9E9E9E">Agente de Vendas</span></p>',
         unsafe_allow_html=True,
     )
-    st.page_link("dashboard/app.py", label="🏠 Painel", icon=None)
+    st.page_link("app.py", label="🏠 Painel")
 
 # =========================================================================
 # HEADER
