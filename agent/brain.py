@@ -673,6 +673,16 @@ TOOLS = [
             "properties": {}
         }
     },
+    {
+        "name": "info_rag_emails",
+        "description": "Mostra estatisticas do RAG de emails: quantos emails passados ja foram respondidos, "
+                       "clicados ou abertos e serao usados como exemplos ao gerar novos emails. "
+                       "Quanto mais exemplos bem-sucedidos, melhores ficam os novos emails.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
 ]
 
 
@@ -1645,13 +1655,37 @@ def _handle_gerar_email(params: Dict) -> str:
     tom = params.get("tom", "amigavel")
     foco = params.get("foco", "apresentacao")
 
+    # RAG: buscar emails que ja funcionaram (respostas/clicks/opens)
+    # e usar como exemplos de referencia no prompt
+    examples_section = ""
+    try:
+        from integrations.email_rag import email_rag
+        rag_examples = email_rag.get_successful_examples(
+            limit=3,
+            company_context={
+                "school_size": escola.get("school_size"),
+                "admin_category": escola.get("admin_category"),
+                "city": escola.get("city"),
+                "state": escola.get("state"),
+            },
+            exclude_company_id=escola["id"],
+        )
+        if rag_examples:
+            examples_section = "\n\n" + email_rag.format_for_prompt(rag_examples) + "\n"
+            logger.info(
+                "RAG: usando exemplos no gerar_email",
+                extra={"n_examples": len(rag_examples), "school": escola.get("name")},
+            )
+    except Exception as _e:
+        logger.debug(f"RAG email examples skip: {_e}")
+
     # Gerar email usando OpenAI
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
     model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
     prompt = f"""Gere um email de prospecção B2B para a escola abaixo.
 Tom: {tom}. Foco: {foco}.
 Produto: IAprendo - plataforma de IA educacional alinhada à BNCC.
-
+{examples_section}
 Escola: {escola.get('name')}
 Cidade: {escola.get('city')}/{escola.get('state')}
 Categoria: {escola.get('admin_category')}
@@ -1665,6 +1699,7 @@ Regras:
 - Mencione o nome da escola e do contato
 - Termine com CTA claro (agendar demo de 15 min)
 - Assinatura: Fernando Nienaber, IAprendo
+- IMPORTANTE: NAO copie texto literal dos exemplos, apenas inspire-se no estilo
 
 Responda em JSON: {{"assunto": "...", "corpo": "..."}}"""
 
@@ -2303,6 +2338,36 @@ def _handle_info_modelo_preditivo(params: Dict) -> str:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
+def _handle_info_rag_emails(params: Dict) -> str:
+    """Retorna estatisticas do RAG de emails."""
+    try:
+        from integrations.email_rag import email_rag
+        stats = email_rag.stats()
+        total = stats.get("total", 0)
+        if total == 0:
+            msg = (
+                "Ainda nao ha emails bem-sucedidos para usar como exemplos. "
+                "Assim que os primeiros emails forem enviados e tiverem respostas, "
+                "abertas ou cliques, o RAG comeca a aprender com eles."
+            )
+        elif stats.get("respondidos", 0) > 0:
+            msg = (
+                f"RAG ativo com {stats['respondidos']} email(s) respondido(s), "
+                f"{stats['clicados']} clicado(s) e {stats['abertos']} aberto(s). "
+                f"Novos emails ja sao gerados inspirados nesses casos de sucesso."
+            )
+        else:
+            msg = (
+                f"RAG ativo com {total} email(s) usados como referencia "
+                f"({stats['clicados']} clicados, {stats['abertos']} abertos). "
+                f"Aguardando primeiras respostas para melhorar ainda mais."
+            )
+        stats["mensagem"] = msg
+        return json.dumps(stats, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
 TOOL_HANDLERS = {
     # Busca e gestão de escolas
     "consultar_escolas": _handle_consultar_escolas,
@@ -2353,6 +2418,8 @@ TOOL_HANDLERS = {
     "score_preditivo": _handle_score_preditivo,
     "treinar_modelo_preditivo": _handle_treinar_modelo_preditivo,
     "info_modelo_preditivo": _handle_info_modelo_preditivo,
+    # RAG de emails
+    "info_rag_emails": _handle_info_rag_emails,
     # Utilitários
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
@@ -2477,6 +2544,13 @@ Voce tem um modelo de ML (Logistic Regression) que preve probabilidade de fecham
 - Fernando pergunta: "como esta o modelo?", "ja foi treinado?", "qual a accuracy?"
 
 *Explicabilidade:* O modelo retorna `fatores_top` quando analisa uma escola especifica — use esses fatores para explicar POR QUE uma escola tem score alto ou baixo. Ex: "Essa escola tem 85% de chance porque tem *taxa de resposta alta* (+2.3) e *email do diretor* (+1.8)".
+
+== RAG DE EMAILS (AUTOMATICO) ==
+Quando voce chama gerar_email, o sistema AUTOMATICAMENTE busca os emails passados que tiveram mais sucesso (respostas, cliques, aberturas) e injeta como exemplos no prompt — voce nao precisa fazer nada. O modelo aprende com o que ja funcionou e gera emails cada vez melhores.
+
+Quando Fernando perguntar "quantos exemplos o sistema tem?" ou "como esta o aprendizado de emails?" → CHAMAR info_rag_emails.
+
+Quanto mais respostas Fernando recebe, melhor ficam os novos emails (o loop de feedback e automatico).
 
 == FORMATACAO WHATSAPP (SOFISTICADA) ==
 Suas respostas devem ser VISUALMENTE RICAS e bem organizadas. Use TODOS estes recursos:

@@ -130,14 +130,47 @@ class WriterAgent(BaseAgent):
     # Modo IA (Claude Sonnet)
     # =========================================================================
 
+    def _get_rag_examples_section(self, company: Dict[str, Any], contact: Optional[Dict[str, Any]]) -> str:
+        """Busca emails bem-sucedidos passados e formata como exemplos para o prompt."""
+        try:
+            from integrations.email_rag import email_rag
+            context = {
+                "school_size": company.get("school_size"),
+                "admin_category": company.get("admin_category"),
+                "city": company.get("city"),
+                "state": company.get("state"),
+            }
+            if contact:
+                context["decision_maker_type"] = contact.get("decision_maker_type")
+            examples = email_rag.get_successful_examples(
+                limit=3,
+                company_context=context,
+                exclude_company_id=company.get("id"),
+            )
+            if examples:
+                logger.info(
+                    "RAG: usando exemplos no writer",
+                    extra={"n_examples": len(examples), "school": company.get("name")},
+                )
+                return email_rag.format_for_prompt(examples)
+            return ""
+        except Exception as e:
+            logger.debug(f"RAG writer skip: {e}")
+            return ""
+
     def write_message(self, company: Dict[str, Any], contact: Optional[Dict[str, Any]] = None,
                       all_contacts: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
         """Gera mensagem personalizada via Claude. Resultado vai para approval_queue."""
         company_id = company.get("id")
         school_name = company.get("name", "Desconhecida")
         logger.info("Gerando mensagem (IA)", extra={"company_id": company_id, "school_name": school_name})
+
+        # RAG: buscar exemplos de emails que funcionaram
+        examples_section = self._get_rag_examples_section(company, contact)
+
         prompt = (
             self.prompt_template
+            .replace("{examples}", examples_section)
             .replace("{school_data}", self._format_school_section(company))
             .replace("{contact_data}", self._format_contact_section(contact, all_contacts))
             .replace("{qualification_data}", self._format_qualification_section(company))

@@ -15,7 +15,7 @@ Voce esta escrevendo pessoalmente para um(a) diretor(a) ou coordenador(a) pedago
 - Email: {sender_email}
 - Empresa: {company_name}
 - Site: {website}
-
+{examples}
 ## Dados da Escola
 {school_data}
 
