@@ -808,6 +808,85 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {}}
     },
     {
+        "name": "descobrir_escolas",
+        "description": "Descobre escolas que NAO estao no CSV MEC via busca generativa (Perplexity). "
+                       "Usado para encontrar escolas novas, internacionais, bilingues, alternativas "
+                       "(Montessori, Waldorf), pos-censo, etc. Escolas encontradas entram em status "
+                       "'discovered' (staging) para Fernando revisar antes de entrar no pipeline. "
+                       "NAO envia nada para contatos externos — apenas le Perplexity e escreve no banco. "
+                       "Use quando Fernando disser: 'liste escolas bilingues em Canoas', 'busca escolas "
+                       "novas em POA', 'quais escolas internacionais existem em [cidade]'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cidade": {"type": "string", "description": "Cidade alvo (ex: 'Canoas', 'Porto Alegre')"},
+                "tipo": {"type": "string", "enum": ["privada", "publica", "qualquer"],
+                         "description": "Tipo de escola. Default: privada"},
+                "keyword": {"type": "string",
+                            "description": "Diferencial opcional (ex: 'bilingue', 'integral', 'Waldorf')"},
+                "limite": {"type": "integer", "description": "Max escolas (1-30, default 10)"}
+            },
+            "required": ["cidade"]
+        }
+    },
+    {
+        "name": "ver_escolas_descobertas",
+        "description": "Lista escolas em STAGING (status='discovered') aguardando revisao. Use quando "
+                       "Fernando disser: 'mostra as descobertas', 'quais escolas estao em staging', "
+                       "'o que tem para revisar?'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cidade": {"type": "string", "description": "Filtrar por cidade (opcional)"},
+                "limite": {"type": "integer", "description": "Max resultados (default 20)"}
+            }
+        }
+    },
+    {
+        "name": "aprovar_escola_descoberta",
+        "description": "Aprova uma escola descoberta e promove para status='raw' — entra no pipeline "
+                       "automatico normal (qualify → enrich → write). Use quando Fernando disser: "
+                       "'aprova a escola X', 'promove a descoberta Y para o pipeline', 'aceita a Z'. "
+                       "Para aprovar em LOTE, chame esta tool multiplas vezes.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_id": {"type": "string", "description": "UUID da escola"},
+                "escola_nome": {"type": "string", "description": "Nome da escola (busca parcial)"}
+            }
+        }
+    },
+    {
+        "name": "rejeitar_escola_descoberta",
+        "description": "Rejeita uma escola descoberta (status='rejected'). Mantem registro para evitar "
+                       "re-descobrir, mas nao entra no pipeline. Use quando Fernando disser: 'rejeita a "
+                       "escola X', 'descarta Y', 'essa nao me interessa'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_id": {"type": "string", "description": "UUID da escola"},
+                "escola_nome": {"type": "string", "description": "Nome da escola (busca parcial)"},
+                "motivo": {"type": "string", "description": "Motivo da rejeicao (opcional)"}
+            }
+        }
+    },
+    {
+        "name": "buscar_sinais_escola",
+        "description": "Busca sinais contextuais sobre uma escola: rankings educacionais, premios "
+                       "recebidos, noticias recentes, expansoes, reconhecimentos. Salva tudo em memory "
+                       "(category='insight') — qualifier e writer usam automaticamente nos emails "
+                       "seguintes. Use quando Fernando disser: 'tem alguma novidade sobre a escola X?', "
+                       "'busca sinais do Anchieta', 've se a escola Y ganhou premio recente', 'me conta "
+                       "o que ha de novo em [escola]'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_id": {"type": "string", "description": "UUID da escola"},
+                "escola_nome": {"type": "string", "description": "Nome da escola (busca parcial)"}
+            }
+        }
+    },
+    {
         "name": "alterar_modo_autonomia",
         "description": "Altera o MODO DE AUTONOMIA do IAlex. MODOS:\n"
                        "- manual: ZERO automacao. Scheduler nao dispara nada.\n"
@@ -2775,6 +2854,150 @@ def _handle_alterar_modo_autonomia(params: Dict) -> str:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
+def _resolve_company_id(params: Dict) -> Optional[str]:
+    """Resolve company_id a partir de escola_id ou escola_nome (parcial)."""
+    cid = params.get("escola_id")
+    if cid:
+        return cid
+    nome = params.get("escola_nome")
+    if not nome:
+        return None
+    try:
+        r = db.client.table("companies").select("id,name,city,status").ilike(
+            "name", f"%{nome}%"
+        ).limit(5).execute().data or []
+        if not r:
+            return None
+        # Prioriza discovered/raw, depois qualquer match
+        for item in r:
+            if item.get("status") in ("discovered", "raw"):
+                return item["id"]
+        return r[0]["id"]
+    except Exception:
+        return None
+
+
+def _handle_descobrir_escolas(params: Dict) -> str:
+    """Descobre novas escolas via Perplexity e coloca em staging."""
+    try:
+        from tools.discovery_engine import discovery_engine
+        cidade = params.get("cidade")
+        if not cidade:
+            return json.dumps({"erro": "cidade e obrigatorio"})
+        result = discovery_engine.discover_schools(
+            cidade=cidade,
+            tipo=params.get("tipo", "privada"),
+            keyword=params.get("keyword", ""),
+            limit=int(params.get("limite", 10)),
+        )
+        novas = result.get("novas", [])
+        existentes = result.get("existentes_atualizadas", [])
+        erros = result.get("erros", [])
+        msg_parts = []
+        if novas:
+            msg_parts.append(f"{len(novas)} nova(s) em staging")
+        if existentes:
+            msg_parts.append(f"{len(existentes)} ja existiam (sinal registrado)")
+        if not novas and not existentes:
+            msg_parts.append("nenhuma escola retornada")
+        result["mensagem"] = (
+            f"Discovery em {cidade}: " + ", ".join(msg_parts) + ". "
+            f"Use ver_escolas_descobertas para revisar antes de promover."
+        )
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_ver_escolas_descobertas(params: Dict) -> str:
+    """Lista escolas em staging."""
+    try:
+        from tools.discovery_engine import discovery_engine
+        limite = min(int(params.get("limite", 20)), 100)
+        cidade = params.get("cidade")
+        schools = discovery_engine.list_discovered(limit=limite, cidade=cidade)
+        resumo = [{
+            "id": s["id"],
+            "nome": s.get("name"),
+            "cidade": s.get("city"),
+            "tipo": s.get("admin_category"),
+            "site": s.get("website"),
+            "telefone": s.get("phone"),
+            "fonte": s.get("source"),
+            "descoberta_em": s.get("created_at", "")[:10],
+        } for s in schools]
+        return json.dumps({
+            "total": len(schools),
+            "escolas": resumo,
+            "aviso": "Use aprovar_escola_descoberta para promover ao pipeline" if schools else "Nenhuma escola em staging.",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_aprovar_escola_descoberta(params: Dict) -> str:
+    """Promove escola discovered -> raw."""
+    try:
+        from tools.discovery_engine import discovery_engine
+        cid = _resolve_company_id(params)
+        if not cid:
+            return json.dumps({"erro": "Escola nao encontrada. Informe escola_id ou escola_nome."})
+        ok = discovery_engine.promote_to_raw(cid)
+        if ok:
+            return json.dumps({
+                "sucesso": True,
+                "id": cid,
+                "mensagem": "Escola promovida para status='raw'. Entrara no pipeline automatico (qualify → enrich → write)."
+            }, ensure_ascii=False)
+        return json.dumps({"erro": "Falha ao promover"})
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_rejeitar_escola_descoberta(params: Dict) -> str:
+    """Marca escola descoberta como rejeitada."""
+    try:
+        from tools.discovery_engine import discovery_engine
+        cid = _resolve_company_id(params)
+        if not cid:
+            return json.dumps({"erro": "Escola nao encontrada"})
+        motivo = params.get("motivo", "")
+        ok = discovery_engine.reject(cid, reason=motivo)
+        if ok:
+            return json.dumps({
+                "sucesso": True,
+                "id": cid,
+                "motivo": motivo,
+                "mensagem": "Escola rejeitada (status='rejected'). Nao entrara no pipeline."
+            }, ensure_ascii=False)
+        return json.dumps({"erro": "Falha ao rejeitar"})
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_buscar_sinais_escola(params: Dict) -> str:
+    """Busca rankings/premios/noticias sobre uma escola via Perplexity."""
+    try:
+        from tools.discovery_engine import discovery_engine
+        cid = _resolve_company_id(params)
+        if not cid:
+            return json.dumps({"erro": "Escola nao encontrada"})
+        result = discovery_engine.enrich_signals(cid)
+        if "erro" in result:
+            return json.dumps(result, ensure_ascii=False)
+        n = result.get("sinais_adicionados", 0)
+        if n == 0:
+            result["mensagem"] = "Nenhum sinal relevante encontrado no Perplexity."
+        else:
+            result["mensagem"] = (
+                f"{n} sinal(is) adicionado(s) na memoria da escola. "
+                f"Sera(o) usado(s) automaticamente ao gerar proximos emails/followups."
+            )
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
 def _handle_classificar_followups(params: Dict) -> str:
     """Lista leads prontos para follow-up classificados por tipo comportamental."""
     try:
@@ -2965,6 +3188,12 @@ TOOL_HANDLERS = {
     # Modo de Autonomia (seguranca — Item 6.5)
     "ver_modo_autonomia": _handle_ver_modo_autonomia,
     "alterar_modo_autonomia": _handle_alterar_modo_autonomia,
+    # Discovery inteligente de escolas (Item 8)
+    "descobrir_escolas": _handle_descobrir_escolas,
+    "ver_escolas_descobertas": _handle_ver_escolas_descobertas,
+    "aprovar_escola_descoberta": _handle_aprovar_escola_descoberta,
+    "rejeitar_escola_descoberta": _handle_rejeitar_escola_descoberta,
+    "buscar_sinais_escola": _handle_buscar_sinais_escola,
     # Utilitários
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
@@ -2987,7 +3216,7 @@ Voce tem acesso a:
 2. *COMPANHEIRO DE CAMPO*: Quando Fernando esta na rua visitando escolas, ajuda-lo a encontrar escolas perto, dar informacoes rapidas, registrar visitas
 3. *AGENTE DE VENDAS*: Qualificar leads, enriquecer contatos, gerar emails, acompanhar pipeline, sugerir acoes comerciais
 
-== ESCOLHA DE FERRAMENTAS (50 disponiveis) ==
+== ESCOLHA DE FERRAMENTAS (55 disponiveis) ==
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
@@ -3111,6 +3340,35 @@ O scheduler roda a cada 30 min e ENVIA ALERTAS PROATIVOS para Fernando no WhatsA
 - Comeco do dia para saber prioridades
 
 *Quando chegar um alerta automatico:* Fernando ja recebe no WhatsApp formatado com a escola, contato, motivos, keywords e acao recomendada.
+
+== DISCOVERY INTELIGENTE DE ESCOLAS (ITEM 8) ==
+Alem do CSV MEC (212k escolas), o IAlex pode descobrir escolas novas via Perplexity e buscar sinais contextuais (rankings, premios, noticias) sobre qualquer escola.
+
+*Quando usar descobrir_escolas:*
+- "Liste escolas bilingues em Canoas" → cidade=Canoas, keyword=bilingue
+- "Busca escolas privadas novas em POA" → cidade="Porto Alegre", tipo=privada
+- "Quais escolas Waldorf existem em [cidade]?" → keyword=Waldorf
+- Escolas descobertas entram em STAGING (status='discovered'), NAO no pipeline automaticamente. Fernando precisa aprovar.
+
+*Quando usar ver_escolas_descobertas:*
+- "Mostra as descobertas", "o que tem em staging?", "quais escolas precisam de revisao?"
+
+*Quando usar aprovar_escola_descoberta:*
+- "Aprova a escola X", "promove a descoberta Y pro pipeline", "aceita a Z"
+- Para LOTES: chame a tool multiplas vezes, uma por escola
+
+*Quando usar rejeitar_escola_descoberta:*
+- "Rejeita X", "descarta Y", "essa nao me interessa"
+
+*Quando usar buscar_sinais_escola (MUITO PODEROSO):*
+- "Tem alguma novidade sobre o Anchieta?"
+- "Busca sinais do Colegio X"
+- "Ve se a escola Y ganhou algum premio recente"
+- Os sinais (rankings, premios, noticias) sao salvos em memory e o writer/qualifier usam automaticamente nos emails seguintes — torna as mensagens muito mais personalizadas.
+
+*REGRA IMPORTANTE:* Discovery NAO envia nada para contatos externos, apenas coleta informacoes. Pode ser usado em qualquer modo de autonomia (inclusive manual).
+
+*AVISO:* Ao descobrir novas escolas, SEMPRE mostre para Fernando a lista antes de aprovar. NUNCA aprove em lote automaticamente sem comando explicito dele.
 
 == MODO DE AUTONOMIA (SEGURANCA CRITICA — LEIA ANTES DE TUDO) ==
 O IAlex tem 3 modos de autonomia. Isto controla TUDO o que pode ser feito sozinho:
