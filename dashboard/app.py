@@ -25,17 +25,6 @@ from dashboard.theme import (
 apply_theme()
 
 # =========================================================================
-# SIDEBAR BRANDING
-# =========================================================================
-with st.sidebar:
-    st.markdown(
-        '<p style="text-align:center;padding:16px 0 8px 0;margin:0;border-bottom:1px solid #E0E0E0">'
-        '<strong style="font-size:18px;color:#1976D2">🎓 IAprendo</strong><br/>'
-        '<span style="font-size:11px;color:#9E9E9E">Agente de Vendas</span></p>',
-        unsafe_allow_html=True,
-    )
-
-# =========================================================================
 # HEADER
 # =========================================================================
 st.markdown(

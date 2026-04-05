@@ -643,23 +643,53 @@ if not is_csv_mode:
         "info",
     )
 
-    gc_col1, gc_col2 = st.columns([1, 3])
+    gc_col1, gc_col2, gc_col3 = st.columns([1, 2, 2])
     with gc_col1:
-        gc_limit = st.number_input("Quantas geocodificar agora:", min_value=1, max_value=50, value=10)
+        gc_limit = st.number_input("Quantas geocodificar:", min_value=1, max_value=50, value=10)
     with gc_col2:
-        st.caption("Usa Nominatim (OpenStreetMap) - gratuito, sem API key. Limite: 1 req/seg.")
+        gc_use_ppx = st.checkbox(
+            "Usar Perplexity como fallback",
+            value=True,
+            help="Quando o Nominatim não encontrar, pergunta o endereço ao Perplexity e tenta de novo. Mais lento mas mais preciso.",
+        )
+    with gc_col3:
+        st.caption("Nominatim (gratuito) + Perplexity (fallback). Limite: 1 req/seg.")
 
     if st.button("Geocodificar Agora", type="primary", disabled=(len(without_coords) == 0)):
         try:
             from tools.geocoder import geocoder
             batch = without_coords[:gc_limit]
             with st.spinner(f"Geocodificando {len(batch)} escolas..."):
-                result = geocoder.process_batch(batch, max_per_run=gc_limit)
-            alert_banner(
-                f'Concluido: {result["found"]} geocodificadas, {result["skipped"]} ja tinham coords.',
-                "success",
-            )
-            st.rerun()
+                result = geocoder.process_batch(
+                    batch, max_per_run=gc_limit, use_perplexity_fallback=gc_use_ppx
+                )
+            msg = f'Concluido: {result["found"]} geocodificadas'
+            if result.get("fallback_used", 0) > 0:
+                msg += f' ({result["fallback_used"]} via Perplexity)'
+            if result.get("skipped", 0) > 0:
+                msg += f', {result["skipped"]} ja tinham coords'
+            alert_banner(msg, "success")
+
+            # Mostrar falhas (se houver) para o usuario saber quais tentar de novo
+            failed_details = result.get("failed_details", [])
+            if failed_details:
+                with st.expander(f"⚠ {len(failed_details)} escola(s) nao geocodificada(s)", expanded=True):
+                    import pandas as pd
+                    df_fail = pd.DataFrame([
+                        {
+                            "Escola": f.get("name", "?"),
+                            "Erro": f.get("error", "?"),
+                            "Endereco sugerido (Perplexity)": f.get("perplexity_address", "") or "",
+                        }
+                        for f in failed_details
+                    ])
+                    st.dataframe(df_fail, use_container_width=True, hide_index=True)
+                    st.caption(
+                        "Dica: se a coluna 'Endereco sugerido' tem algo, o Perplexity achou mas o Nominatim nao "
+                        "reconheceu. Edite o endereco manualmente na pagina Escolas e tente novamente."
+                    )
+            else:
+                st.rerun()
         except Exception as e:
             st.error(f"Erro ao geocodificar: {e}")
 

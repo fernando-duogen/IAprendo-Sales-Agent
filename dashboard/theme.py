@@ -107,15 +107,21 @@ section[data-testid="stSidebar"] a[aria-selected="true"] {
     font-weight: 600 !important;
     color: #1565C0 !important;
 }
-/* Inverter ordem: conteudo customizado (Painel) antes da navegacao automatica */
+/* Inverter ordem: conteudo customizado (Painel + branding) antes da navegacao automatica */
 section[data-testid="stSidebar"] > div:first-child {
     display: flex;
     flex-direction: column;
 }
-section[data-testid="stSidebar"] [data-testid="stSidebarNav"] { order: 2; }
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] {
+    order: 2;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
     order: 1;
-    padding-top: 16px;
+    padding-top: 8px !important;
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
 }
 /* Esconder link "app" auto-gerado (substituido por "Painel" via page_link) */
 section[data-testid="stSidebar"] [data-testid="stSidebarNav"] li:first-child {
@@ -124,7 +130,15 @@ section[data-testid="stSidebar"] [data-testid="stSidebarNav"] li:first-child {
 /* Estilo do link Painel customizado */
 section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:first-of-type {
     font-weight: 600 !important;
-    margin-bottom: 4px !important;
+    margin-bottom: 0 !important;
+}
+/* Reduzir gap do primeiro item da navegacao auto-gerada (depois que Painel some) */
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] ul {
+    padding-top: 4px !important;
+    margin-top: 0 !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] li {
+    margin: 0 !important;
 }
 
 /* ===== HEADERS ===== */
@@ -540,8 +554,14 @@ h3 { font-size: 18px !important; }
 # ============================================================================
 
 def _add_sidebar_home():
-    """Adiciona link 'Painel' no topo do sidebar em todas as paginas."""
+    """Adiciona branding IAprendo + link Painel no topo do sidebar em todas as paginas."""
     with st.sidebar:
+        st.markdown(
+            '<p style="text-align:center;padding:10px 0 6px 0;margin:0;border-bottom:1px solid #E0E0E0">'
+            '<strong style="font-size:18px;color:#1976D2">🎓 IAprendo</strong><br/>'
+            '<span style="font-size:11px;color:#9E9E9E">Agente de Vendas</span></p>',
+            unsafe_allow_html=True,
+        )
         st.page_link("app.py", label="🏠 Painel")
 
 

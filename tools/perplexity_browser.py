@@ -85,6 +85,104 @@ class PerplexityBrowser:
         except Exception:
             pass
 
+    def _query_perplexity_text(self, prompt: str, timeout_seconds: int = 60) -> str:
+        """Envia um prompt generico ao Perplexity e retorna a resposta em texto.
+        Reutiliza a mesma infra do search_school_contacts, sem parse de contatos.
+        """
+        if not self.is_available() or not self._ensure_browser():
+            return ""
+        try:
+            page = self._page
+            page.goto("https://www.perplexity.ai/", wait_until="domcontentloaded", timeout=30000)
+            time.sleep(3)
+            if "sign" in page.url.lower() or "login" in page.url.lower():
+                for _ in range(24):
+                    time.sleep(5)
+                    if "perplexity.ai" in page.url and "sign" not in page.url.lower():
+                        break
+                else:
+                    return ""
+            input_el = None
+            for selector in ['[contenteditable="true"]', 'textarea', '[role="textbox"]']:
+                if page.locator(selector).count() > 0:
+                    input_el = page.locator(selector).first
+                    break
+            if not input_el:
+                return ""
+            input_el.click()
+            time.sleep(0.5)
+            page.keyboard.press("Control+a")
+            page.keyboard.type(prompt, delay=10)
+            time.sleep(1)
+            page.keyboard.press("Enter")
+            time.sleep(10)
+            last_content = ""
+            stable_count = 0
+            max_checks = timeout_seconds // 3
+            for _ in range(max_checks):
+                time.sleep(3)
+                try:
+                    current_content = ""
+                    for sel in [".prose", ".markdown", "[class*='answer']", "[class*='response']", "article", "main"]:
+                        els = page.locator(sel).all()
+                        for el in els:
+                            txt = el.inner_text()
+                            if len(txt) > len(current_content):
+                                current_content = txt
+                    if not current_content:
+                        current_content = page.inner_text("body")
+                    still_generating = False
+                    for stop_sel in ['[aria-label="Stop"]', 'button:has-text("Stop")', '[class*="stop"]']:
+                        if page.locator(stop_sel).count() > 0:
+                            still_generating = True
+                            break
+                    if still_generating:
+                        stable_count = 0
+                        last_content = current_content
+                        continue
+                    if current_content == last_content and len(current_content) > 20:
+                        stable_count += 1
+                        if stable_count >= 3:
+                            break
+                    else:
+                        stable_count = 0
+                        last_content = current_content
+                except Exception:
+                    time.sleep(2)
+            return last_content or ""
+        except Exception as e:
+            logger.error(f"Perplexity query text error: {e}")
+            return ""
+
+    def search_school_address(self, school_name: str, city: str = "", state: str = "") -> Optional[str]:
+        """Busca o endereco completo de uma escola no Perplexity.
+        Retorna string com o endereco ou None se nao encontrou.
+        """
+        expanded = self._expand_school_name(school_name)
+        location = f"{city}/{state}" if city and state else city or state or ""
+        prompt = (
+            f"Qual e o endereco completo (rua, numero, bairro, cidade, estado, CEP) "
+            f"da escola '{expanded}'{' em ' + location if location else ''}? "
+            f"Responda APENAS com o endereco em uma unica linha, sem explicacao, sem fontes, "
+            f"sem texto adicional. Exemplo: 'Rua Exemplo, 123, Bairro, Cidade - UF, 12345-678'."
+        )
+        logger.info(f"Perplexity: buscando endereco de {school_name}")
+        response = self._query_perplexity_text(prompt, timeout_seconds=45)
+        if not response:
+            return None
+        # Extrair primeira linha nao vazia que parece um endereco
+        lines = [ln.strip() for ln in response.split("\n") if ln.strip()]
+        for line in lines:
+            # Descartar linhas muito curtas ou que sao citacao
+            if len(line) < 15 or line.startswith("[") or line.startswith("#"):
+                continue
+            # Linha que tem numero (rua, CEP) e virgula (separador) geralmente e endereco
+            if any(c.isdigit() for c in line) and "," in line:
+                logger.info(f"Perplexity: endereco extraido: {line[:80]}")
+                return line
+        # Se nao achou candidato bom, devolver primeira linha nao vazia
+        return lines[0] if lines else None
+
     def search_school_contacts(
         self,
         school_name: str,
