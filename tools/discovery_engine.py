@@ -143,12 +143,12 @@ class DiscoveryEngine:
             return None
 
     # =========================================================================
-    # Perplexity wrapper (com fallback gracioso)
+    # Perplexity wrapper + LLM parser (2-step: busca → parse)
     # =========================================================================
 
     def _ask_perplexity(self, prompt: str, timeout: int = 60) -> str:
-        """Chama Perplexity Browser e retorna resposta. Se nao disponivel,
-        retorna string vazia (fluxo segue com lista vazia)."""
+        """Chama Perplexity Browser e retorna resposta em texto livre.
+        Se nao disponivel, retorna string vazia."""
         try:
             from tools.perplexity_browser import perplexity_browser
             if not perplexity_browser.is_available():
@@ -159,24 +159,104 @@ class DiscoveryEngine:
             logger.error(f"Perplexity error: {e}")
             return ""
 
+    def _text_to_json_via_llm(
+        self, text: str, schema_instruction: str, max_tokens: int = 2048
+    ) -> List[Dict[str, Any]]:
+        """Converte texto livre em JSON array estruturado usando GPT/Claude.
+        Pipeline robusto: Perplexity busca info (texto) → LLM parseia em JSON.
+
+        Args:
+            text: texto livre retornado pelo Perplexity
+            schema_instruction: descricao do schema JSON esperado
+            max_tokens: limite de tokens da resposta
+        Returns:
+            Lista de dicts parseada ou []
+        """
+        if not text or len(text.strip()) < 20:
+            return []
+
+        # Limitar texto pra nao estourar contexto (primeiros 4000 chars)
+        text_trimmed = text[:4000]
+
+        system_msg = (
+            "Voce e um parser de dados. Recebe texto livre com informacoes "
+            "sobre escolas e extrai EXCLUSIVAMENTE um JSON array valido. "
+            "Responda APENAS com o JSON array (sem texto, sem explicacao, "
+            "sem markdown). Se nao encontrar dados, retorne []."
+        )
+        user_msg = (
+            f"Extraia os dados de escolas do texto abaixo.\n\n"
+            f"SCHEMA ESPERADO:\n{schema_instruction}\n\n"
+            f"TEXTO FONTE:\n---\n{text_trimmed}\n---\n\n"
+            f"Retorne APENAS o JSON array:"
+        )
+
+        try:
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+
+            api_key = os.getenv("OPENAI_API_KEY", "")
+            if api_key:
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key)
+                model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=0.1,
+                )
+                result_text = resp.choices[0].message.content or ""
+                logger.info("LLM parser: resposta recebida", extra={"len": len(result_text)})
+                return self._extract_json_array(result_text)
+
+            # Fallback: Anthropic
+            anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+            if anthropic_key:
+                from anthropic import Anthropic
+                client = Anthropic(api_key=anthropic_key)
+                resp = client.messages.create(
+                    model="claude-sonnet-4-5-20250929",
+                    max_tokens=max_tokens,
+                    system=system_msg,
+                    messages=[{"role": "user", "content": user_msg}],
+                )
+                result_text = resp.content[0].text if resp.content else ""
+                return self._extract_json_array(result_text)
+
+            logger.warning("Nenhuma API key (OpenAI/Anthropic) disponivel para LLM parser")
+            return []
+
+        except Exception as e:
+            logger.error(f"LLM parser error: {e}")
+            return []
+
     def _extract_json_array(self, text: str) -> List[Dict[str, Any]]:
         """Extrai primeiro array JSON valido do texto. Retorna lista ou []."""
         if not text:
             return []
-        # Tenta achar bloco JSON
-        # Primeiro tenta o texto inteiro
+        # Limpar markdown code blocks
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+        # Tenta o texto inteiro
         try:
-            data = json.loads(text.strip())
+            data = json.loads(cleaned)
             if isinstance(data, list):
                 return data
             if isinstance(data, dict) and "escolas" in data:
                 return data["escolas"] or []
         except Exception:
             pass
-        # Regex pra pegar primeiro [...] no texto
-        match = re.search(r"\[[\s\S]*?\](?=\s*\Z|\s*[^\[\{])", text, re.DOTALL)
-        if not match:
-            match = re.search(r"\[[\s\S]*\]", text, re.DOTALL)
+        # Regex: pegar maior [...] no texto
+        match = re.search(r"\[[\s\S]*\]", cleaned, re.DOTALL)
         if match:
             try:
                 data = json.loads(match.group(0))
@@ -217,7 +297,8 @@ class DiscoveryEngine:
             "cidade": cidade, "tipo": tipo, "keyword": keyword, "limit": limit,
         })
 
-        # Monta prompt estruturado
+        # Monta prompt para Perplexity (pede TEXTO legivel, nao JSON —
+        # Perplexity nao retorna JSON puro de forma confiavel)
         keyword_line = f" Priorize escolas com caracteristica: {keyword}." if keyword else ""
         tipo_txt = {
             "privada": "privadas",
@@ -227,22 +308,34 @@ class DiscoveryEngine:
 
         prompt = (
             f"Liste ate {limit} escolas {tipo_txt} em {cidade} que ofereçam "
-            f"ensino Fundamental anos finais (6-9) e/ou Ensino Medio.{keyword_line} "
-            f"Retorne EXCLUSIVAMENTE um array JSON valido (sem texto antes ou depois), "
-            f"cada item com os campos: "
-            f'"nome" (string), "endereco" (string ou null), "bairro" (string ou null), '
-            f'"site" (URL ou null), "telefone" (string ou null), '
-            f'"diferenciais" (array de strings — ex: ["bilingue","integral"]), '
-            f'"tipo" ("privada" ou "publica"). '
-            f"Exemplo de formato: "
-            f'[{{"nome":"Colegio Exemplo","endereco":"Rua X, 123","bairro":"Centro",'
-            f'"site":"https://exemplo.com","telefone":"(51) 3333-4444",'
-            f'"diferenciais":["bilingue"],"tipo":"privada"}}]. '
-            f"NAO inclua explicacao, apenas o JSON."
+            f"ensino Fundamental anos finais e/ou Ensino Medio.{keyword_line} "
+            f"Para cada escola, inclua: nome completo, endereco (rua e bairro), "
+            f"site oficial, telefone e diferenciais (bilingue, integral, etc). "
+            f"Organize em lista numerada."
         )
 
+        logger.info("Discovery: consultando Perplexity", extra={"prompt_len": len(prompt)})
         response_text = self._ask_perplexity(prompt, timeout=90)
-        schools = self._extract_json_array(response_text)
+
+        if not response_text or len(response_text.strip()) < 30:
+            logger.warning("Discovery: Perplexity retornou resposta vazia/curta")
+            return {
+                "cidade": cidade, "tipo": tipo, "keyword": keyword,
+                "novas": [], "existentes_atualizadas": [],
+                "erros": ["Perplexity nao retornou dados suficientes"],
+                "total_encontradas": 0,
+            }
+
+        # 2-step: usar LLM (GPT) para parsear texto livre em JSON estruturado
+        logger.info("Discovery: parseando texto via LLM", extra={"text_len": len(response_text)})
+        schema = (
+            'Array JSON. Cada item: {"nome": "string", "endereco": "string ou null", '
+            '"bairro": "string ou null", "site": "URL ou null", '
+            '"telefone": "string ou null", '
+            '"diferenciais": ["bilingue","integral",...], '
+            '"tipo": "privada" ou "publica"}'
+        )
+        schools = self._text_to_json_via_llm(response_text, schema)
 
         if not schools:
             logger.warning("Discovery: nenhuma escola extraida da resposta", extra={
@@ -419,22 +512,31 @@ class DiscoveryEngine:
 
         prompt = (
             f"Pesquise sobre a escola '{name}' em {city}/{state}. "
-            f"Retorne EXCLUSIVAMENTE um array JSON com rankings educacionais, "
-            f"premios recebidos, noticias importantes, expansoes ou reconhecimentos "
-            f"dos ultimos 3 anos (2023-2026). "
-            f"Cada item deve ter: "
-            f'"tipo" (ranking|premio|noticia|expansao|reconhecimento), '
-            f'"titulo" (string curta descrevendo o sinal), '
-            f'"ano" (numero), '
-            f'"fonte_url" (URL se disponivel, senao null). '
-            f"Se nao encontrar nada relevante, retorne []. "
-            f"Exemplo: "
-            f'[{{"tipo":"premio","titulo":"Selo Escola de Excelencia FGV 2024","ano":2024,"fonte_url":"https://..."}}]. '
-            f"NAO inclua texto antes ou depois do JSON."
+            f"Quero saber: rankings educacionais em que aparece, premios recebidos, "
+            f"noticias importantes, expansoes ou reconhecimentos dos ultimos 3 anos "
+            f"(2023-2026). Para cada item, informe o tipo (ranking, premio, noticia, "
+            f"expansao, reconhecimento), titulo e ano. "
+            f"Se nao encontrar nada relevante, diga que nao ha informacoes."
         )
 
         response_text = self._ask_perplexity(prompt, timeout=60)
-        signals = self._extract_json_array(response_text)
+
+        if not response_text or len(response_text.strip()) < 30:
+            return {
+                "company_id": company_id, "escola": name,
+                "sinais_adicionados": 0, "preview": [],
+                "erros": ["Perplexity nao retornou dados suficientes"],
+            }
+
+        # Parsear texto livre via LLM
+        schema = (
+            'Array JSON. Cada item: {"tipo": "ranking|premio|noticia|expansao|reconhecimento", '
+            '"titulo": "string descrevendo o sinal", '
+            '"ano": numero_ou_null, '
+            '"fonte_url": "URL_ou_null"}. '
+            'Se o texto nao contem sinais relevantes, retorne [].'
+        )
+        signals = self._text_to_json_via_llm(response_text, schema)
 
         if not signals:
             return {
