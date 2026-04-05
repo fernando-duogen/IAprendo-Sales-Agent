@@ -495,6 +495,84 @@ TOOLS = [
         }
     },
     {
+        "name": "lembrar_fato",
+        "description": "Grava um fato importante na MEMORIA PERSISTENTE do IAlex. Use SEMPRE que Fernando "
+                       "mencionar algo que voce precisa lembrar depois: preferencias ('prefere WhatsApp'), "
+                       "fatos ('tem 1200 alunos'), insights ('reagiu bem a case BNCC'), avisos ('diretor "
+                       "de licenca ate agosto'), lembretes ('retornar em setembro'). NUNCA deixe de gravar "
+                       "informacoes uteis — a memoria e crucial para construir relacionamento de longo prazo.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "conteudo": {
+                    "type": "string",
+                    "description": "O fato/preferencia/insight em UMA frase clara. Ex: 'Diretora prefere ser contatada de manha.'"
+                },
+                "escopo": {
+                    "type": "string",
+                    "enum": ["global", "escola", "contato"],
+                    "description": "global = sobre Fernando/negocio; escola = sobre uma escola especifica; contato = sobre uma pessoa"
+                },
+                "escola_id": {
+                    "type": "string",
+                    "description": "ID da escola (quando escopo=escola). Voce pode passar o nome tambem e eu busco."
+                },
+                "escola_nome": {
+                    "type": "string",
+                    "description": "Nome da escola (alternativa ao escola_id)"
+                },
+                "contato_id": {
+                    "type": "string",
+                    "description": "ID do contato (quando escopo=contato)"
+                },
+                "categoria": {
+                    "type": "string",
+                    "enum": ["fact", "preference", "insight", "warning", "reminder"],
+                    "description": "Tipo de memoria. Default: fact"
+                },
+                "importancia": {
+                    "type": "integer",
+                    "description": "1 (baixa) ate 10 (critica). Default: 5"
+                }
+            },
+            "required": ["conteudo", "escopo"]
+        }
+    },
+    {
+        "name": "buscar_memorias",
+        "description": "Busca memorias guardadas anteriormente. Use para recuperar fatos, preferencias "
+                       "e insights sobre uma escola, contato ou topico. Se houver escola/contato "
+                       "na conversa atual, as memorias ja sao injetadas automaticamente no contexto, "
+                       "mas voce pode forcar uma busca especifica.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escopo": {
+                    "type": "string",
+                    "enum": ["global", "escola", "contato", "texto"],
+                    "description": "Onde buscar. 'texto' busca em todas as memorias pelo conteudo."
+                },
+                "escola_id": {"type": "string", "description": "ID da escola (escopo=escola)"},
+                "escola_nome": {"type": "string", "description": "Nome da escola"},
+                "contato_id": {"type": "string", "description": "ID do contato (escopo=contato)"},
+                "texto": {"type": "string", "description": "Texto para buscar (escopo=texto)"},
+                "limite": {"type": "integer", "description": "Max resultados (default 10)"}
+            },
+            "required": ["escopo"]
+        }
+    },
+    {
+        "name": "esquecer_memoria",
+        "description": "Remove uma memoria especifica (quando Fernando pedir para esquecer algo).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "memoria_id": {"type": "string", "description": "ID da memoria a remover"}
+            },
+            "required": ["memoria_id"]
+        }
+    },
+    {
         "name": "listar_campanhas",
         "description": "Lista campanhas de prospecacao ativas, pausadas ou concluidas. "
                        "Mostra nome, status, canal, metricas (enviados/abertos/respondidos).",
@@ -1902,6 +1980,125 @@ def _handle_sincronizar_hubspot_puxar(params: Dict) -> str:
         return json.dumps({"erro": f"Erro no pull HubSpot: {str(e)[:200]}"})
 
 
+def _resolve_escola_id(params: Dict) -> Optional[str]:
+    """Helper: resolve escola_id a partir de escola_id ou escola_nome."""
+    eid = params.get("escola_id")
+    if eid:
+        return eid
+    nome = params.get("escola_nome")
+    if nome:
+        try:
+            r = db.client.table("companies").select("id").ilike("name", f"%{nome}%").limit(1).execute()
+            if r.data:
+                return r.data[0]["id"]
+        except Exception:
+            pass
+    return None
+
+
+def _handle_lembrar_fato(params: Dict) -> str:
+    """Grava um fato na memoria persistente do IAlex."""
+    try:
+        from integrations.memory import memory
+        if not memory.is_available():
+            return json.dumps({
+                "erro": "Tabela conversation_memory nao existe. Aplique a migration 005 no Supabase.",
+                "sql": "Execute o SQL em database/migrations/005_conversation_memory.py no Supabase SQL Editor."
+            })
+
+        conteudo = params.get("conteudo", "").strip()
+        if not conteudo:
+            return json.dumps({"erro": "Informe o conteudo da memoria."})
+
+        escopo_br = params.get("escopo", "global")
+        escopo = {"escola": "company", "contato": "contact", "global": "global"}.get(escopo_br, "global")
+
+        scope_id = None
+        if escopo == "company":
+            scope_id = _resolve_escola_id(params)
+            if not scope_id:
+                return json.dumps({"erro": "Escola nao encontrada. Informe escola_id ou escola_nome."})
+        elif escopo == "contact":
+            scope_id = params.get("contato_id")
+            if not scope_id:
+                return json.dumps({"erro": "Informe contato_id quando escopo=contato."})
+
+        mem_id = memory.remember(
+            content=conteudo,
+            scope=escopo,
+            scope_id=scope_id,
+            category=params.get("categoria", "fact"),
+            importance=params.get("importancia", 5),
+            source="ialex",
+        )
+        if mem_id:
+            return json.dumps({
+                "sucesso": True,
+                "memoria_id": mem_id,
+                "mensagem": f"Memoria guardada! Vou lembrar disso sempre que falarmos sobre {'essa ' + escopo_br if escopo != 'global' else 'isso'}.",
+            }, ensure_ascii=False)
+        return json.dumps({"erro": "Falha ao gravar memoria."})
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_buscar_memorias(params: Dict) -> str:
+    """Busca memorias do IAlex."""
+    try:
+        from integrations.memory import memory
+        if not memory.is_available():
+            return json.dumps({"erro": "Memoria nao disponivel. Aplique a migration 005."})
+
+        escopo_br = params.get("escopo", "global")
+        limite = min(params.get("limite", 10), 50)
+
+        if escopo_br == "texto":
+            texto = params.get("texto", "")
+            if not texto:
+                return json.dumps({"erro": "Informe o texto para buscar."})
+            results = memory.search(texto, limit=limite)
+        else:
+            escopo = {"escola": "company", "contato": "contact", "global": "global"}.get(escopo_br, "global")
+            scope_id = None
+            if escopo == "company":
+                scope_id = _resolve_escola_id(params)
+            elif escopo == "contact":
+                scope_id = params.get("contato_id")
+            results = memory.get_for(escopo, scope_id, limit=limite, include_global=(escopo != "global"))
+
+        if not results:
+            return json.dumps({"total": 0, "memorias": [], "mensagem": "Nenhuma memoria encontrada."})
+
+        mems = [
+            {
+                "id": m.get("id"),
+                "conteudo": m.get("content"),
+                "categoria": m.get("category"),
+                "importancia": m.get("importance"),
+                "escopo": m.get("scope"),
+                "criada_em": (m.get("created_at") or "")[:10],
+            }
+            for m in results
+        ]
+        return json.dumps({"total": len(mems), "memorias": mems}, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_esquecer_memoria(params: Dict) -> str:
+    """Remove uma memoria especifica."""
+    try:
+        from integrations.memory import memory
+        mem_id = params.get("memoria_id")
+        if not mem_id:
+            return json.dumps({"erro": "Informe memoria_id."})
+        if memory.forget(mem_id):
+            return json.dumps({"sucesso": True, "mensagem": "Memoria removida."})
+        return json.dumps({"erro": "Falha ao remover memoria."})
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
 def _handle_listar_campanhas(params: Dict) -> str:
     """Lista campanhas de prospecção."""
     try:
@@ -2135,6 +2332,10 @@ TOOL_HANDLERS = {
     # HubSpot e integrações
     "sincronizar_hubspot": _handle_sincronizar_hubspot,
     "sincronizar_hubspot_puxar": _handle_sincronizar_hubspot_puxar,
+    # Memoria persistente
+    "lembrar_fato": _handle_lembrar_fato,
+    "buscar_memorias": _handle_buscar_memorias,
+    "esquecer_memoria": _handle_esquecer_memoria,
     # Campanhas e templates
     "listar_campanhas": _handle_listar_campanhas,
     "criar_campanha": _handle_criar_campanha,
@@ -2222,6 +2423,34 @@ IMPORTAR ESCOLA NAO E ACAO SENSIVEL. Nao peca confirmacao extra. Se o Fernando p
 - Quando Fernando mencionar localizacao ou bairro, SUGIRA busca por proximidade e pergunte o raio
 - Apos encontrar uma escola na base MEC que NAO esta no CRM, pergunte: "Quer que eu adicione ao nosso banco?"
 - Quando encontrar escolas grandes (500+ alunos) ou privadas, DESTAQUE como alvo de alto valor
+
+== MEMORIA PERSISTENTE (CRITICO) ==
+Voce tem uma MEMORIA PERSISTENTE que atravessa sessoes. Use-a agressivamente:
+
+*QUANDO GRAVAR (lembrar_fato):*
+- Fernando menciona qualquer preferencia de contato ("X prefere WhatsApp") → category=preference
+- Fernando compartilha fato sobre escola ("tem 1200 alunos", "usa Google Classroom") → category=fact
+- Insight comercial ("reagiu bem ao case BNCC", "prioridade alta em setembro") → category=insight
+- Aviso importante ("diretor de licenca", "nao contatar em julho") → category=warning
+- Lembrete ("retornar em 3 meses") → category=reminder
+- Dados sobre Fernando ou o negocio → escopo=global
+- Sempre defina importancia adequada: 1-3 (baixa), 4-6 (media), 7-10 (critica)
+
+*QUANDO USAR (buscar_memorias ou memorias injetadas no contexto):*
+- Antes de gerar um email, VERIFIQUE se ha memorias sobre a escola/contato que mudem a abordagem
+- Se Fernando pergunta sobre uma escola, CITE memorias relevantes no inicio da resposta
+- Memorias globais importantes ja vem injetadas automaticamente no contexto — use-as
+- Se Fernando contradiz uma memoria antiga, ATUALIZE (grave nova, esqueca antiga)
+
+*EXEMPLOS:*
+- Fernando: "O diretor do La Salle so atende de tarde"
+  → CHAMAR lembrar_fato: conteudo="Diretor do La Salle so atende a tarde", escopo=escola, escola_nome="La Salle", categoria=preference, importancia=7
+- Fernando: "Lembra algo do Anchieta?"
+  → CHAMAR buscar_memorias: escopo=escola, escola_nome="Anchieta"
+- Fernando: "Esqueci, qual minha abordagem favorita?"
+  → CHAMAR buscar_memorias: escopo=global
+
+NUNCA deixe de gravar um fato importante. A memoria vale mais que qualquer ferramenta — e o que diferencia o IAlex de um bot comum.
 
 == FORMATACAO WHATSAPP (SOFISTICADA) ==
 Suas respostas devem ser VISUALMENTE RICAS e bem organizadas. Use TODOS estes recursos:
@@ -2339,6 +2568,59 @@ class Brain:
         self.conversation_history: List[Dict[str, Any]] = []
         logger.info("Brain inicializado", extra={"model": self.model})
 
+    def _build_contextual_system_prompt(self, current_message: str) -> str:
+        """Constroi system prompt com memorias relevantes injetadas.
+        - Sempre inclui memorias globais importantes
+        - Se detectar nome de escola na mensagem/historico, inclui memorias dessa escola
+        """
+        try:
+            from integrations.memory import memory
+            if not memory.is_available():
+                return SYSTEM_PROMPT
+
+            parts = [SYSTEM_PROMPT]
+
+            # 1. Memorias globais importantes (top 5)
+            globals_mem = memory.get_for("global", limit=5)
+            if globals_mem:
+                parts.append("\n== MEMORIAS GLOBAIS (sobre Fernando/negocio) ==")
+                parts.append(memory.format_for_context(globals_mem))
+
+            # 2. Detectar escolas mencionadas nas ultimas 3 mensagens + atual
+            recent_text = current_message
+            for msg in self.conversation_history[-3:]:
+                if isinstance(msg.get("content"), str):
+                    recent_text += " " + msg["content"]
+
+            # Buscar escolas que existem no banco e cujo nome aparece no texto recente
+            try:
+                companies = db.client.table("companies").select("id,name").limit(500).execute().data or []
+                mentioned = []
+                recent_lower = recent_text.lower()
+                for c in companies:
+                    name = (c.get("name") or "").strip()
+                    if len(name) < 4:
+                        continue
+                    # Match parcial: primeiras 3 palavras-chave do nome
+                    words = [w for w in name.lower().split() if len(w) > 3][:3]
+                    if words and all(w in recent_lower for w in words):
+                        mentioned.append(c)
+                        if len(mentioned) >= 3:
+                            break
+
+                for comp in mentioned:
+                    school_mems = memory.get_for("company", comp["id"], limit=10)
+                    if school_mems:
+                        parts.append(f"\n== MEMORIAS SOBRE *{comp['name']}* ==")
+                        parts.append(memory.format_for_context(school_mems))
+            except Exception:
+                pass
+
+            return "\n".join(parts)
+        except Exception as e:
+            logger.debug(f"Erro ao construir system prompt com memoria: {e}")
+            return SYSTEM_PROMPT
+
     def process_message(self, message: str, sender: str = "fernando") -> Dict[str, Any]:
         """
         Processa mensagem usando tool use. O modelo pode chamar
@@ -2351,7 +2633,9 @@ class Brain:
             })
             self._trim_history()
 
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}] + self.conversation_history
+            # System prompt enriquecido com memorias persistentes
+            contextual_prompt = self._build_contextual_system_prompt(message)
+            messages = [{"role": "system", "content": contextual_prompt}] + self.conversation_history
 
             # Loop de tool use
             max_iterations = 5
