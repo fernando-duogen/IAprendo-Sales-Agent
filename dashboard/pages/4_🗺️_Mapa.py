@@ -631,7 +631,9 @@ if not is_csv_mode:
     section_header("Geocodificar Escolas", "my_location")
     try:
         from database.supabase_client import db as db_geo
-        all_for_geo = db_geo.client.table("companies").select("id,latitude").execute().data or []
+        all_for_geo = db_geo.client.table("companies").select(
+            "id,name,address,city,state,latitude,longitude"
+        ).execute().data or []
         without_coords = [c for c in all_for_geo if not c.get("latitude")]
     except Exception:
         without_coords = []

@@ -34,6 +34,7 @@ class IALexScheduler:
         schedule.every().day.at("17:00").do(self._end_of_day)
         schedule.every().friday.at("17:30").do(self._weekly_report)
         schedule.every(15).minutes.do(self._check_replies)
+        schedule.every(15).minutes.do(self._hubspot_pull)
 
         self._running = True
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -153,6 +154,19 @@ class IALexScheduler:
             # Nao logar se for erro normal (tabela sem coluna, etc)
             if "column" not in str(e).lower():
                 logger.error(f"Erro ao verificar replies: {e}")
+
+    def _hubspot_pull(self):
+        """Puxa mudancas do HubSpot a cada 15 min (sincronizacao reversa)."""
+        try:
+            from integrations.hubspot_pull import hubspot_pull
+            result = hubspot_pull.pull_changes()
+            total = result.get("companies", 0) + result.get("contacts", 0) + result.get("deals", 0)
+            if total > 0:
+                logger.info(f"HubSpot pull: {total} registros atualizados", extra=result)
+        except ImportError:
+            pass  # HubSpot nao configurado
+        except Exception as e:
+            logger.error(f"Erro no HubSpot pull agendado: {e}")
 
     # === Metodos para executar manualmente ===
 

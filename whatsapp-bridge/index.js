@@ -220,8 +220,9 @@ app.post('/send-buttons', async (req, res) => {
         // Fallback: enviar como texto com opcoes numeradas
         try {
             const jid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
-            const opts = (buttons || []).map((b, i) => `${i+1}. ${b}`).join('\n');
-            await sock.sendMessage(jid, { text: `${text}\n\n${opts}\n\n_Responda com o numero da opcao_` });
+            const numEmojis = ['1️⃣', '2️⃣', '3️⃣'];
+            const opts = (buttons || []).slice(0, 3).map((b, i) => `${numEmojis[i]} ${b}`).join('\n');
+            await sock.sendMessage(jid, { text: `${text}\n\n${opts}\n\n_Responda com o numero ou texto da opcao_` });
             res.json({ success: true, fallback: true });
         } catch (e2) {
             res.json({ error: e2.message });
@@ -247,9 +248,10 @@ app.post('/send-list', async (req, res) => {
         // Fallback: enviar como texto com opcoes numeradas
         try {
             const jid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+            const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
             const items = (sections || []).flatMap(s => (s.rows || []).map(r => r.title));
-            const opts = items.map((t, i) => `${i+1}. ${t}`).join('\n');
-            await sock.sendMessage(jid, { text: `${text}\n\n${opts}\n\n_Responda com o numero da opcao_` });
+            const opts = items.slice(0, 10).map((t, i) => `${numEmojis[i]} ${t}`).join('\n');
+            await sock.sendMessage(jid, { text: `${text}\n\n${opts}\n\n_Responda com o numero ou texto da opcao_` });
             res.json({ success: true, fallback: true });
         } catch (e2) {
             res.json({ error: e2.message });

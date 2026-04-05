@@ -286,103 +286,199 @@ if editing_id:
     st.divider()
 
 # ===========================================================================
-# ORGANOGRAMA POR ESCOLA — Cards coloridos por hierarquia
+# TABS: Lista (tabela) + Hierarquia (Power Map)
 # ===========================================================================
-for company in filtered:
-    company_id = company["id"]
-    school_name = company.get("name", "?")
-    score = company.get("qualification_score")
-    contacts = contacts_by_company.get(company_id, [])
-    cov = calc_coverage(contacts)
+DM_TYPE_LABEL = {
+    "diretor": "👔 Diretor",
+    "vice_diretor": "🧑‍💼 Vice-Diretor",
+    "coordenador_pedagogico": "📋 Coord. Pedagogico",
+    "secretaria": "📝 Secretaria",
+    "administrativo": "💼 Administrativo",
+    "outro": "👤 Outro",
+}
 
-    # Coverage badge
-    if cov == 3:
-        cov_color = COLORS["success"]
-        cov_label = "Completa"
-    elif cov > 0:
-        cov_color = COLORS["warning"]
-        cov_label = "Parcial"
-    else:
-        cov_color = COLORS["error"]
-        cov_label = "Sem decisor"
+tab_lista, tab_hierarquia = st.tabs(["📋 Lista", "🏛️ Hierarquia (Power Map)"])
 
-    score_str = f" | Score: {score}" if score is not None else ""
-    header_html = f"""
-    <div style="display:flex; align-items:center; gap:8px;">
-        <span class="badge" style="background:{cov_color}20;color:{cov_color}">{cov_label}</span>
-        <span style="font-weight:600;">{school_name}</span>
-        <span style="color:#757575; font-size:13px;">{company.get('city', '')}{score_str} | {len(contacts)} contatos</span>
-    </div>
-    """
-
-    with st.expander(f"{school_name} -- {company.get('city', '')}{score_str} | {len(contacts)} contatos"):
-        # Show coverage badge inside
-        st.markdown(f'<span class="badge" style="background:{cov_color}20;color:{cov_color}">{cov_label}</span>',
-                    unsafe_allow_html=True)
-
-        if not contacts:
-            st.caption("Nenhum contato encontrado. Use o Perplexity na pagina Escolas para buscar.")
+# ===========================================================================
+# TAB 1: LISTA — Tabela unica com todos os contatos
+# ===========================================================================
+with tab_lista:
+    # Montar lista unificada de contatos das escolas filtradas
+    filtered_ids = {c["id"] for c in filtered}
+    all_flat_contacts = []
+    company_by_id = {c["id"]: c for c in all_companies}
+    for ct in all_contacts:
+        cid = ct.get("company_id")
+        if cid not in filtered_ids:
             continue
+        comp = company_by_id.get(cid, {})
+        all_flat_contacts.append({
+            "id": ct.get("id"),
+            "company_id": cid,
+            "Escola": comp.get("name", "?"),
+            "Cidade": comp.get("city", ""),
+            "Nome": ct.get("full_name", "?"),
+            "Cargo": ct.get("role", "") or "",
+            "Tipo": DM_TYPE_LABEL.get(ct.get("decision_maker_type", "outro"), "👤 Outro"),
+            "Email": ct.get("email", "") or "",
+            "Telefone": ct.get("phone", "") or "",
+            "Prioridade": ct.get("outreach_priority") or 99,
+            "Fonte": SRC_LABELS.get(ct.get("source", ""), ct.get("source", "")),
+            "Confianca": ct.get("confidence_score") or 0,
+        })
 
-        # Agrupar por tipo de decisor
-        by_type = {}
-        for ct in contacts:
-            dm = ct.get("decision_maker_type", "outro")
-            if dm not in by_type:
-                by_type[dm] = []
-            by_type[dm].append(ct)
+    if not all_flat_contacts:
+        alert_banner("Nenhum contato encontrado nas escolas filtradas.", "info")
+    else:
+        st.caption(f"Exibindo {len(all_flat_contacts)} contato(s). Clique em uma linha para ver acoes. Ordene clicando nos cabecalhos das colunas.")
 
-        # --- Nivel 0: Direcao (topo, lado a lado) ---
-        top_roles = [h for h in HIERARCHY if h["level"] == 0]
-        top_cols = st.columns(len(top_roles))
-        for col, h in zip(top_cols, top_roles):
-            with col:
+        import pandas as pd
+        df_contatos = pd.DataFrame(all_flat_contacts)
+
+        selected_contact = st.dataframe(
+            df_contatos[["Escola", "Cidade", "Nome", "Cargo", "Tipo", "Email", "Telefone", "Prioridade", "Fonte", "Confianca"]],
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="contatos_table",
+            column_config={
+                "Escola": st.column_config.TextColumn("Escola", width="medium"),
+                "Nome": st.column_config.TextColumn("Nome", width="medium"),
+                "Email": st.column_config.TextColumn("Email", width="medium"),
+                "Prioridade": st.column_config.NumberColumn("Prior.", width="small", format="%d"),
+                "Confianca": st.column_config.ProgressColumn("Confianca", width="small", min_value=0, max_value=100, format="%d"),
+            },
+        )
+
+        # Barra de acoes rapidas abaixo da tabela
+        selection = selected_contact.get("selection", {}) if selected_contact else {}
+        selected_rows = selection.get("rows", []) if selection else []
+
+        if selected_rows:
+            row_idx = selected_rows[0]
+            sel = all_flat_contacts[row_idx]
+            st.markdown(
+                f'<p style="font-size:12px;font-weight:600;color:#757575;text-transform:uppercase;'
+                f'letter-spacing:0.5px;margin-top:12px;margin-bottom:4px">Acoes rapidas</p>',
+                unsafe_allow_html=True,
+            )
+            ac1, ac2, ac3, ac4 = st.columns([3, 1, 1, 1])
+            with ac1:
+                st.markdown(f"**{sel['Nome']}** — _{sel['Escola']}_")
+            with ac2:
+                if st.button("Editar", type="primary", icon=":material/edit:",
+                              use_container_width=True, key="ct_edit_tbl"):
+                    st.session_state["editing_contact"] = sel["id"]
+                    st.session_state["editing_company"] = sel["company_id"]
+                    st.rerun()
+            with ac3:
+                if st.button("Ver escola", icon=":material/school:",
+                              use_container_width=True, key="ct_school_tbl"):
+                    st.session_state["escola_detail_id"] = sel["company_id"]
+                    st.switch_page("pages/3_🏫_Escolas.py")
+            with ac4:
+                if st.button("Excluir", icon=":material/delete:",
+                              use_container_width=True, key="ct_del_tbl"):
+                    st.session_state["confirm_delete_contact"] = sel["id"]
+                    st.session_state["editing_contact"] = sel["id"]
+                    st.rerun()
+
+# ===========================================================================
+# TAB 2: HIERARQUIA — Power Map (visualizacao original)
+# ===========================================================================
+with tab_hierarquia:
+    st.caption("Organograma de decisores por escola. Hierarquia: Direcao > Coordenacao > Apoio.")
+
+    for company in filtered:
+        company_id = company["id"]
+        school_name = company.get("name", "?")
+        score = company.get("qualification_score")
+        contacts = contacts_by_company.get(company_id, [])
+        cov = calc_coverage(contacts)
+
+        # Coverage badge
+        if cov == 3:
+            cov_color = COLORS["success"]
+            cov_label = "Completa"
+        elif cov > 0:
+            cov_color = COLORS["warning"]
+            cov_label = "Parcial"
+        else:
+            cov_color = COLORS["error"]
+            cov_label = "Sem decisor"
+
+        score_str = f" | Score: {score}" if score is not None else ""
+
+        with st.expander(f"{school_name} -- {company.get('city', '')}{score_str} | {len(contacts)} contatos"):
+            st.markdown(
+                f'<span class="badge" style="background:{cov_color}20;color:{cov_color}">{cov_label}</span>',
+                unsafe_allow_html=True,
+            )
+
+            if not contacts:
+                st.caption("Nenhum contato encontrado. Use o Perplexity na pagina Escolas para buscar.")
+                continue
+
+            # Agrupar por tipo de decisor
+            by_type = {}
+            for ct in contacts:
+                dm = ct.get("decision_maker_type", "outro")
+                if dm not in by_type:
+                    by_type[dm] = []
+                by_type[dm].append(ct)
+
+            # --- Nivel 0: Direcao (topo, lado a lado) ---
+            top_roles = [h for h in HIERARCHY if h["level"] == 0]
+            top_cols = st.columns(len(top_roles))
+            for col, h in zip(top_cols, top_roles):
+                with col:
+                    role_contacts = by_type.get(h["key"], [])
+                    st.markdown(
+                        f'<p style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+                        f'<span class="material-icons-outlined" style="font-size:18px;color:{h["color"]}">{h["icon"]}</span>'
+                        f'<strong style="font-size:14px">{h["label"]}</strong></p>',
+                        unsafe_allow_html=True,
+                    )
+                    if role_contacts:
+                        for ct in role_contacts:
+                            render_contact_card_md(ct, h, company_id, col)
+                    else:
+                        st.caption("_vazio_")
+
+            # --- Nivel 1: Coordenacao (meio) ---
+            mid_roles = [h for h in HIERARCHY if h["level"] == 1]
+            for h in mid_roles:
                 role_contacts = by_type.get(h["key"], [])
-                st.markdown(
-                    f'<p style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-                    f'<span class="material-icons-outlined" style="font-size:18px;color:{h["color"]}">{h["icon"]}</span>'
-                    f'<strong style="font-size:14px">{h["label"]}</strong></p>',
-                    unsafe_allow_html=True,
-                )
                 if role_contacts:
-                    for ct in role_contacts:
-                        render_contact_card_md(ct, h, company_id, col)
-                else:
-                    st.caption("_vazio_")
+                    st.markdown("---")
+                    st.markdown(
+                        f'<p style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+                        f'<span class="material-icons-outlined" style="font-size:18px;color:{h["color"]}">{h["icon"]}</span>'
+                        f'<strong style="font-size:14px">{h["label"]}</strong>'
+                        f'<span style="font-size:12px;color:#757575">({len(role_contacts)})</span></p>',
+                        unsafe_allow_html=True,
+                    )
+                    mid_cols = st.columns(min(len(role_contacts), 4))
+                    for i, ct in enumerate(role_contacts):
+                        render_contact_card_md(ct, h, company_id, mid_cols[i % len(mid_cols)])
 
-        # --- Nivel 1: Coordenacao (meio) ---
-        mid_roles = [h for h in HIERARCHY if h["level"] == 1]
-        for h in mid_roles:
-            role_contacts = by_type.get(h["key"], [])
-            if role_contacts:
+            # --- Nivel 2: Apoio (base) ---
+            bottom_roles = [h for h in HIERARCHY if h["level"] == 2]
+            bottom_contacts = []
+            for h in bottom_roles:
+                for ct in by_type.get(h["key"], []):
+                    bottom_contacts.append((h, ct))
+
+            if bottom_contacts:
                 st.markdown("---")
                 st.markdown(
                     f'<p style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-                    f'<span class="material-icons-outlined" style="font-size:18px;color:{h["color"]}">{h["icon"]}</span>'
-                    f'<strong style="font-size:14px">{h["label"]}</strong>'
-                    f'<span style="font-size:12px;color:#757575">({len(role_contacts)})</span></p>',
+                    f'<span class="material-icons-outlined" style="font-size:18px;color:{COLORS["on_surface_secondary"]}">groups</span>'
+                    f'<strong style="font-size:14px">Apoio e outros</strong>'
+                    f'<span style="font-size:12px;color:#757575">({len(bottom_contacts)})</span></p>',
                     unsafe_allow_html=True,
                 )
-                mid_cols = st.columns(min(len(role_contacts), 4))
-                for i, ct in enumerate(role_contacts):
-                    render_contact_card_md(ct, h, company_id, mid_cols[i % len(mid_cols)])
-
-        # --- Nivel 2: Apoio (base) ---
-        bottom_roles = [h for h in HIERARCHY if h["level"] == 2]
-        bottom_contacts = []
-        for h in bottom_roles:
-            for ct in by_type.get(h["key"], []):
-                bottom_contacts.append((h, ct))
-
-        if bottom_contacts:
-            st.markdown("---")
-            st.markdown(
-                f'<p style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-                f'<span class="material-icons-outlined" style="font-size:18px;color:{COLORS["on_surface_secondary"]}">groups</span>'
-                f'<strong style="font-size:14px">Apoio e outros</strong>'
-                f'<span style="font-size:12px;color:#757575">({len(bottom_contacts)})</span></p>',
-                unsafe_allow_html=True,
-            )
-            bot_cols = st.columns(min(len(bottom_contacts), 4))
-            for i, (h, ct) in enumerate(bottom_contacts):
-                render_contact_card_md(ct, h, company_id, bot_cols[i % len(bot_cols)])
+                bot_cols = st.columns(min(len(bottom_contacts), 4))
+                for i, (h, ct) in enumerate(bottom_contacts):
+                    render_contact_card_md(ct, h, company_id, bot_cols[i % len(bot_cols)])

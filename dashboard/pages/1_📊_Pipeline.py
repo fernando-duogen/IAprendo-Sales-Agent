@@ -452,7 +452,7 @@ with st.expander("API Status"):
 with st.expander("Uso de APIs (ultimas 24h)"):
     try:
         from datetime import datetime, timedelta
-        cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+        cutoff = datetime.now() - timedelta(hours=24)
         api_limits = {"apollo": 60, "hunter": 25, "snov": 50}
         u_cols = st.columns(len(api_limits) + 1)
         for col, (api_name, limit) in zip(u_cols, api_limits.items()):

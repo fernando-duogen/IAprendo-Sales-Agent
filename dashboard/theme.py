@@ -90,7 +90,6 @@ MATERIAL_CSS = """
 section[data-testid="stSidebar"] {
     background-color: #FFFFFF;
     border-right: 1px solid #E0E0E0;
-    min-width: 220px;
 }
 section[data-testid="stSidebar"] .stRadio label,
 section[data-testid="stSidebar"] a {
@@ -108,12 +107,20 @@ section[data-testid="stSidebar"] a[aria-selected="true"] {
     font-weight: 600 !important;
     color: #1565C0 !important;
 }
-/* Logo area no sidebar */
+/* Inverter ordem: conteudo customizado (Painel) antes da navegacao automatica */
+section[data-testid="stSidebar"] > div:first-child {
+    display: flex;
+    flex-direction: column;
+}
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] { order: 2; }
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    order: 1;
     padding-top: 16px;
 }
-/* Esconder link "app" no sidebar — substituido por "Painel" via page_link */
-section[data-testid="stSidebar"] li:first-child { display: none !important; }
+/* Esconder link "app" auto-gerado (substituido por "Painel" via page_link) */
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] li:first-child {
+    display: none !important;
+}
 /* Estilo do link Painel customizado */
 section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:first-of-type {
     font-weight: 600 !important;

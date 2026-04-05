@@ -174,6 +174,87 @@ class HubSpotClient:
             return None
 
     # =========================================================================
+    # PULL METHODS — Sincronização reversa (HubSpot → Agente)
+    # =========================================================================
+
+    def list_modified_companies(self, since, limit: int = 100) -> List[Dict[str, Any]]:
+        """Lista companies modificadas no HubSpot desde `since` (datetime).
+        Retorna lista de dicts com id, properties, updatedAt.
+        """
+        if not self._enabled:
+            return []
+        try:
+            from hubspot.crm.companies import PublicObjectSearchRequest, Filter, FilterGroup
+            since_ts = int(since.timestamp() * 1000)  # HubSpot usa epoch em ms
+            f = Filter(property_name="hs_lastmodifieddate", operator="GTE", value=str(since_ts))
+            fg = FilterGroup(filters=[f])
+            req = PublicObjectSearchRequest(
+                filter_groups=[fg],
+                limit=limit,
+                properties=["name", "domain", "inep_code", "city", "state", "phone", "website", "hs_lastmodifieddate", "lifecyclestage"],
+            )
+            result = self._retry(self._client.crm.companies.search_api.do_search, public_object_search_request=req)
+            return [{"id": r.id, "properties": r.properties, "updated_at": r.updated_at} for r in (result.results or [])]
+        except Exception as e:
+            logger.error("Erro ao listar companies modificadas", extra={"error": str(e)})
+            return []
+
+    def list_modified_contacts(self, since, limit: int = 100) -> List[Dict[str, Any]]:
+        """Lista contacts modificados no HubSpot desde `since` (datetime)."""
+        if not self._enabled:
+            return []
+        try:
+            from hubspot.crm.contacts import PublicObjectSearchRequest, Filter, FilterGroup
+            since_ts = int(since.timestamp() * 1000)
+            f = Filter(property_name="lastmodifieddate", operator="GTE", value=str(since_ts))
+            fg = FilterGroup(filters=[f])
+            req = PublicObjectSearchRequest(
+                filter_groups=[fg],
+                limit=limit,
+                properties=["firstname", "lastname", "email", "phone", "jobtitle", "lastmodifieddate", "lifecyclestage"],
+            )
+            result = self._retry(self._client.crm.contacts.search_api.do_search, public_object_search_request=req)
+            return [{"id": r.id, "properties": r.properties, "updated_at": r.updated_at} for r in (result.results or [])]
+        except Exception as e:
+            logger.error("Erro ao listar contacts modificados", extra={"error": str(e)})
+            return []
+
+    def list_modified_deals(self, since, limit: int = 100) -> List[Dict[str, Any]]:
+        """Lista deals modificados no HubSpot desde `since` (datetime)."""
+        if not self._enabled:
+            return []
+        try:
+            from hubspot.crm.deals import PublicObjectSearchRequest, Filter, FilterGroup
+            since_ts = int(since.timestamp() * 1000)
+            f = Filter(property_name="hs_lastmodifieddate", operator="GTE", value=str(since_ts))
+            fg = FilterGroup(filters=[f])
+            req = PublicObjectSearchRequest(
+                filter_groups=[fg],
+                limit=limit,
+                properties=["dealname", "dealstage", "amount", "closedate", "hs_lastmodifieddate", "pipeline"],
+            )
+            result = self._retry(self._client.crm.deals.search_api.do_search, public_object_search_request=req)
+            return [{"id": r.id, "properties": r.properties, "updated_at": r.updated_at} for r in (result.results or [])]
+        except Exception as e:
+            logger.error("Erro ao listar deals modificados", extra={"error": str(e)})
+            return []
+
+    def get_company(self, hubspot_id: str) -> Optional[Dict[str, Any]]:
+        """Busca detalhes de uma company pelo ID do HubSpot."""
+        if not self._enabled:
+            return None
+        try:
+            result = self._retry(
+                self._client.crm.companies.basic_api.get_by_id,
+                company_id=hubspot_id,
+                properties=["name", "domain", "inep_code", "city", "state", "phone", "website", "lifecyclestage"],
+            )
+            return {"id": result.id, "properties": result.properties}
+        except Exception as e:
+            logger.error("Erro ao buscar company por ID", extra={"error": str(e), "id": hubspot_id})
+            return None
+
+    # =========================================================================
     # Deals (Oportunidades)
     # =========================================================================
 

@@ -474,7 +474,7 @@ TOOLS = [
     },
     {
         "name": "sincronizar_hubspot",
-        "description": "Sincroniza escolas, contatos e deals com o HubSpot CRM. "
+        "description": "Sincroniza escolas, contatos e deals com o HubSpot CRM (Agente -> HubSpot). "
                        "Pode sincronizar uma escola especifica ou todas as que mudaram.",
         "input_schema": {
             "type": "object",
@@ -482,6 +482,16 @@ TOOLS = [
                 "escola_id": {"type": "string", "description": "ID da escola para sincronizar (opcional). Se nao informado, sincroniza todas com status enriched+."},
                 "limite": {"type": "integer", "description": "Max escolas para sincronizar (default 10)"}
             }
+        }
+    },
+    {
+        "name": "sincronizar_hubspot_puxar",
+        "description": "Puxa mudancas do HubSpot para o banco do agente (HubSpot -> Agente). "
+                       "Use quando alguem alterou dados direto no HubSpot (deal stage, contatos, etc.) e voce quer que o IAlex saiba disso. "
+                       "Roda automaticamente a cada 15 min, mas pode ser chamado manualmente para sincronizacao imediata.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
         }
     },
     {
@@ -1873,6 +1883,25 @@ def _handle_sincronizar_hubspot(params: Dict) -> str:
         return json.dumps({"erro": f"Erro HubSpot: {str(e)[:200]}"})
 
 
+def _handle_sincronizar_hubspot_puxar(params: Dict) -> str:
+    """Puxa mudancas do HubSpot para o Supabase (sincronizacao reversa)."""
+    try:
+        from integrations.hubspot_pull import hubspot_pull
+        result = hubspot_pull.pull_changes()
+        total = result.get("companies", 0) + result.get("contacts", 0) + result.get("deals", 0)
+        return json.dumps({
+            "total_atualizados": total,
+            "empresas": result.get("companies", 0),
+            "contatos": result.get("contacts", 0),
+            "deals": result.get("deals", 0),
+            "erros": result.get("errors", 0),
+            "desde": result.get("since"),
+            "mensagem": f"Pull concluido: {total} registros atualizados do HubSpot." if total > 0 else "Nenhuma mudanca nova no HubSpot desde a ultima sincronizacao.",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro no pull HubSpot: {str(e)[:200]}"})
+
+
 def _handle_listar_campanhas(params: Dict) -> str:
     """Lista campanhas de prospecção."""
     try:
@@ -2105,6 +2134,7 @@ TOOL_HANDLERS = {
     "consultar_interacoes": _handle_consultar_interacoes,
     # HubSpot e integrações
     "sincronizar_hubspot": _handle_sincronizar_hubspot,
+    "sincronizar_hubspot_puxar": _handle_sincronizar_hubspot_puxar,
     # Campanhas e templates
     "listar_campanhas": _handle_listar_campanhas,
     "criar_campanha": _handle_criar_campanha,
@@ -2193,12 +2223,47 @@ IMPORTAR ESCOLA NAO E ACAO SENSIVEL. Nao peca confirmacao extra. Se o Fernando p
 - Apos encontrar uma escola na base MEC que NAO esta no CRM, pergunte: "Quer que eu adicione ao nosso banco?"
 - Quando encontrar escolas grandes (500+ alunos) ou privadas, DESTAQUE como alvo de alto valor
 
-== FORMATACAO WHATSAPP ==
-- Negrito: *texto* (UM asterisco). NUNCA use **texto**
-- Italico: _texto_
-- Listas: use emojis ou tracos, NUNCA use ## ou markdown
-- NUNCA use [links](url) ou formatacao markdown
-- Emojis: 2-3 por mensagem, sem exagero
+== FORMATACAO WHATSAPP (SOFISTICADA) ==
+Suas respostas devem ser VISUALMENTE RICAS e bem organizadas. Use TODOS estes recursos:
+
+*Formatacao:*
+- *negrito* para titulos, nomes de escolas e destaques (UM asterisco)
+- _italico_ para observacoes e dicas
+- Monoespaco para codigos e valores: ```texto```
+- NUNCA use **duplo**, ## markdown ou [links](url)
+
+*Emojis como icones visuais (USE SEMPRE):*
+- 🏫 escola/nome  📍 endereco/localizacao  📞 telefone  📧 email
+- 📊 score/metricas  👤 contato/decisor  ✅ sucesso  ❌ erro
+- 🔍 busca  📥 importar  📝 email gerado  🎯 qualificacao
+- 📈 pipeline/funil  🔄 follow-up  📋 lista  ⚡ acao rapida
+- 🏆 destaque/alto valor  📌 importante  💡 dica
+
+*Organizacao de dados (OBRIGATORIO):*
+Quando mostrar dados de escola, use este formato:
+
+🏫 *NOME DA ESCOLA*
+📍 Endereco completo
+📞 Telefone
+🎯 Score: XX | Porte: XXX alunos
+📋 Tipo: Privada | Niveis: Fundamental, Medio
+
+Quando listar varias escolas, separe com linha em branco e numere:
+
+1️⃣ *Escola A* — Cidade (Score: 85)
+2️⃣ *Escola B* — Cidade (Score: 72)
+3️⃣ *Escola C* — Cidade (Score: 68)
+
+*Secoes de resposta:*
+Use emojis como marcadores de secao quando a resposta tiver multiplas partes:
+
+📊 *Resumo*
+(dados aqui)
+
+⚡ *Proximos passos*
+(sugestoes aqui)
+
+A resposta deve parecer PROFISSIONAL e ORGANIZADA, como um relatorio de CRM.
 
 == BOTOES DE RESPOSTA RAPIDA (IMPORTANTE) ==
 Quando sua resposta envolver uma pergunta ou sugerir proximos passos, ADICIONE botoes no FINAL da mensagem:

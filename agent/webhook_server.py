@@ -46,30 +46,45 @@ def get_bridge():
     return _bridge
 
 
-# Numero do dono (Fernando) - aceita numero ou LID
+# Numeros autorizados — separados por virgula no .env
+# Ex: IALEX_AUTHORIZED_NUMBERS=5551996422564,5551981081786
 OWNER_NUMBER = os.getenv("IALEX_OWNER_NUMBER", "")
 OWNER_LID = os.getenv("IALEX_OWNER_LID", "59824700190908")
+AUTHORIZED_NUMBERS = os.getenv("IALEX_AUTHORIZED_NUMBERS", "")
 
 # Controle de mensagens processadas (evitar duplicatas)
 _processed_ids = set()
 _MAX_PROCESSED = 1000
 
 
+def _get_authorized_numbers() -> list:
+    """Retorna lista de numeros autorizados (ultimos 10 digitos de cada)."""
+    numbers = []
+    if OWNER_NUMBER:
+        numbers.append("".join(c for c in OWNER_NUMBER if c.isdigit())[-10:])
+    if AUTHORIZED_NUMBERS:
+        for n in AUTHORIZED_NUMBERS.split(","):
+            digits = "".join(c for c in n.strip() if c.isdigit())
+            if len(digits) >= 8:
+                numbers.append(digits[-10:])
+    return numbers
+
+
 def _is_from_owner(sender: str) -> bool:
-    """Verifica se a mensagem e do Fernando.
-    Aceita numero de telefone (5551...) ou LID especifico do Fernando.
+    """Verifica se a mensagem e de um numero autorizado.
+    Aceita numero de telefone (5551...) ou LID.
     """
-    if not OWNER_NUMBER and not OWNER_LID:
+    authorized = _get_authorized_numbers()
+    if not authorized and not OWNER_LID:
         return True
     clean_sender = sender.replace("@s.whatsapp.net", "").replace("@lid", "")
     # Checar LID
     if OWNER_LID and clean_sender == OWNER_LID:
         return True
-    # Checar numero
-    if OWNER_NUMBER:
-        digits_sender = "".join(c for c in clean_sender if c.isdigit())
-        digits_owner = "".join(c for c in OWNER_NUMBER if c.isdigit())
-        if digits_sender.endswith(digits_owner[-10:]):
+    # Checar numeros autorizados
+    digits_sender = "".join(c for c in clean_sender if c.isdigit())
+    for auth_num in authorized:
+        if digits_sender.endswith(auth_num):
             return True
     return False
 
@@ -80,7 +95,8 @@ def _send_with_buttons(bridge, sender: str, text: str, buttons: list):
     if result.get("success"):
         return
     # Fallback: texto com opcoes numeradas
-    opts = "\n".join(f"{i+1}. {b}" for i, b in enumerate(buttons))
+    num_emojis = ["1️⃣", "2️⃣", "3️⃣"]
+    opts = "\n".join(f"{num_emojis[i]} {b}" for i, b in enumerate(buttons[:3]))
     fallback_text = f"{text}\n\n{opts}\n\n_Responda com o numero ou texto da opcao_"
     bridge.send_message(sender, fallback_text)
 
