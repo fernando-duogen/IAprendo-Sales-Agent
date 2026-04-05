@@ -38,6 +38,16 @@ MARKER = "[PIPELINE_CONFIG_V1]"
 VALID_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 VALID_STEPS = {"qualify", "enrich", "contacts", "write", "send"}
 
+# Modo de Autonomia — controla o quanto o IAlex pode agir sozinho
+#   manual:     ZERO automacao. Scheduler nao dispara nada para contatos.
+#               Fernando opera 100% manualmente no dashboard/WhatsApp.
+#   semi_auto:  IAlex gera emails/follow-ups e poe na fila de aprovacao.
+#               NUNCA envia sem Fernando aprovar 1 a 1. (DEFAULT — mais seguro)
+#   full_auto:  IAlex tambem envia automaticamente o que Fernando ja aprovou.
+#               Requer opt-in EXPLICITO com confirmacao dupla.
+VALID_AUTONOMY_LEVELS = {"manual", "semi_auto", "full_auto"}
+DEFAULT_AUTONOMY_LEVEL = "semi_auto"
+
 
 class PipelineConfig:
     """Wrapper para ler/gravar a configuracao do pipeline automatico."""
@@ -51,6 +61,9 @@ class PipelineConfig:
     def default_config(self) -> Dict[str, Any]:
         """Retorna a configuracao padrao (usada quando nao ha nada salvo)."""
         return {
+            # Modo de autonomia global (DEFAULT: semi_auto — nunca envia sem aprovacao)
+            "autonomy_level": DEFAULT_AUTONOMY_LEVEL,
+            "autonomy_authorized_at": None,  # timestamp de quando Fernando autorizou full_auto
             "enabled": False,
             "schedule_time": "08:00",
             "days": ["mon", "tue", "wed", "thu", "fri"],
@@ -81,6 +94,17 @@ class PipelineConfig:
         defaults = self.default_config()
         out: Dict[str, Any] = {**defaults, **(cfg or {})}
 
+        # === Autonomy level (safety-first) ===
+        lvl = str(out.get("autonomy_level", DEFAULT_AUTONOMY_LEVEL)).lower()
+        if lvl not in VALID_AUTONOMY_LEVELS:
+            lvl = DEFAULT_AUTONOMY_LEVEL
+        out["autonomy_level"] = lvl
+
+        # Se nao for full_auto, forcar send_approved=False e remover "send" dos steps
+        # (garantia defensiva: mesmo que alguem tenha salvo send=True num nivel inferior)
+        if lvl != "full_auto":
+            out["send_approved"] = False
+
         # enabled
         out["enabled"] = bool(out.get("enabled", False))
 
@@ -106,6 +130,9 @@ class PipelineConfig:
         steps = [s for s in steps if s in VALID_STEPS]
         if not steps:
             steps = ["qualify", "enrich", "contacts", "write"]
+        # Gate: fora de full_auto, NUNCA permitir step "send" (trava de seguranca)
+        if out["autonomy_level"] != "full_auto" and "send" in steps:
+            steps = [s for s in steps if s != "send"]
         out["steps"] = steps
 
         # limits
@@ -226,6 +253,46 @@ class PipelineConfig:
         except Exception as e:
             logger.error(f"pipeline_config save_config: {e}")
             return False
+
+    # =========================================================================
+    # Autonomy helpers
+    # =========================================================================
+
+    def get_autonomy_level(self) -> str:
+        """Retorna o nivel atual (manual, semi_auto, full_auto)."""
+        return self.get_config().get("autonomy_level", DEFAULT_AUTONOMY_LEVEL)
+
+    def can_automate(self) -> bool:
+        """True se o scheduler pode disparar geracao automatica (semi_auto ou full_auto)."""
+        return self.get_autonomy_level() in ("semi_auto", "full_auto")
+
+    def can_send_automatically(self) -> bool:
+        """True SOMENTE se o nivel e full_auto. Todas as outras camadas DEVEM checar isto
+        antes de chamar send_approved_messages em contexto automatico."""
+        return self.get_autonomy_level() == "full_auto"
+
+    def set_autonomy_level(self, level: str) -> Dict[str, Any]:
+        """Altera o nivel de autonomia. Se descer para manual/semi_auto, limpa
+        send_approved e remove 'send' dos steps automaticamente.
+        Retorna dict com o que mudou.
+        """
+        if level not in VALID_AUTONOMY_LEVELS:
+            return {"ok": False, "error": f"nivel invalido: {level}"}
+        cfg = self.get_config()
+        old_level = cfg.get("autonomy_level", DEFAULT_AUTONOMY_LEVEL)
+        cfg["autonomy_level"] = level
+        if level == "full_auto":
+            cfg["autonomy_authorized_at"] = datetime.now(timezone.utc).isoformat()
+        else:
+            cfg["autonomy_authorized_at"] = None
+            cfg["send_approved"] = False
+            cfg["steps"] = [s for s in cfg.get("steps", []) if s != "send"]
+        ok = self.save_config(cfg)
+        logger.info(
+            "autonomy_level alterado",
+            extra={"from": old_level, "to": level, "ok": ok},
+        )
+        return {"ok": ok, "from": old_level, "to": level}
 
     def update_last_run(self, status: str, summary: Optional[Dict[str, Any]] = None) -> None:
         """Marca no config a data/hora do ultimo run (para exibir no dashboard)."""

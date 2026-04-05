@@ -799,6 +799,39 @@ TOOLS = [
             "properties": {}
         }
     },
+    {
+        "name": "ver_modo_autonomia",
+        "description": "Mostra o MODO DE AUTONOMIA atual do IAlex: manual (zero automacao), "
+                       "semi_auto (gera mas nao envia sem aprovacao), ou full_auto (tambem envia aprovados). "
+                       "Use quando Fernando perguntar 'qual o modo atual?', 'o IAlex pode enviar sozinho?', "
+                       "'que nivel de autonomia esta configurado?'.",
+        "input_schema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "alterar_modo_autonomia",
+        "description": "Altera o MODO DE AUTONOMIA do IAlex. MODOS:\n"
+                       "- manual: ZERO automacao. Scheduler nao dispara nada.\n"
+                       "- semi_auto: IAlex gera emails/follow-ups para a fila, mas NUNCA envia sem aprovacao (SEGURO, default).\n"
+                       "- full_auto: IAlex TAMBEM envia automaticamente os aprovados (REQUER CONFIRMACAO DUPLA).\n\n"
+                       "REGRA CRITICA: para mudar para 'full_auto', Fernando DEVE ter dito a frase EXATA "
+                       "'autorizo envio automatico' na mensagem. Se ele nao disse, retorne erro pedindo a "
+                       "frase. Downgrades (full_auto → semi_auto, semi_auto → manual) nao exigem confirmacao.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nivel": {
+                    "type": "string",
+                    "enum": ["manual", "semi_auto", "full_auto"],
+                    "description": "Novo nivel de autonomia"
+                },
+                "frase_confirmacao": {
+                    "type": "string",
+                    "description": "Frase exata 'autorizo envio automatico' — obrigatoria SOMENTE para ativar full_auto"
+                }
+            },
+            "required": ["nivel"]
+        }
+    },
 ]
 
 
@@ -2567,11 +2600,36 @@ def _handle_configurar_pipeline_automatico(params: Dict) -> str:
         if "dias" in params:
             cfg["days"] = params["dias"]
         if "etapas" in params:
-            cfg["steps"] = params["etapas"]
+            etapas = list(params["etapas"] or [])
+            # GATE: step "send" so em full_auto
+            if "send" in etapas and cfg.get("autonomy_level") != "full_auto":
+                return json.dumps({
+                    "erro": "BLOQUEADO por seguranca",
+                    "mensagem": (
+                        "A etapa 'send' (enviar emails) so pode ser ativada no modo FULL-AUTO. "
+                        "Primeiro mude o modo de autonomia com alterar_modo_autonomia (exige "
+                        "confirmacao dupla 'autorizo envio automatico')."
+                    ),
+                    "modo_atual": cfg.get("autonomy_level"),
+                }, ensure_ascii=False)
+            cfg["steps"] = etapas
         if "modo_escrita" in params:
             cfg["write_mode"] = params["modo_escrita"]
         if "enviar_aprovados" in params:
-            cfg["send_approved"] = bool(params["enviar_aprovados"])
+            # GATE: so permite ligar send_approved se modo ja for full_auto
+            want_send = bool(params["enviar_aprovados"])
+            if want_send and cfg.get("autonomy_level") != "full_auto":
+                return json.dumps({
+                    "erro": "BLOQUEADO por seguranca",
+                    "mensagem": (
+                        "Para ativar envio automatico dentro do pipeline, Fernando precisa "
+                        "PRIMEIRO mudar o modo de autonomia para FULL-AUTO (exige confirmacao "
+                        "dupla com a frase 'autorizo envio automatico'). Use a tool "
+                        "alterar_modo_autonomia antes."
+                    ),
+                    "modo_atual": cfg.get("autonomy_level"),
+                }, ensure_ascii=False)
+            cfg["send_approved"] = want_send
 
         limits = cfg.get("limits", {}) or {}
         if "qualify_limit" in params:
@@ -2608,6 +2666,110 @@ def _handle_configurar_pipeline_automatico(params: Dict) -> str:
                 "etapas": [pipeline_config.step_label(s) for s in cfg_final["steps"]],
                 "limites": cfg_final["limits"],
             }
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_ver_modo_autonomia(params: Dict) -> str:
+    """Retorna o modo de autonomia atual do IAlex com descricao amigavel."""
+    try:
+        from integrations.pipeline_config import pipeline_config
+        cfg = pipeline_config.get_config()
+        lvl = cfg.get("autonomy_level", "semi_auto")
+        descriptions = {
+            "manual": (
+                "🛡️ MANUAL — ZERO automacao. Nenhum job roda sozinho. "
+                "Fernando opera 100% pelo dashboard ou mandando comandos via WhatsApp."
+            ),
+            "semi_auto": (
+                "🤖 SEMI-AUTO — IAlex gera emails e follow-ups automaticamente e coloca "
+                "na fila de aprovacao, mas NUNCA envia sem Fernando aprovar 1 a 1. (modo SEGURO)"
+            ),
+            "full_auto": (
+                "⚡ FULL-AUTO — IAlex gera E envia automaticamente os emails que Fernando "
+                "ja aprovou. Requer supervisao periodica da fila."
+            ),
+        }
+        authorized_at = cfg.get("autonomy_authorized_at")
+        return json.dumps({
+            "modo_atual": lvl,
+            "descricao": descriptions.get(lvl, lvl),
+            "full_auto_autorizado_em": authorized_at,
+            "pipeline_ativo": cfg.get("enabled"),
+            "followups_ativos": cfg.get("followup_enabled"),
+            "aviso": (
+                "Para ATIVAR envio automatico (full_auto), Fernando deve dizer "
+                "a frase exata 'autorizo envio automatico' ao mudar o modo."
+            )
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_alterar_modo_autonomia(params: Dict) -> str:
+    """Altera modo de autonomia com confirmacao dupla para full_auto."""
+    try:
+        from integrations.pipeline_config import pipeline_config
+        nivel = str(params.get("nivel", "")).lower()
+        if nivel not in ("manual", "semi_auto", "full_auto"):
+            return json.dumps({
+                "erro": f"Nivel invalido: {nivel}. Use manual, semi_auto ou full_auto."
+            })
+
+        # Confirmacao dupla obrigatoria para full_auto
+        if nivel == "full_auto":
+            frase = str(params.get("frase_confirmacao", "")).lower().strip()
+            expected = "autorizo envio automatico"
+            # Aceita variacoes com/sem acento
+            frase_norm = frase.replace("á", "a").replace("ã", "a").replace("â", "a").replace("é", "e").replace("ê", "e").replace("í", "i").replace("ó", "o").replace("ô", "o").replace("õ", "o").replace("ú", "u").replace("ç", "c")
+            if expected not in frase_norm:
+                return json.dumps({
+                    "erro": "CONFIRMACAO DUPLA EXIGIDA",
+                    "mensagem": (
+                        "Para ativar FULL-AUTO (envio automatico de emails), Fernando "
+                        "DEVE dizer a frase exata: 'autorizo envio automatico'. "
+                        "Por seguranca, nao ativei. Responda confirmando com essa frase."
+                    ),
+                    "frase_esperada": "autorizo envio automatico"
+                }, ensure_ascii=False)
+
+        result = pipeline_config.set_autonomy_level(nivel)
+        if not result.get("ok"):
+            return json.dumps({"erro": result.get("error", "Falha ao salvar")})
+
+        # Recarregar scheduler para aplicar mudancas imediatamente
+        try:
+            from agent.scheduler import ialex_scheduler
+            if getattr(ialex_scheduler, "_running", False):
+                ialex_scheduler.reload_pipeline_schedule()
+                ialex_scheduler.reload_followup_schedule()
+        except Exception as e:
+            logger.debug(f"reload scheduler: {e}")
+
+        # Registrar na memoria para auditoria
+        try:
+            from integrations.memory import memory
+            memory.remember(
+                content=f"[AUTONOMY_CHANGE] {result['from']} → {result['to']}",
+                scope="global",
+                category="warning" if nivel == "full_auto" else "fact",
+                importance=9,
+                source="ialex_brain",
+            )
+        except Exception:
+            pass
+
+        messages = {
+            "manual": "🛡️ Modo MANUAL ativo. Nenhum envio automatico acontecera.",
+            "semi_auto": "🤖 Modo SEMI-AUTO ativo. IAlex gera e coloca na fila, mas NAO envia sem sua aprovacao.",
+            "full_auto": "⚡ Modo FULL-AUTO ativo. IAlex vai enviar automaticamente os aprovados. Supervisione a fila regularmente.",
+        }
+        return json.dumps({
+            "sucesso": True,
+            "de": result["from"],
+            "para": result["to"],
+            "mensagem": messages.get(nivel, f"Modo alterado para {nivel}"),
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
@@ -2800,6 +2962,9 @@ TOOL_HANDLERS = {
     "classificar_followups": _handle_classificar_followups,
     "configurar_followups_automaticos": _handle_configurar_followups_automaticos,
     "rodar_followups_agora": _handle_rodar_followups_agora,
+    # Modo de Autonomia (seguranca — Item 6.5)
+    "ver_modo_autonomia": _handle_ver_modo_autonomia,
+    "alterar_modo_autonomia": _handle_alterar_modo_autonomia,
     # Utilitários
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
@@ -2822,7 +2987,7 @@ Voce tem acesso a:
 2. *COMPANHEIRO DE CAMPO*: Quando Fernando esta na rua visitando escolas, ajuda-lo a encontrar escolas perto, dar informacoes rapidas, registrar visitas
 3. *AGENTE DE VENDAS*: Qualificar leads, enriquecer contatos, gerar emails, acompanhar pipeline, sugerir acoes comerciais
 
-== ESCOLHA DE FERRAMENTAS (48 disponiveis) ==
+== ESCOLHA DE FERRAMENTAS (50 disponiveis) ==
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
@@ -2946,6 +3111,30 @@ O scheduler roda a cada 30 min e ENVIA ALERTAS PROATIVOS para Fernando no WhatsA
 - Comeco do dia para saber prioridades
 
 *Quando chegar um alerta automatico:* Fernando ja recebe no WhatsApp formatado com a escola, contato, motivos, keywords e acao recomendada.
+
+== MODO DE AUTONOMIA (SEGURANCA CRITICA — LEIA ANTES DE TUDO) ==
+O IAlex tem 3 modos de autonomia. Isto controla TUDO o que pode ser feito sozinho:
+
+- 🛡️ *manual*: zero automacao. Nenhum scheduler dispara nada. Fernando opera 100% manual.
+- 🤖 *semi_auto* (DEFAULT): IAlex pode gerar emails/follow-ups e colocar na fila, mas NUNCA envia sem aprovacao de Fernando 1 a 1.
+- ⚡ *full_auto*: IAlex tambem envia automaticamente os emails que Fernando ja aprovou. EXIGE confirmacao dupla para ativar.
+
+*REGRAS ABSOLUTAS:*
+1. NUNCA ative full_auto sem Fernando ter dito a frase EXATA 'autorizo envio automatico'
+2. Se Fernando pedir "ativa envio automatico" ou similar SEM dizer a frase exata → responder: "Para sua seguranca, preciso que voce diga exatamente 'autorizo envio automatico' para eu ativar. Pode repetir?"
+3. NUNCA ligue `enviar_aprovados=true` no pipeline automatico se modo nao e full_auto (a tool retorna erro, respeite)
+4. NUNCA inclua step `send` no pipeline automatico se modo nao e full_auto
+5. Downgrades (full_auto → semi_auto, semi_auto → manual) sao livres, nao exigem confirmacao
+6. Se Fernando pergunta "o IAlex pode enviar sozinho?" → chame ver_modo_autonomia e explique o nivel atual
+
+*Quando usar ver_modo_autonomia:*
+- "Qual o modo atual?" / "Voce pode enviar sozinho?" / "Que automacoes estao ligadas?"
+
+*Quando usar alterar_modo_autonomia:*
+- "Desativa tudo" → nivel=manual
+- "Liga a geracao automatica mas nao quero que envie" → nivel=semi_auto
+- "Autorizo envio automatico" → nivel=full_auto (com frase_confirmacao)
+- "Volta para semi" → nivel=semi_auto
 
 == PIPELINE AUTOMATICO (ITEM 5) ==
 O IAlex pode rodar o pipeline SOZINHO, de forma autonoma, em horarios configurados. Fernando configura via dashboard (pagina Configuracoes) ou via WhatsApp usando suas ferramentas:

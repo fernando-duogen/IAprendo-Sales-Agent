@@ -230,10 +230,14 @@ class IALexScheduler:
         """Registra o job do pipeline automatico com base na config salva.
         Le a config via integrations.pipeline_config e agenda 1 job por dia
         habilitado no horario configurado. Silencioso se desabilitado.
+        Gate de autonomia: nao registra se autonomy_level='manual'.
         """
         try:
             from integrations.pipeline_config import pipeline_config
             cfg = pipeline_config.get_config()
+            if cfg.get("autonomy_level") == "manual":
+                logger.info("Pipeline automatico BLOQUEADO (modo manual)")
+                return
             if not cfg.get("enabled"):
                 logger.info("Pipeline automatico desabilitado (nenhum job registrado)")
                 return
@@ -294,9 +298,21 @@ class IALexScheduler:
                         )
                         return
 
+                # Gate de autonomia em runtime (defense in depth)
+                autonomy = cfg.get("autonomy_level", "semi_auto")
+                effective_send = cfg.get("send_approved", False) and autonomy == "full_auto"
+                effective_steps = list(cfg.get("steps") or [])
+                if autonomy != "full_auto" and "send" in effective_steps:
+                    effective_steps = [s for s in effective_steps if s != "send"]
+                    logger.warning(
+                        "Step 'send' removido em runtime (autonomy_level != full_auto)"
+                    )
+
                 logger.info("Pipeline automatico INICIANDO", extra={
                     "triggered_by": triggered_by,
-                    "steps": cfg.get("steps"),
+                    "autonomy_level": autonomy,
+                    "steps": effective_steps,
+                    "send_approved": effective_send,
                 })
 
                 limits = cfg.get("limits", {})
@@ -304,10 +320,10 @@ class IALexScheduler:
                     qualify_limit=limits.get("qualify_limit", 20),
                     enrich_limit=limits.get("enrich_limit", 10),
                     write_limit=limits.get("write_limit", 10),
-                    send_approved=cfg.get("send_approved", False),
+                    send_approved=effective_send,
                     dry_run=cfg.get("dry_run", False),
                     write_mode=cfg.get("write_mode", "ai"),
-                    steps=cfg.get("steps"),
+                    steps=effective_steps,
                 )
 
                 finished = datetime.now()
@@ -412,19 +428,42 @@ class IALexScheduler:
 
         return "\n".join(lines)
 
-    def run_pipeline_now(self):
-        """Executa o pipeline automatico imediatamente (manual/teste)."""
+    def run_pipeline_now(self) -> Dict[str, Any]:
+        """Executa o pipeline automatico imediatamente (manual/teste).
+        Respeita o autonomy_level: em modo manual, apenas GERA (nao envia),
+        mesmo que o usuario clique no botao de teste.
+        """
+        try:
+            from integrations.pipeline_config import pipeline_config
+            lvl = pipeline_config.get_autonomy_level()
+            if lvl == "manual":
+                return {
+                    "ok": False,
+                    "reason": "autonomy_manual",
+                    "message": (
+                        "Modo MANUAL: execucao automatica bloqueada. "
+                        "Mude para SEMI-AUTO ou FULL-AUTO em Configuracoes para rodar."
+                    ),
+                }
+        except Exception:
+            pass
         self._run_automated_pipeline(triggered_by="manual")
+        return {"ok": True}
 
     # ============================================================
     # FOLLOW-UPS COMPORTAMENTAIS (Item 6)
     # ============================================================
 
     def _register_automated_followup(self):
-        """Registra job diario de follow-ups comportamentais com base na config."""
+        """Registra job diario de follow-ups comportamentais com base na config.
+        Gate de autonomia: nao registra se autonomy_level='manual'.
+        """
         try:
             from integrations.pipeline_config import pipeline_config
             cfg = pipeline_config.get_config()
+            if cfg.get("autonomy_level") == "manual":
+                logger.info("Follow-ups automaticos BLOQUEADOS (modo manual)")
+                return
             if not cfg.get("followup_enabled", False):
                 logger.info("Follow-ups automaticos desabilitados")
                 return
@@ -541,9 +580,26 @@ class IALexScheduler:
 
         return "\n".join(lines)
 
-    def run_followup_now(self):
-        """Executa geracao de follow-ups imediatamente (manual/teste)."""
+    def run_followup_now(self) -> Dict[str, Any]:
+        """Executa geracao de follow-ups imediatamente (manual/teste).
+        Follow-ups SEMPRE geram em status=pending, entao sao seguros em
+        qualquer nivel de autonomia. Apenas bloqueia em modo 'manual' total.
+        """
+        try:
+            from integrations.pipeline_config import pipeline_config
+            if pipeline_config.get_autonomy_level() == "manual":
+                return {
+                    "ok": False,
+                    "reason": "autonomy_manual",
+                    "message": (
+                        "Modo MANUAL: geracao automatica de follow-ups bloqueada. "
+                        "Mude para SEMI-AUTO ou FULL-AUTO em Configuracoes."
+                    ),
+                }
+        except Exception:
+            pass
         self._run_follow_up_generation(triggered_by="manual")
+        return {"ok": True}
 
     # === Metodos para executar manualmente ===
 

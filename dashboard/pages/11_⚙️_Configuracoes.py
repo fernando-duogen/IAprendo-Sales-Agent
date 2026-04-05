@@ -35,6 +35,145 @@ st.caption("Configure o pipeline automatico do IAlex — rodar sozinho nos horar
 
 # Carregar config atual
 cfg = pipeline_config.get_config()
+current_level = cfg.get("autonomy_level", "semi_auto")
+
+# =============================================================================
+# Secao 0 - MODO DE AUTONOMIA (topo, destaque maximo)
+# =============================================================================
+section_header("🛡️ Modo de Autonomia", "security")
+
+# Card explicativo grande
+level_cards = {
+    "manual": {
+        "emoji": "🛡️",
+        "title": "MANUAL",
+        "subtitle": "Zero automacao — tudo manual",
+        "color": "#9E9E9E",
+        "description": "Nenhum job roda sozinho. Fernando dispara tudo manualmente no dashboard ou via WhatsApp. Modo de maxima seguranca.",
+    },
+    "semi_auto": {
+        "emoji": "🤖",
+        "title": "SEMI-AUTO",
+        "subtitle": "IAlex gera, voce aprova (RECOMENDADO)",
+        "color": COLORS["primary"],
+        "description": "IAlex pode qualificar, enriquecer, buscar contatos, gerar emails e follow-ups AUTOMATICAMENTE. Tudo cai na fila de aprovacao. NADA e enviado sem voce aprovar 1 a 1.",
+    },
+    "full_auto": {
+        "emoji": "⚡",
+        "title": "FULL-AUTO",
+        "subtitle": "IAlex tambem envia automaticamente",
+        "color": COLORS["error"],
+        "description": "IAlex ALEM de gerar, tambem ENVIA os emails que voce ja aprovou — sem perguntar de novo. So ative se voce vai supervisionar a fila regularmente.",
+    },
+}
+
+active = level_cards[current_level]
+st.markdown(
+    f'<div class="data-card" style="border-left:6px solid {active["color"]};padding:20px">'
+    f'<div style="font-size:28px;font-weight:700;color:{active["color"]}">'
+    f'{active["emoji"]} MODO ATUAL: {active["title"]}'
+    f'</div>'
+    f'<div style="font-size:15px;color:#666;margin-top:4px">{active["subtitle"]}</div>'
+    f'<div style="font-size:14px;line-height:1.6;margin-top:12px">{active["description"]}</div>'
+    f'</div>',
+    unsafe_allow_html=True,
+)
+
+st.markdown('<div style="margin-top:16px"></div>', unsafe_allow_html=True)
+st.markdown("**Trocar modo:**")
+
+col_m1, col_m2, col_m3 = st.columns(3)
+
+def _switch_level(to_level: str):
+    """Muda o nivel e recarrega scheduler."""
+    result = pipeline_config.set_autonomy_level(to_level)
+    if result.get("ok"):
+        try:
+            from agent.scheduler import ialex_scheduler
+            if getattr(ialex_scheduler, "_running", False):
+                ialex_scheduler.reload_pipeline_schedule()
+                ialex_scheduler.reload_followup_schedule()
+        except Exception:
+            pass
+        st.success(f"✅ Modo alterado de {result['from']} para {result['to']}")
+        st.rerun()
+    else:
+        st.error(f"❌ Falha: {result.get('error', '?')}")
+
+with col_m1:
+    is_current = current_level == "manual"
+    if st.button(
+        "🛡️ MANUAL",
+        use_container_width=True,
+        type="primary" if is_current else "secondary",
+        disabled=is_current,
+        key="btn_manual",
+    ):
+        _switch_level("manual")
+    st.caption("Zero automacao")
+
+with col_m2:
+    is_current = current_level == "semi_auto"
+    if st.button(
+        "🤖 SEMI-AUTO",
+        use_container_width=True,
+        type="primary" if is_current else "secondary",
+        disabled=is_current,
+        key="btn_semi",
+    ):
+        _switch_level("semi_auto")
+    st.caption("Gera, nao envia (seguro)")
+
+with col_m3:
+    is_current = current_level == "full_auto"
+    if st.button(
+        "⚡ FULL-AUTO",
+        use_container_width=True,
+        type="primary" if is_current else "secondary",
+        disabled=is_current,
+        key="btn_full",
+    ):
+        # Confirmacao dupla via session state
+        st.session_state["_full_auto_pending"] = True
+        st.rerun()
+    st.caption("Tambem envia (requer confirm)")
+
+# Modal de confirmacao dupla para full_auto
+if st.session_state.get("_full_auto_pending") and current_level != "full_auto":
+    st.markdown('<div style="margin-top:16px"></div>', unsafe_allow_html=True)
+    alert_banner(
+        "⚠️ <strong>ATENCAO — ATIVACAO DE ENVIO AUTOMATICO</strong><br/>"
+        "Ao confirmar, o IAlex vai enviar automaticamente TODOS os emails que voce aprovar "
+        "daqui pra frente, sem perguntar de novo. Supervisione a fila de aprovacao regularmente.",
+        "warning",
+    )
+    confirm_text = st.text_input(
+        "Digite exatamente: **autorizo envio automatico**",
+        key="full_auto_confirm_text",
+        placeholder="autorizo envio automatico",
+    )
+    col_cf1, col_cf2 = st.columns(2)
+    with col_cf1:
+        if st.button("✅ Confirmar FULL-AUTO", type="primary", use_container_width=True, key="btn_confirm_full"):
+            if confirm_text.strip().lower() == "autorizo envio automatico":
+                _switch_level("full_auto")
+                st.session_state["_full_auto_pending"] = False
+            else:
+                st.error("Frase incorreta. Digite exatamente: autorizo envio automatico")
+    with col_cf2:
+        if st.button("❌ Cancelar", use_container_width=True, key="btn_cancel_full"):
+            st.session_state["_full_auto_pending"] = False
+            st.rerun()
+
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+# Aviso quando em modo manual
+if current_level == "manual":
+    alert_banner(
+        "🛡️ <strong>Modo MANUAL ativo</strong> — As configuracoes de pipeline e follow-ups abaixo ficam desabilitadas. "
+        "Mude para SEMI-AUTO para permitir automacao.",
+        "info",
+    )
 
 # =============================================================================
 # Secao 1 - Status atual
@@ -148,19 +287,28 @@ st.caption(
 
 current_steps = set(cfg.get("steps", ["qualify", "enrich", "contacts", "write"]))
 
+allow_send_step = (current_level == "full_auto")
+
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    step_qualify = st.checkbox("🎯 Qualificar", value="qualify" in current_steps)
+    step_qualify = st.checkbox("🎯 Qualificar", value="qualify" in current_steps, disabled=(current_level == "manual"))
 with col2:
-    step_enrich = st.checkbox("🔍 Enriquecer", value="enrich" in current_steps)
+    step_enrich = st.checkbox("🔍 Enriquecer", value="enrich" in current_steps, disabled=(current_level == "manual"))
 with col3:
-    step_contacts = st.checkbox("👥 Contatos", value="contacts" in current_steps)
+    step_contacts = st.checkbox("👥 Contatos", value="contacts" in current_steps, disabled=(current_level == "manual"))
 with col4:
-    step_write = st.checkbox("📝 Gerar emails", value="write" in current_steps)
+    step_write = st.checkbox("📝 Gerar emails", value="write" in current_steps, disabled=(current_level == "manual"))
 with col5:
-    step_send = st.checkbox("📤 Enviar aprovados", value="send" in current_steps)
+    step_send = st.checkbox(
+        "📤 Enviar aprovados",
+        value=("send" in current_steps) and allow_send_step,
+        disabled=(not allow_send_step),
+        help="Disponivel apenas em modo FULL-AUTO" if not allow_send_step else None,
+    )
 
-if step_send:
+if not allow_send_step:
+    st.caption("🔒 _Etapa 'Enviar aprovados' bloqueada fora do modo FULL-AUTO (seguranca)._")
+elif step_send:
     alert_banner(
         "⚠️ <strong>Atencao</strong>: a etapa 'Enviar aprovados' ira disparar "
         "automaticamente todos os emails da fila que ja estao com status <em>approved</em>. "
