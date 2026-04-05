@@ -699,6 +699,57 @@ TOOLS = [
             }
         }
     },
+    {
+        "name": "ver_pipeline_automatico",
+        "description": "Mostra a configuracao atual do pipeline automatico do IAlex: se esta ativo, horario, "
+                       "dias da semana, etapas configuradas, limites, ultimo run e proximo run. Use quando "
+                       "Fernando perguntar 'como esta rodando?', 'qual a configuracao do pipeline?' ou 'o "
+                       "IAlex esta rodando sozinho?'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "configurar_pipeline_automatico",
+        "description": "Altera a configuracao do pipeline automatico (horario, dias, etapas, limites, "
+                       "ativar/desativar). Use quando Fernando pedir para mudar o agendamento via WhatsApp. "
+                       "Apos salvar, o scheduler e recarregado automaticamente e os novos horarios passam a "
+                       "valer imediatamente.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ativar": {"type": "boolean", "description": "True para ativar, False para desativar"},
+                "horario": {"type": "string", "description": "Horario no formato HH:MM 24h (ex: '08:00', '07:30')"},
+                "dias": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]},
+                    "description": "Lista de dias da semana (mon=seg, tue=ter, etc)"
+                },
+                "etapas": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["qualify", "enrich", "contacts", "write", "send"]},
+                    "description": "Etapas a executar: qualify, enrich, contacts, write, send"
+                },
+                "qualify_limit": {"type": "integer", "description": "Qtd de escolas a qualificar por execucao"},
+                "enrich_limit": {"type": "integer", "description": "Qtd de escolas a enriquecer por execucao"},
+                "write_limit": {"type": "integer", "description": "Qtd de emails a gerar por execucao"},
+                "modo_escrita": {"type": "string", "enum": ["ai", "template"], "description": "Usar IA ou template"},
+                "enviar_aprovados": {"type": "boolean", "description": "Se True, envia automaticamente os aprovados (CUIDADO)"}
+            }
+        }
+    },
+    {
+        "name": "rodar_pipeline_automatico_agora",
+        "description": "Forca execucao imediata do pipeline automatico (fora do horario agendado). Use quando "
+                       "Fernando disser 'roda agora', 'executa o pipeline' ou 'quero rodar manualmente'. Usa "
+                       "a configuracao salva (etapas, limites) mas dispara na hora e envia resumo no "
+                       "WhatsApp quando terminar.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
 ]
 
 
@@ -2423,6 +2474,113 @@ def _handle_info_rag_emails(params: Dict) -> str:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
+def _handle_ver_pipeline_automatico(params: Dict) -> str:
+    """Retorna configuracao atual do pipeline automatico."""
+    try:
+        from integrations.pipeline_config import pipeline_config
+        cfg = pipeline_config.get_config()
+
+        dias_pt = [pipeline_config.day_label(d) for d in cfg.get("days", [])]
+        etapas_pt = [pipeline_config.step_label(s) for s in cfg.get("steps", [])]
+
+        return json.dumps({
+            "ativo": cfg.get("enabled"),
+            "horario": cfg.get("schedule_time"),
+            "dias_semana": dias_pt,
+            "etapas": etapas_pt,
+            "limites": cfg.get("limits"),
+            "modo_escrita": cfg.get("write_mode"),
+            "enviar_aprovados_auto": cfg.get("send_approved"),
+            "ultimo_run": cfg.get("last_run_at"),
+            "ultimo_status": cfg.get("last_run_status"),
+            "resumo_ultimo_run": cfg.get("last_run_summary"),
+            "instrucao": (
+                "Pipeline ATIVO. Roda automaticamente nos dias/horario configurados."
+                if cfg.get("enabled")
+                else "Pipeline DESATIVADO. Para ativar, use configurar_pipeline_automatico com ativar=true."
+            ),
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_configurar_pipeline_automatico(params: Dict) -> str:
+    """Atualiza configuracao do pipeline automatico e recarrega scheduler."""
+    try:
+        from integrations.pipeline_config import pipeline_config
+        cfg = pipeline_config.get_config()
+
+        # Aplicar mudancas recebidas
+        if "ativar" in params:
+            cfg["enabled"] = bool(params["ativar"])
+        if "horario" in params:
+            cfg["schedule_time"] = params["horario"]
+        if "dias" in params:
+            cfg["days"] = params["dias"]
+        if "etapas" in params:
+            cfg["steps"] = params["etapas"]
+        if "modo_escrita" in params:
+            cfg["write_mode"] = params["modo_escrita"]
+        if "enviar_aprovados" in params:
+            cfg["send_approved"] = bool(params["enviar_aprovados"])
+
+        limits = cfg.get("limits", {}) or {}
+        if "qualify_limit" in params:
+            limits["qualify_limit"] = int(params["qualify_limit"])
+        if "enrich_limit" in params:
+            limits["enrich_limit"] = int(params["enrich_limit"])
+        if "write_limit" in params:
+            limits["write_limit"] = int(params["write_limit"])
+        cfg["limits"] = limits
+
+        ok = pipeline_config.save_config(cfg)
+        if not ok:
+            return json.dumps({"erro": "Falha ao salvar configuracao"})
+
+        # Recarregar scheduler (se disponivel)
+        try:
+            from agent.scheduler import ialex_scheduler
+            if getattr(ialex_scheduler, "_running", False):
+                ialex_scheduler.reload_pipeline_schedule()
+        except Exception as e:
+            logger.debug(f"reload scheduler: {e}")
+
+        cfg_final = pipeline_config.get_config()
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": (
+                f"Pipeline automatico {'ATIVADO' if cfg_final['enabled'] else 'DESATIVADO'}. "
+                f"Roda as {cfg_final['schedule_time']} nos dias {', '.join([pipeline_config.day_label(d) for d in cfg_final['days']])}."
+            ),
+            "config": {
+                "ativo": cfg_final["enabled"],
+                "horario": cfg_final["schedule_time"],
+                "dias": [pipeline_config.day_label(d) for d in cfg_final["days"]],
+                "etapas": [pipeline_config.step_label(s) for s in cfg_final["steps"]],
+                "limites": cfg_final["limits"],
+            }
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_rodar_pipeline_automatico_agora(params: Dict) -> str:
+    """Dispara execucao imediata do pipeline automatico (em background thread)."""
+    try:
+        from agent.scheduler import ialex_scheduler
+        ialex_scheduler.run_pipeline_now()
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": (
+                "Pipeline automatico iniciado em segundo plano. "
+                "Voce recebera um resumo completo no WhatsApp quando terminar "
+                "(pode levar alguns minutos)."
+            )
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao disparar pipeline: {str(e)[:200]}"})
+
+
 TOOL_HANDLERS = {
     # Busca e gestão de escolas
     "consultar_escolas": _handle_consultar_escolas,
@@ -2477,6 +2635,10 @@ TOOL_HANDLERS = {
     "info_rag_emails": _handle_info_rag_emails,
     # Intent detector (sinais de compra)
     "detectar_sinais_compra": _handle_detectar_sinais_compra,
+    # Pipeline automatico (Item 5)
+    "ver_pipeline_automatico": _handle_ver_pipeline_automatico,
+    "configurar_pipeline_automatico": _handle_configurar_pipeline_automatico,
+    "rodar_pipeline_automatico_agora": _handle_rodar_pipeline_automatico_agora,
     # Utilitários
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
@@ -2499,7 +2661,7 @@ Voce tem acesso a:
 2. *COMPANHEIRO DE CAMPO*: Quando Fernando esta na rua visitando escolas, ajuda-lo a encontrar escolas perto, dar informacoes rapidas, registrar visitas
 3. *AGENTE DE VENDAS*: Qualificar leads, enriquecer contatos, gerar emails, acompanhar pipeline, sugerir acoes comerciais
 
-== ESCOLHA DE FERRAMENTAS (27 disponiveis) ==
+== ESCOLHA DE FERRAMENTAS (45 disponiveis) ==
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
@@ -2623,6 +2785,30 @@ O scheduler roda a cada 30 min e ENVIA ALERTAS PROATIVOS para Fernando no WhatsA
 - Comeco do dia para saber prioridades
 
 *Quando chegar um alerta automatico:* Fernando ja recebe no WhatsApp formatado com a escola, contato, motivos, keywords e acao recomendada.
+
+== PIPELINE AUTOMATICO (ITEM 5) ==
+O IAlex pode rodar o pipeline SOZINHO, de forma autonoma, em horarios configurados. Fernando configura via dashboard (pagina Configuracoes) ou via WhatsApp usando suas ferramentas:
+
+*Quando usar ver_pipeline_automatico:*
+- "Como esta o pipeline automatico?"
+- "O IAlex esta rodando sozinho?"
+- "Que horas o pipeline roda?"
+- "Qual a configuracao atual?"
+
+*Quando usar configurar_pipeline_automatico:*
+- "Muda o pipeline para rodar as 7h"
+- "Ativa o pipeline automatico"
+- "Desativa o automatico"
+- "Faz rodar so segunda e quarta"
+- "Aumenta o limite para 30 escolas"
+- "Nao quer qualificar automatico, so gerar emails"
+
+*Quando usar rodar_pipeline_automatico_agora:*
+- "Roda o pipeline agora"
+- "Executa agora fora de hora"
+- "Dispara o automatico"
+
+Ao terminar qualquer execucao, Fernando recebe automaticamente um resumo completo no WhatsApp com: escolas qualificadas, enriquecidas, contatos encontrados, emails gerados e fila pendente. Ele so precisa revisar a fila de aprovacao depois.
 
 == FORMATACAO WHATSAPP (SOFISTICADA) ==
 Suas respostas devem ser VISUALMENTE RICAS e bem organizadas. Use TODOS estes recursos:

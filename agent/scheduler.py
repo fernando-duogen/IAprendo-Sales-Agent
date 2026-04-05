@@ -19,6 +19,9 @@ from utils.logger import logger
 class IALexScheduler:
     """Agenda e envia mensagens proativas."""
 
+    # Tag usada nos jobs do pipeline automatico (facilita reload dinamico)
+    PIPELINE_TAG = "automated_pipeline"
+
     def __init__(self):
         self._running = False
         self._thread = None
@@ -39,6 +42,9 @@ class IALexScheduler:
         schedule.every(30).minutes.do(self._check_buying_signals)
         # Retreino semanal do modelo preditivo (domingo 03:00)
         schedule.every().sunday.at("03:00").do(self._retrain_predictive_model)
+
+        # Pipeline automatico dinamico (carregado da config do banco)
+        self._register_automated_pipeline()
 
         self._running = True
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -211,6 +217,200 @@ class IALexScheduler:
                 logger.info(f"Retreino nao realizado: {result.get('reason')}")
         except Exception as e:
             logger.error(f"Erro no retreino do modelo preditivo: {e}")
+
+    # ============================================================
+    # PIPELINE AUTOMATICO (Item 5)
+    # ============================================================
+
+    def _register_automated_pipeline(self):
+        """Registra o job do pipeline automatico com base na config salva.
+        Le a config via integrations.pipeline_config e agenda 1 job por dia
+        habilitado no horario configurado. Silencioso se desabilitado.
+        """
+        try:
+            from integrations.pipeline_config import pipeline_config
+            cfg = pipeline_config.get_config()
+            if not cfg.get("enabled"):
+                logger.info("Pipeline automatico desabilitado (nenhum job registrado)")
+                return
+            time_str = cfg.get("schedule_time", "08:00")
+            days = cfg.get("days", [])
+            day_map = {
+                "mon": schedule.every().monday,
+                "tue": schedule.every().tuesday,
+                "wed": schedule.every().wednesday,
+                "thu": schedule.every().thursday,
+                "fri": schedule.every().friday,
+                "sat": schedule.every().saturday,
+                "sun": schedule.every().sunday,
+            }
+            registered = []
+            for d in days:
+                j = day_map.get(d)
+                if not j:
+                    continue
+                j.at(time_str).do(self._run_automated_pipeline).tag(self.PIPELINE_TAG)
+                registered.append(d)
+            logger.info(
+                "Pipeline automatico registrado",
+                extra={"time": time_str, "days": registered, "steps": cfg.get("steps")},
+            )
+        except Exception as e:
+            logger.error(f"Erro ao registrar pipeline automatico: {e}")
+
+    def reload_pipeline_schedule(self):
+        """Limpa jobs antigos do pipeline automatico e re-registra com config atual.
+        Chamado pela UI quando Fernando salva nova configuracao.
+        """
+        try:
+            schedule.clear(self.PIPELINE_TAG)
+            logger.info("Jobs antigos do pipeline automatico removidos")
+        except Exception as e:
+            logger.debug(f"reload_pipeline_schedule clear: {e}")
+        self._register_automated_pipeline()
+
+    def _run_automated_pipeline(self, triggered_by: str = "schedule"):
+        """Executa o pipeline automatico conforme config e envia resumo WhatsApp.
+        Roda em thread separada para nao travar o scheduler loop.
+        """
+        def _runner():
+            started = datetime.now()
+            try:
+                from integrations.pipeline_config import pipeline_config
+                from workflows.daily_pipeline import run_pipeline
+
+                cfg = pipeline_config.get_config()
+
+                # Se foi disparado por schedule, validar dia atual
+                if triggered_by == "schedule":
+                    today = pipeline_config.weekday_short_from_date(started)
+                    if today not in cfg.get("days", []):
+                        logger.info(
+                            f"Pipeline auto: hoje ({today}) nao esta nos dias permitidos, skip"
+                        )
+                        return
+
+                logger.info("Pipeline automatico INICIANDO", extra={
+                    "triggered_by": triggered_by,
+                    "steps": cfg.get("steps"),
+                })
+
+                limits = cfg.get("limits", {})
+                report = run_pipeline(
+                    qualify_limit=limits.get("qualify_limit", 20),
+                    enrich_limit=limits.get("enrich_limit", 10),
+                    write_limit=limits.get("write_limit", 10),
+                    send_approved=cfg.get("send_approved", False),
+                    dry_run=cfg.get("dry_run", False),
+                    write_mode=cfg.get("write_mode", "ai"),
+                    steps=cfg.get("steps"),
+                )
+
+                finished = datetime.now()
+                duration_min = int((finished - started).total_seconds() // 60)
+
+                # Formatar resumo WhatsApp
+                message = self._format_pipeline_summary(
+                    cfg=cfg,
+                    report=report,
+                    started=started,
+                    finished=finished,
+                    duration_min=duration_min,
+                    triggered_by=triggered_by,
+                )
+                self._send_to_owner(message)
+
+                pipeline_config.update_last_run(
+                    status="success",
+                    summary=report.get("summary", {}),
+                )
+            except Exception as e:
+                logger.error(f"Erro no pipeline automatico: {e}", exc_info=True)
+                try:
+                    self._send_to_owner(
+                        f"❌ *Pipeline automatico FALHOU*\n\n"
+                        f"Erro: `{str(e)[:300]}`\n\n"
+                        f"Verifique os logs no dashboard."
+                    )
+                    from integrations.pipeline_config import pipeline_config as pc
+                    pc.update_last_run(status="error", summary={"error": str(e)[:500]})
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_runner, daemon=True)
+        t.start()
+
+    def _format_pipeline_summary(
+        self,
+        cfg: dict,
+        report: dict,
+        started: datetime,
+        finished: datetime,
+        duration_min: int,
+        triggered_by: str,
+    ) -> str:
+        """Formata o resumo do pipeline para enviar no WhatsApp."""
+        from integrations.pipeline_config import pipeline_config as pc
+
+        steps_data = report.get("steps", {}) or {}
+        summary = report.get("summary", {}) or {}
+        qualified = steps_data.get("qualify", {}).get("output", 0) if "qualify" in steps_data else None
+        enriched = steps_data.get("enrich", {}).get("output", 0) if "enrich" in steps_data else None
+        contacts_found = steps_data.get("contacts", {}).get("output", 0) if "contacts" in steps_data else None
+        written = steps_data.get("write", {}).get("output", 0) if "write" in steps_data else None
+        sent = steps_data.get("send", {}).get("sent", 0) if "send" in steps_data else None
+
+        # Fila pendente
+        try:
+            from database.supabase_client import db as _db
+            q = _db.client.table("approval_queue").select("id", count="exact").eq(
+                "status", "pending"
+            ).execute()
+            pending = q.count or 0
+        except Exception:
+            pending = None
+
+        day_name = pc.day_label(pc.weekday_short_from_date(started))
+        date_str = started.strftime("%d/%m")
+        time_range = f"{started.strftime('%H:%M')}-{finished.strftime('%H:%M')}"
+
+        header = (
+            "🤖 *Pipeline automatico executado*"
+            if triggered_by == "schedule"
+            else "🤖 *Pipeline executado manualmente*"
+        )
+
+        lines = [
+            header,
+            f"📅 {day_name}, {date_str} — {time_range} ({duration_min} min)",
+            "",
+            "📊 *Resultado:*",
+        ]
+        if qualified is not None:
+            lines.append(f"   ✅ Qualificadas: {qualified}")
+        if enriched is not None:
+            lines.append(f"   ✅ Enriquecidas: {enriched}")
+        if contacts_found is not None:
+            lines.append(f"   ✅ Contatos encontrados: {contacts_found}")
+        if written is not None:
+            lines.append(f"   ✅ Emails gerados: {written}")
+        if sent is not None:
+            lines.append(f"   ✅ Emails enviados: {sent}")
+
+        if not any(v is not None and v > 0 for v in [qualified, enriched, contacts_found, written, sent]):
+            lines.append("   _Nenhuma acao necessaria — tudo em dia._")
+
+        lines.append("")
+        if pending is not None:
+            lines.append(f"📋 *Fila de aprovacao:* {pending} email(s) aguardando")
+        lines.append("")
+        lines.append("⚡ *Proximo passo:* revise a fila no dashboard")
+
+        return "\n".join(lines)
+
+    def run_pipeline_now(self):
+        """Executa o pipeline automatico imediatamente (manual/teste)."""
+        self._run_automated_pipeline(triggered_by="manual")
 
     # === Metodos para executar manualmente ===
 
