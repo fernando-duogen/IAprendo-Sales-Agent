@@ -35,6 +35,8 @@ class IALexScheduler:
         schedule.every().friday.at("17:30").do(self._weekly_report)
         schedule.every(15).minutes.do(self._check_replies)
         schedule.every(15).minutes.do(self._hubspot_pull)
+        # Retreino semanal do modelo preditivo (domingo 03:00)
+        schedule.every().sunday.at("03:00").do(self._retrain_predictive_model)
 
         self._running = True
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -167,6 +169,29 @@ class IALexScheduler:
             pass  # HubSpot nao configurado
         except Exception as e:
             logger.error(f"Erro no HubSpot pull agendado: {e}")
+
+    def _retrain_predictive_model(self):
+        """Retreina o modelo preditivo semanalmente (domingo 03:00)."""
+        try:
+            from tools.predictive_scorer import predictive_scorer
+            result = predictive_scorer.train()
+            if result.get("trained"):
+                logger.info(
+                    f"Modelo preditivo retreinado: {result['samples']} amostras, "
+                    f"{result['positives']} positivos, accuracy {result['accuracy']}"
+                )
+                # Notificar Fernando se houve melhoria significativa
+                self._send_to_owner(
+                    f"🤖 *Modelo preditivo retreinado*\n\n"
+                    f"📊 {result['samples']} escolas analisadas\n"
+                    f"🎯 {result['positives']} positivos (respostas/reunioes)\n"
+                    f"✅ Accuracy: {result['accuracy']}\n\n"
+                    f"O IAlex esta mais inteligente! Pergunte 'top oportunidades' para ver o novo ranking."
+                )
+            else:
+                logger.info(f"Retreino nao realizado: {result.get('reason')}")
+        except Exception as e:
+            logger.error(f"Erro no retreino do modelo preditivo: {e}")
 
     # === Metodos para executar manualmente ===
 

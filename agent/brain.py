@@ -640,13 +640,37 @@ TOOLS = [
     },
     {
         "name": "score_preditivo",
-        "description": "Analisa escolas e preve quais tem mais chance de fechar negocio "
-                       "baseado em historico de engajamento, porte, tipo e interacoes.",
+        "description": "Analisa escolas com MACHINE LEARNING e preve quais tem mais chance de fechar negocio. "
+                       "Usa Logistic Regression treinado com dados reais de fechamento + 11 features "
+                       "(score IA, taxa de abertura, resposta, porte, tipo, contatos, etc.). "
+                       "Se ainda nao ha dados suficientes, usa pesos heuristicos como fallback.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "limite": {"type": "integer", "description": "Top N escolas com maior probabilidade (default 10)"}
+                "limite": {"type": "integer", "description": "Top N escolas com maior probabilidade (default 10)"},
+                "score_minimo": {"type": "integer", "description": "Filtrar escolas com score preditivo >= X (0-100, default 0)"},
+                "escola_id": {"type": "string", "description": "Se informado, retorna predicao detalhada de UMA escola (com fatores)"}
             }
+        }
+    },
+    {
+        "name": "treinar_modelo_preditivo",
+        "description": "Retreina o modelo preditivo de fechamento de vendas usando os dados atuais do banco. "
+                       "Requer pelo menos 10 escolas e 3 positivos (respostas ou reunioes). "
+                       "Roda automaticamente 1x por semana, mas pode ser chamado manualmente para reavaliar "
+                       "apos receber novas respostas.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "info_modelo_preditivo",
+        "description": "Mostra informacoes sobre o modelo preditivo atual: se esta treinado, quantas amostras, "
+                       "taxa de acerto, features mais importantes, quando foi o ultimo treino.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
         }
     },
 ]
@@ -2227,72 +2251,54 @@ def _handle_enviar_whatsapp_escola(params: Dict) -> str:
 
 
 def _handle_score_preditivo(params: Dict) -> str:
-    """Analisa escolas e prevê quais têm mais chance de fechar."""
+    """Analisa escolas com ML e prevê quais têm mais chance de fechar."""
     try:
+        from tools.predictive_scorer import predictive_scorer
+
+        # Se pediu escola especifica, retornar predicao detalhada
+        escola_id = params.get("escola_id")
+        if escola_id:
+            return json.dumps(
+                predictive_scorer.predict_company(escola_id),
+                ensure_ascii=False, default=str,
+            )
+
+        # Senao, retornar ranking
         limite = min(params.get("limite", 10), 30)
+        min_score = params.get("score_minimo", 0)
+        result = predictive_scorer.rank_companies(limit=limite, min_score=min_score)
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
-        # Buscar todas as escolas com dados de engajamento
-        escolas = db.client.table("companies").select(
-            "id,name,city,state,status,qualification_score,admin_category,school_size,phone"
-        ).not_.is_("qualification_score", "null").order("qualification_score", desc=True).limit(100).execute()
 
-        if not escolas.data:
-            return json.dumps({"erro": "Nenhuma escola qualificada encontrada."})
+def _handle_treinar_modelo_preditivo(params: Dict) -> str:
+    """Treina o modelo preditivo com dados atuais."""
+    try:
+        from tools.predictive_scorer import predictive_scorer
+        result = predictive_scorer.train()
+        if result.get("trained"):
+            result["mensagem"] = (
+                f"Modelo treinado com sucesso! {result['samples']} escolas, "
+                f"{result['positives']} positivos, accuracy {result['accuracy']}."
+            )
+        else:
+            result["mensagem"] = result.get("reason", "Treino nao realizado")
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao treinar: {str(e)[:200]}"})
 
-        resultados = []
-        for e in escolas.data:
-            score_base = e.get("qualification_score", 0) or 0
 
-            # Contar interações
-            interactions = db.client.table("interactions").select("type", count="exact").eq("company_id", e["id"]).execute()
-            n_interactions = interactions.count or 0
-
-            # Contar contatos
-            contacts = db.client.table("contacts").select("id", count="exact").eq("company_id", e["id"]).execute()
-            n_contacts = contacts.count or 0
-
-            # Calcular score preditivo (heurístico)
-            pred_score = score_base
-            # Bonus por ter contatos
-            pred_score += min(n_contacts * 5, 20)
-            # Bonus por interações
-            pred_score += min(n_interactions * 3, 15)
-            # Bonus por ser privada (maior poder de compra)
-            if e.get("admin_category") and "privada" in str(e["admin_category"]).lower():
-                pred_score += 10
-            # Bonus por porte grande
-            size = str(e.get("school_size", "")).lower()
-            if "1000" in size:
-                pred_score += 15
-            elif "500" in size or "501" in size:
-                pred_score += 10
-            # Bonus por ter telefone
-            if e.get("phone"):
-                pred_score += 5
-            # Clamp 0-100
-            pred_score = min(max(pred_score, 0), 100)
-
-            resultados.append({
-                "nome": e["name"],
-                "cidade": e.get("city"),
-                "score_qualificacao": score_base,
-                "score_preditivo": pred_score,
-                "contatos": n_contacts,
-                "interacoes": n_interactions,
-                "categoria": e.get("admin_category"),
-                "porte": e.get("school_size"),
-                "status": e.get("status"),
-            })
-
-        # Ordenar por score preditivo
-        resultados.sort(key=lambda x: x["score_preditivo"], reverse=True)
-        resultados = resultados[:limite]
-
-        return json.dumps({
-            "top_oportunidades": resultados,
-            "total_analisadas": len(escolas.data),
-            "aviso": "Score preditivo combina: qualificacao IA + contatos + interacoes + porte + tipo. Quanto maior, maior chance de fechar."
-        }, ensure_ascii=False, default=str)
+def _handle_info_modelo_preditivo(params: Dict) -> str:
+    """Retorna informacoes do modelo preditivo."""
+    try:
+        from tools.predictive_scorer import predictive_scorer
+        info = predictive_scorer.model_info()
+        if info.get("treinado"):
+            info["status"] = f"Modelo treinado com {info['amostras']} amostras ({info['positivos']} positivos). Accuracy: {info['accuracy']}."
+        else:
+            info["status"] = "Modelo ainda nao foi treinado. Usando pesos heuristicos."
+        return json.dumps(info, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
@@ -2343,8 +2349,10 @@ TOOL_HANDLERS = {
     "criar_template": _handle_criar_template,
     # WhatsApp para escolas
     "enviar_whatsapp_escola": _handle_enviar_whatsapp_escola,
-    # Score preditivo
+    # Score preditivo (ML)
     "score_preditivo": _handle_score_preditivo,
+    "treinar_modelo_preditivo": _handle_treinar_modelo_preditivo,
+    "info_modelo_preditivo": _handle_info_modelo_preditivo,
     # Utilitários
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
@@ -2451,6 +2459,24 @@ Voce tem uma MEMORIA PERSISTENTE que atravessa sessoes. Use-a agressivamente:
   → CHAMAR buscar_memorias: escopo=global
 
 NUNCA deixe de gravar um fato importante. A memoria vale mais que qualquer ferramenta — e o que diferencia o IAlex de um bot comum.
+
+== SCORE PREDITIVO COM MACHINE LEARNING ==
+Voce tem um modelo de ML (Logistic Regression) que preve probabilidade de fechamento de cada escola.
+
+*Quando usar score_preditivo:*
+- "Quais escolas tem mais chance de fechar?" → rank por ML
+- "Qual o score preditivo do Colegio X?" → passar escola_id para predicao detalhada
+- "Me mostra top 10 oportunidades com score > 70" → usar score_minimo
+
+*Quando usar treinar_modelo_preditivo:*
+- Depois de receber respostas/reunioes novas (ensina o modelo)
+- Fernando pede explicitamente: "retreine o modelo", "atualiza as previsoes"
+- Automaticamente roda todo domingo 03:00
+
+*Quando usar info_modelo_preditivo:*
+- Fernando pergunta: "como esta o modelo?", "ja foi treinado?", "qual a accuracy?"
+
+*Explicabilidade:* O modelo retorna `fatores_top` quando analisa uma escola especifica — use esses fatores para explicar POR QUE uma escola tem score alto ou baixo. Ex: "Essa escola tem 85% de chance porque tem *taxa de resposta alta* (+2.3) e *email do diretor* (+1.8)".
 
 == FORMATACAO WHATSAPP (SOFISTICADA) ==
 Suas respostas devem ser VISUALMENTE RICAS e bem organizadas. Use TODOS estes recursos:

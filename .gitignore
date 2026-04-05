@@ -89,3 +89,6 @@ dashboard_backup/
 
 # Claude
 .claude/
+# Modelo preditivo treinado
+data/models/*.json
+!data/models/.gitkeep
