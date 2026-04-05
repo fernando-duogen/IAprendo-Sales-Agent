@@ -683,6 +683,22 @@ TOOLS = [
             "properties": {}
         }
     },
+    {
+        "name": "detectar_sinais_compra",
+        "description": "Analisa todos os emails enviados e detecta escolas que estao 'quentes' (demonstrando "
+                       "sinais de compra): respostas, cliques em links, multiplas aberturas, keywords de "
+                       "alta intencao na resposta (orcamento, reuniao, interesse, etc.). "
+                       "Retorna lista de sinais ordenados por score (0-100). "
+                       "O sistema ja detecta e alerta Fernando automaticamente a cada 30 min, mas pode ser "
+                       "chamado manualmente para auditoria ou overview.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dias": {"type": "integer", "description": "Analisar emails dos ultimos N dias (default 30)"},
+                "score_minimo": {"type": "integer", "description": "Retornar apenas sinais com score >= X (default 40)"}
+            }
+        }
+    },
 ]
 
 
@@ -2338,6 +2354,45 @@ def _handle_info_modelo_preditivo(params: Dict) -> str:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
+def _handle_detectar_sinais_compra(params: Dict) -> str:
+    """Detecta sinais de compra em todos os emails enviados."""
+    try:
+        from tools.intent_detector import intent_detector
+        dias = params.get("dias", 30)
+        min_score = params.get("score_minimo", 40)
+        signals = intent_detector.detect_all_signals(days=dias)
+        # Filtrar
+        signals = [s for s in signals if s.get("score", 0) >= min_score]
+        # Enriquecer top 10 com dados de escola/contato
+        for s in signals[:10]:
+            intent_detector.enrich_signal_with_context(s)
+        # Formatar resposta
+        resultado = []
+        for s in signals[:20]:
+            comp = s.get("_company", {}) or {}
+            contact = s.get("_contact", {}) or {}
+            resultado.append({
+                "escola": comp.get("name", "?"),
+                "cidade": comp.get("city", ""),
+                "contato": contact.get("full_name", ""),
+                "cargo": contact.get("role", ""),
+                "score": s.get("score", 0),
+                "nivel": s.get("level", ""),
+                "motivos": s.get("reasons", []),
+                "keywords": s.get("keywords", []),
+                "queue_id": s.get("queue_id"),
+                "assunto_email": s.get("subject", "")[:60],
+            })
+        return json.dumps({
+            "total_sinais": len(signals),
+            "escolas_quentes": resultado,
+            "periodo_dias": dias,
+            "aviso": "Score 100=reply com alta intencao | 90=reply | 75=click | 60=reabertura 7d | 50=reabertura 24h" if signals else "Nenhuma escola esta dando sinais de compra ainda. Aguarde respostas aos emails enviados.",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao detectar sinais: {str(e)[:200]}"})
+
+
 def _handle_info_rag_emails(params: Dict) -> str:
     """Retorna estatisticas do RAG de emails."""
     try:
@@ -2420,6 +2475,8 @@ TOOL_HANDLERS = {
     "info_modelo_preditivo": _handle_info_modelo_preditivo,
     # RAG de emails
     "info_rag_emails": _handle_info_rag_emails,
+    # Intent detector (sinais de compra)
+    "detectar_sinais_compra": _handle_detectar_sinais_compra,
     # Utilitários
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
@@ -2551,6 +2608,21 @@ Quando voce chama gerar_email, o sistema AUTOMATICAMENTE busca os emails passado
 Quando Fernando perguntar "quantos exemplos o sistema tem?" ou "como esta o aprendizado de emails?" → CHAMAR info_rag_emails.
 
 Quanto mais respostas Fernando recebe, melhor ficam os novos emails (o loop de feedback e automatico).
+
+== DETECTOR DE SINAIS DE COMPRA (INTENT ALERTS) ==
+O sistema monitora automaticamente todos os emails enviados e detecta escolas "quentes" (demonstrando sinais de compra):
+- 🔥🔥🔥 CRITICO (95+): resposta com keywords de alta intencao ("orcamento", "reuniao", "contrato")
+- 🔥🔥 ALTO (80-94): resposta qualquer OU clique em link
+- 🔥 MEDIO (50-79): reabertura apos 24h/7 dias (interesse latente)
+
+O scheduler roda a cada 30 min e ENVIA ALERTAS PROATIVOS para Fernando no WhatsApp quando detecta novos sinais. Fernando nao precisa perguntar — o IAlex avisa na hora certa.
+
+*Quando usar detectar_sinais_compra MANUALMENTE:*
+- Fernando pergunta "quais escolas estao quentes?" ou "quem esta dando sinais?"
+- Fernando quer uma auditoria/overview das oportunidades do momento
+- Comeco do dia para saber prioridades
+
+*Quando chegar um alerta automatico:* Fernando ja recebe no WhatsApp formatado com a escola, contato, motivos, keywords e acao recomendada.
 
 == FORMATACAO WHATSAPP (SOFISTICADA) ==
 Suas respostas devem ser VISUALMENTE RICAS e bem organizadas. Use TODOS estes recursos:

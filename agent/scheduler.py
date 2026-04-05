@@ -35,6 +35,8 @@ class IALexScheduler:
         schedule.every().friday.at("17:30").do(self._weekly_report)
         schedule.every(15).minutes.do(self._check_replies)
         schedule.every(15).minutes.do(self._hubspot_pull)
+        # Detector de sinais de compra (intent alerts) — a cada 30 min
+        schedule.every(30).minutes.do(self._check_buying_signals)
         # Retreino semanal do modelo preditivo (domingo 03:00)
         schedule.every().sunday.at("03:00").do(self._retrain_predictive_model)
 
@@ -169,6 +171,23 @@ class IALexScheduler:
             pass  # HubSpot nao configurado
         except Exception as e:
             logger.error(f"Erro no HubSpot pull agendado: {e}")
+
+    def _check_buying_signals(self):
+        """Detecta sinais de compra (intent alerts) e notifica Fernando na hora.
+        Roda a cada 30 minutos. Usa o modulo intent_detector com dedup via memoria.
+        """
+        try:
+            from tools.intent_detector import intent_detector
+            new_alerts = intent_detector.get_new_alerts(days=7, min_score=50)
+            if not new_alerts:
+                return
+            logger.info(f"Intent detector: {len(new_alerts)} novo(s) alerta(s) de compra")
+            for signal in new_alerts:
+                message = intent_detector.format_for_whatsapp(signal)
+                self._send_to_owner(message)
+                intent_detector.mark_alerted(signal)
+        except Exception as e:
+            logger.error(f"Erro no check buying signals: {e}")
 
     def _retrain_predictive_model(self):
         """Retreina o modelo preditivo semanalmente (domingo 03:00)."""
