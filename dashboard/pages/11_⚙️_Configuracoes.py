@@ -275,11 +275,105 @@ with col_run:
             st.error(f"Erro ao disparar: {e}")
 
 # =============================================================================
+# Secao 6 - Follow-ups comportamentais (Item 6)
+# =============================================================================
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+section_header("Follow-ups automaticos (comportamentais)", "forum")
+
+st.caption(
+    "O IAlex analisa o tracking de cada email enviado (abriu? clicou? sumiu?) "
+    "e gera follow-ups personalizados por comportamento. Tudo passa pela fila "
+    "de aprovacao — voce so precisa revisar."
+)
+
+fu_enabled = st.toggle(
+    "Ativar follow-ups automaticos",
+    value=bool(cfg.get("followup_enabled", False)),
+    key="fu_enabled_toggle",
+)
+
+col_fu_a, col_fu_b = st.columns([1, 2])
+with col_fu_a:
+    try:
+        fh, fm = cfg.get("followup_time", "09:30").split(":")
+        fu_current_time = dtime(int(fh), int(fm))
+    except Exception:
+        fu_current_time = dtime(9, 30)
+    fu_time = st.time_input(
+        "Horario (diario)",
+        value=fu_current_time,
+        key="fu_time_input",
+    )
+with col_fu_b:
+    fu_limit = st.number_input(
+        "Maximo de follow-ups por execucao",
+        min_value=1, max_value=100, step=1,
+        value=int(cfg.get("followup_limit", 20)),
+        key="fu_limit_input",
+    )
+
+# Tipos comportamentais permitidos
+FU_TYPE_OPTIONS = [
+    ("hot_click", "🔥 Hot click — clicou em link (alta prioridade)"),
+    ("curious_open", "👀 Curious open — abriu 2+ vezes sem responder"),
+    ("silent_open", "📬 Silent open — abriu 1x e sumiu"),
+    ("revival", "🧊 Revival — nao abriu, angulo totalmente novo"),
+]
+current_fu_types = set(cfg.get("followup_types", ["hot_click", "curious_open", "silent_open", "revival"]))
+
+fu_type_labels = [lbl for _, lbl in FU_TYPE_OPTIONS]
+fu_type_keys = [k for k, _ in FU_TYPE_OPTIONS]
+default_fu_labels = [lbl for k, lbl in FU_TYPE_OPTIONS if k in current_fu_types]
+
+selected_fu_type_labels = st.multiselect(
+    "Tipos de follow-up permitidos",
+    options=fu_type_labels,
+    default=default_fu_labels,
+    help="Escolha quais comportamentos disparam follow-up automatico.",
+    key="fu_types_multi",
+)
+selected_fu_types = [fu_type_keys[fu_type_labels.index(lbl)] for lbl in selected_fu_type_labels]
+
+col_fu_save, col_fu_run = st.columns([2, 1])
+with col_fu_save:
+    if st.button("💾 Salvar follow-ups", type="primary", use_container_width=True, key="btn_save_fu"):
+        new_cfg = pipeline_config.get_config()  # recarrega pra nao sobrescrever pipeline
+        new_cfg["followup_enabled"] = fu_enabled
+        new_cfg["followup_time"] = fu_time.strftime("%H:%M")
+        new_cfg["followup_limit"] = int(fu_limit)
+        new_cfg["followup_types"] = selected_fu_types
+        if not selected_fu_types:
+            st.error("Selecione pelo menos um tipo de follow-up.")
+        elif pipeline_config.save_config(new_cfg):
+            try:
+                from agent.scheduler import ialex_scheduler
+                if getattr(ialex_scheduler, "_running", False):
+                    ialex_scheduler.reload_followup_schedule()
+            except Exception:
+                pass
+            st.success(
+                f"✅ Follow-ups {'ATIVOS' if fu_enabled else 'DESATIVADOS'}. "
+                f"Rodam diariamente as {fu_time.strftime('%H:%M')}."
+            )
+            st.rerun()
+        else:
+            st.error("Falha ao salvar configuracao de follow-ups.")
+
+with col_fu_run:
+    if st.button("▶️ Rodar follow-ups agora", use_container_width=True, key="btn_run_fu"):
+        try:
+            from agent.scheduler import ialex_scheduler
+            ialex_scheduler.run_followup_now()
+            st.success("✅ Geracao de follow-ups iniciada em segundo plano. Resumo chegara no WhatsApp.")
+        except Exception as e:
+            st.error(f"Erro: {e}")
+
+# =============================================================================
 # Rodape - Dica
 # =============================================================================
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 st.info(
-    "💡 **Dica**: voce tambem pode configurar o pipeline automatico pelo WhatsApp. "
-    "Diga ao IAlex: \"Muda o pipeline para rodar as 7h de segunda a sexta\" ou "
-    "\"Como esta o pipeline automatico?\" ou \"Roda o pipeline agora\"."
+    "💡 **Dica**: voce tambem pode controlar pelo WhatsApp. "
+    "Diga ao IAlex: \"Como esta o pipeline automatico?\", \"Ativa os follow-ups\", "
+    "\"Gera follow-ups agora\" ou \"Quais leads estao prontos para follow-up?\""
 )

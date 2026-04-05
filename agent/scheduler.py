@@ -21,6 +21,7 @@ class IALexScheduler:
 
     # Tag usada nos jobs do pipeline automatico (facilita reload dinamico)
     PIPELINE_TAG = "automated_pipeline"
+    FOLLOWUP_TAG = "automated_followup"
 
     def __init__(self):
         self._running = False
@@ -45,6 +46,9 @@ class IALexScheduler:
 
         # Pipeline automatico dinamico (carregado da config do banco)
         self._register_automated_pipeline()
+
+        # Follow-ups comportamentais automaticos (Item 6)
+        self._register_automated_followup()
 
         self._running = True
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -411,6 +415,135 @@ class IALexScheduler:
     def run_pipeline_now(self):
         """Executa o pipeline automatico imediatamente (manual/teste)."""
         self._run_automated_pipeline(triggered_by="manual")
+
+    # ============================================================
+    # FOLLOW-UPS COMPORTAMENTAIS (Item 6)
+    # ============================================================
+
+    def _register_automated_followup(self):
+        """Registra job diario de follow-ups comportamentais com base na config."""
+        try:
+            from integrations.pipeline_config import pipeline_config
+            cfg = pipeline_config.get_config()
+            if not cfg.get("followup_enabled", False):
+                logger.info("Follow-ups automaticos desabilitados")
+                return
+            time_str = cfg.get("followup_time", "09:30")
+            schedule.every().day.at(time_str).do(
+                self._run_follow_up_generation
+            ).tag(self.FOLLOWUP_TAG)
+            logger.info("Follow-ups automaticos registrados", extra={
+                "time": time_str,
+                "limit": cfg.get("followup_limit", 20),
+                "types": cfg.get("followup_types"),
+            })
+        except Exception as e:
+            logger.error(f"Erro ao registrar follow-ups automaticos: {e}")
+
+    def reload_followup_schedule(self):
+        """Limpa jobs antigos de follow-up e re-registra."""
+        try:
+            schedule.clear(self.FOLLOWUP_TAG)
+        except Exception:
+            pass
+        self._register_automated_followup()
+
+    def _run_follow_up_generation(self, triggered_by: str = "schedule"):
+        """Executa geracao de follow-ups comportamentais em background."""
+        def _runner():
+            try:
+                from workflows.follow_up_manager import run_follow_up_check
+                from integrations.pipeline_config import pipeline_config
+
+                cfg = pipeline_config.get_config()
+                limit = cfg.get("followup_limit", 20)
+                allowed = cfg.get("followup_types") or None
+
+                logger.info("Follow-ups automaticos: INICIANDO", extra={
+                    "triggered_by": triggered_by,
+                    "limit": limit,
+                    "allowed_types": allowed,
+                })
+
+                result = run_follow_up_check(limit=limit, allowed_types=allowed)
+                message = self._format_followup_summary(result, triggered_by)
+                self._send_to_owner(message)
+            except Exception as e:
+                logger.error(f"Erro follow-ups automaticos: {e}", exc_info=True)
+                try:
+                    self._send_to_owner(
+                        f"❌ *Follow-ups automaticos FALHARAM*\n\n"
+                        f"Erro: `{str(e)[:300]}`"
+                    )
+                except Exception:
+                    pass
+
+        threading.Thread(target=_runner, daemon=True).start()
+
+    def _format_followup_summary(self, result: dict, triggered_by: str) -> str:
+        """Formata o resumo de follow-ups para WhatsApp."""
+        generated = result.get("generated", 0)
+        errors = result.get("errors", 0)
+        due = result.get("due_found", 0)
+        by_type = result.get("by_type", {}) or {}
+
+        emoji_map = {
+            "hot_click": "🔥",
+            "curious_open": "👀",
+            "silent_open": "📬",
+            "revival": "🧊",
+        }
+        label_map = {
+            "hot_click": "hot click (alta prioridade)",
+            "curious_open": "curious open",
+            "silent_open": "silent open",
+            "revival": "revival",
+        }
+
+        header = (
+            "🔄 *Follow-ups automaticos*"
+            if triggered_by == "schedule"
+            else "🔄 *Follow-ups (manual)*"
+        )
+
+        lines = [header]
+        lines.append(f"📅 {datetime.now().strftime('%d/%m %H:%M')}")
+        lines.append("")
+        lines.append(f"📊 *Resumo:* {generated} gerados | {errors} erros | {due} detectados")
+
+        if generated > 0:
+            lines.append("")
+            lines.append("*Por tipo comportamental:*")
+            for t, n in by_type.items():
+                if n > 0:
+                    emoji = emoji_map.get(t, "•")
+                    label = label_map.get(t, t)
+                    lines.append(f"   {emoji} {label}: {n}")
+
+        # Fila pendente total
+        try:
+            from database.supabase_client import db as _db
+            q = _db.client.table("approval_queue").select("id", count="exact").eq(
+                "status", "pending"
+            ).execute()
+            pending = q.count or 0
+            lines.append("")
+            lines.append(f"📋 *Fila de aprovacao:* {pending} email(s) aguardando")
+        except Exception:
+            pass
+
+        if generated == 0 and due == 0:
+            lines.append("")
+            lines.append("_Nenhum lead esta pronto para follow-up agora._")
+        elif generated > 0:
+            lines.append("")
+            lines.append("⚡ *Proximo passo:* revise na fila de aprovacao")
+
+        return "\n".join(lines)
+
+    def run_followup_now(self):
+        """Executa geracao de follow-ups imediatamente (manual/teste)."""
+        self._run_follow_up_generation(triggered_by="manual")
 
     # === Metodos para executar manualmente ===
 

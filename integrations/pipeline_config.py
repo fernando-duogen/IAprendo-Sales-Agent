@@ -65,6 +65,11 @@ class PipelineConfig:
             "dry_run": False,
             "last_run_at": None,
             "last_run_status": None,
+            # Follow-ups comportamentais (Item 6)
+            "followup_enabled": False,
+            "followup_time": "09:30",
+            "followup_limit": 20,
+            "followup_types": ["hot_click", "curious_open", "silent_open", "revival"],
         }
 
     # =========================================================================
@@ -118,6 +123,27 @@ class PipelineConfig:
         # send_approved / dry_run
         out["send_approved"] = bool(out.get("send_approved", False))
         out["dry_run"] = bool(out.get("dry_run", False))
+
+        # === Follow-ups (Item 6) ===
+        out["followup_enabled"] = bool(out.get("followup_enabled", False))
+
+        fu_time = str(out.get("followup_time", "09:30"))
+        try:
+            hh, mm = fu_time.split(":")
+            h, m = int(hh), int(mm)
+            assert 0 <= h <= 23 and 0 <= m <= 59
+            out["followup_time"] = f"{h:02d}:{m:02d}"
+        except Exception:
+            out["followup_time"] = "09:30"
+
+        out["followup_limit"] = max(1, min(100, int(out.get("followup_limit", 20) or 20)))
+
+        valid_fu_types = {"hot_click", "curious_open", "silent_open", "revival"}
+        fu_types = out.get("followup_types") or []
+        fu_types = [t for t in fu_types if t in valid_fu_types]
+        if not fu_types:
+            fu_types = list(valid_fu_types)
+        out["followup_types"] = fu_types
 
         return out
 

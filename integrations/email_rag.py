@@ -261,6 +261,87 @@ class EmailRAG:
         )
         return "\n".join(parts)
 
+    def get_successful_followups(
+        self,
+        follow_up_type: Optional[str] = None,
+        company_context: Optional[Dict[str, Any]] = None,
+        limit: int = 2,
+    ) -> List[Dict[str, Any]]:
+        """Retorna follow-ups passados que foram respondidos/clicados, filtrados
+        por tipo comportamental (hot_click, curious_open, silent_open, revival).
+
+        Um "follow-up bem-sucedido" e uma mensagem com follow_up_number > 0 que
+        recebeu reply ou click. O tipo e inferido de tags no campo reasoning/notes
+        (se disponiveis), ou pelo padrao de tracking da mensagem PAI.
+
+        Args:
+            follow_up_type: tipo comportamental desejado (hot_click, etc.) ou None
+            company_context: dict com school_size, admin_category, city, state
+            limit: max exemplos a retornar
+
+        Returns:
+            Lista de dicts com subject, body, _company, _contact, _fu_type, etc.
+        """
+        try:
+            # Buscar follow-ups que receberam reply ou click
+            r = db.client.table("approval_queue").select(
+                "id,subject,body,company_id,contact_id,sent_at,replied_at,"
+                "opened_at,clicked_at,follow_up_number,parent_id"
+            ).eq("status", "sent").gt("follow_up_number", 0).or_(
+                "replied_at.not.is.null,clicked_at.not.is.null"
+            ).order("replied_at", desc=True, nullsfirst=False).limit(30).execute()
+            followups = r.data or []
+        except Exception as e:
+            logger.debug(f"email_rag get_successful_followups: {e}")
+            return []
+
+        if not followups:
+            return []
+
+        # Enriquecer com dados da empresa
+        company_ids = list({f["company_id"] for f in followups if f.get("company_id")})
+        companies_map: Dict[str, Dict] = {}
+        if company_ids:
+            try:
+                comps = db.client.table("companies").select(
+                    "id,name,city,state,school_size,admin_category"
+                ).in_("id", company_ids).execute().data or []
+                companies_map = {c["id"]: c for c in comps}
+            except Exception:
+                pass
+        for f in followups:
+            f["_company"] = companies_map.get(f.get("company_id"), {})
+            # Inferir tipo comportamental da propria mensagem (se clicou → hot_click, etc.)
+            if f.get("clicked_at"):
+                f["_fu_type"] = "hot_click"
+            elif f.get("replied_at"):
+                f["_fu_type"] = "replied"
+            elif f.get("opened_at"):
+                f["_fu_type"] = "opened"
+            else:
+                f["_fu_type"] = "unknown"
+            # Tier para scoring
+            f["_rag_tier"] = 1 if f.get("replied_at") else 2
+
+        # Filtrar por tipo se fornecido
+        candidates = followups
+        if follow_up_type:
+            # Para hot_click, preferir exemplos que tbm clicaram
+            if follow_up_type == "hot_click":
+                prefered = [f for f in followups if f["_fu_type"] == "hot_click"]
+                candidates = prefered or followups
+            # Outros tipos: usar qualquer exemplo (RAG e de tom, nao de tipo exato)
+
+        # Scoring por similaridade + tier
+        tier_base = {1: 10.0, 2: 5.0}
+        for f in candidates:
+            base = tier_base.get(f.get("_rag_tier", 2), 3.0)
+            sim = self._score_similarity(f, company_context or {})
+            f["_rag_score"] = base + sim
+
+        candidates.sort(key=lambda x: x.get("_rag_score", 0), reverse=True)
+        return candidates[:limit]
+
     def invalidate_cache(self) -> None:
         """Forca recarregamento do cache na proxima chamada."""
         self._cache = None

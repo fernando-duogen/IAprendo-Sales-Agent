@@ -750,6 +750,55 @@ TOOLS = [
             "properties": {}
         }
     },
+    {
+        "name": "classificar_followups",
+        "description": "Analisa todos os emails enviados e classifica leads prontos para follow-up por tipo "
+                       "COMPORTAMENTAL: hot_click (clicou no link), curious_open (abriu 2+ vezes sem responder), "
+                       "silent_open (abriu 1x e sumiu), revival (nao abriu, silencio total). "
+                       "Use quando Fernando perguntar 'quais leads estao prontos para follow-up?', "
+                       "'quem esta quente?' ou 'me mostra os followups devidos'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limite": {"type": "integer", "description": "Max leads a retornar (default 20)"},
+                "tipos": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["hot_click", "curious_open", "silent_open", "revival"]},
+                    "description": "Filtrar por tipos especificos (opcional)"
+                }
+            }
+        }
+    },
+    {
+        "name": "configurar_followups_automaticos",
+        "description": "Ativa/desativa e configura os follow-ups automaticos comportamentais. O sistema roda "
+                       "diariamente no horario configurado, analisa comportamento dos leads e gera follow-ups "
+                       "personalizados por tipo. Use quando Fernando disser 'ativa os followups', 'muda horario "
+                       "dos followups' ou 'so quero followups de quem clicou'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ativar": {"type": "boolean", "description": "True para ativar, False para desativar"},
+                "horario": {"type": "string", "description": "Horario HH:MM para rodar diariamente"},
+                "limite": {"type": "integer", "description": "Max follow-ups gerados por execucao"},
+                "tipos_permitidos": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["hot_click", "curious_open", "silent_open", "revival"]},
+                    "description": "Tipos comportamentais permitidos"
+                }
+            }
+        }
+    },
+    {
+        "name": "rodar_followups_agora",
+        "description": "Dispara geracao de follow-ups comportamentais IMEDIATAMENTE (fora do horario). Use "
+                       "quando Fernando disser 'gera followups agora', 'roda os followups' ou 'cria os "
+                       "followups pendentes'. Usa a classificacao comportamental e envia resumo no WhatsApp.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
 ]
 
 
@@ -2564,6 +2613,114 @@ def _handle_configurar_pipeline_automatico(params: Dict) -> str:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
+def _handle_classificar_followups(params: Dict) -> str:
+    """Lista leads prontos para follow-up classificados por tipo comportamental."""
+    try:
+        from workflows.follow_up_manager import get_due_follow_ups, FOLLOW_UP_TYPES
+        limite = min(int(params.get("limite", 20)), 50)
+        tipos = params.get("tipos")
+        due = get_due_follow_ups(limit=limite, allowed_types=tipos)
+
+        # Enriquecer com nome da escola
+        company_ids = list({d["company_id"] for d in due if d.get("company_id")})
+        companies_map: Dict[str, Dict] = {}
+        if company_ids:
+            try:
+                comps = db.client.table("companies").select(
+                    "id,name,city,state"
+                ).in_("id", company_ids).execute().data or []
+                companies_map = {c["id"]: c for c in comps}
+            except Exception:
+                pass
+
+        by_type: Dict[str, list] = {}
+        for item in due:
+            t = item.get("follow_up_type", "?")
+            comp = companies_map.get(item.get("company_id"), {})
+            by_type.setdefault(t, []).append({
+                "escola": comp.get("name", "?"),
+                "cidade": comp.get("city", ""),
+                "dias_desde_envio": item.get("days_since_sent", 0),
+                "assunto_original": item.get("original_subject", "")[:50],
+                "queue_id": item.get("queue_id"),
+            })
+
+        resumo = {t: len(v) for t, v in by_type.items()}
+        return json.dumps({
+            "total": len(due),
+            "por_tipo": resumo,
+            "detalhes": by_type,
+            "labels": {t: FOLLOW_UP_TYPES[t]["label"] for t in FOLLOW_UP_TYPES if t in by_type},
+            "aviso": (
+                "Tipos: hot_click=clicou (mais quente), curious_open=abriu 2+ vezes, "
+                "silent_open=abriu 1x e sumiu, revival=nao abriu nada."
+            ) if due else "Nenhum lead pronto para follow-up no momento."
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_configurar_followups_automaticos(params: Dict) -> str:
+    """Atualiza config de follow-ups automaticos e recarrega scheduler."""
+    try:
+        from integrations.pipeline_config import pipeline_config
+        cfg = pipeline_config.get_config()
+
+        if "ativar" in params:
+            cfg["followup_enabled"] = bool(params["ativar"])
+        if "horario" in params:
+            cfg["followup_time"] = params["horario"]
+        if "limite" in params:
+            cfg["followup_limit"] = int(params["limite"])
+        if "tipos_permitidos" in params:
+            cfg["followup_types"] = params["tipos_permitidos"]
+
+        if not pipeline_config.save_config(cfg):
+            return json.dumps({"erro": "Falha ao salvar"})
+
+        try:
+            from agent.scheduler import ialex_scheduler
+            if getattr(ialex_scheduler, "_running", False):
+                ialex_scheduler.reload_followup_schedule()
+        except Exception as e:
+            logger.debug(f"reload followup: {e}")
+
+        final_cfg = pipeline_config.get_config()
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": (
+                f"Follow-ups {'ATIVOS' if final_cfg['followup_enabled'] else 'DESATIVADOS'}. "
+                f"Rodam as {final_cfg['followup_time']}, max {final_cfg['followup_limit']}/dia. "
+                f"Tipos: {', '.join(final_cfg['followup_types'])}."
+            ),
+            "config": {
+                "ativo": final_cfg["followup_enabled"],
+                "horario": final_cfg["followup_time"],
+                "limite": final_cfg["followup_limit"],
+                "tipos": final_cfg["followup_types"],
+            }
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_rodar_followups_agora(params: Dict) -> str:
+    """Dispara geracao imediata de follow-ups comportamentais em background."""
+    try:
+        from agent.scheduler import ialex_scheduler
+        ialex_scheduler.run_followup_now()
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": (
+                "Follow-ups comportamentais iniciados em segundo plano. "
+                "Voce recebera um resumo por tipo (hot_click, curious_open, etc.) "
+                "no WhatsApp quando terminar."
+            )
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
 def _handle_rodar_pipeline_automatico_agora(params: Dict) -> str:
     """Dispara execucao imediata do pipeline automatico (em background thread)."""
     try:
@@ -2639,6 +2796,10 @@ TOOL_HANDLERS = {
     "ver_pipeline_automatico": _handle_ver_pipeline_automatico,
     "configurar_pipeline_automatico": _handle_configurar_pipeline_automatico,
     "rodar_pipeline_automatico_agora": _handle_rodar_pipeline_automatico_agora,
+    # Follow-ups comportamentais (Item 6)
+    "classificar_followups": _handle_classificar_followups,
+    "configurar_followups_automaticos": _handle_configurar_followups_automaticos,
+    "rodar_followups_agora": _handle_rodar_followups_agora,
     # Utilitários
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
@@ -2661,7 +2822,7 @@ Voce tem acesso a:
 2. *COMPANHEIRO DE CAMPO*: Quando Fernando esta na rua visitando escolas, ajuda-lo a encontrar escolas perto, dar informacoes rapidas, registrar visitas
 3. *AGENTE DE VENDAS*: Qualificar leads, enriquecer contatos, gerar emails, acompanhar pipeline, sugerir acoes comerciais
 
-== ESCOLHA DE FERRAMENTAS (45 disponiveis) ==
+== ESCOLHA DE FERRAMENTAS (48 disponiveis) ==
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
@@ -2809,6 +2970,37 @@ O IAlex pode rodar o pipeline SOZINHO, de forma autonoma, em horarios configurad
 - "Dispara o automatico"
 
 Ao terminar qualquer execucao, Fernando recebe automaticamente um resumo completo no WhatsApp com: escolas qualificadas, enriquecidas, contatos encontrados, emails gerados e fila pendente. Ele so precisa revisar a fila de aprovacao depois.
+
+== FOLLOW-UPS COMPORTAMENTAIS (ITEM 6) ==
+O IAlex nao manda follow-ups por sequencia fixa dia 3/7/14 — ele ANALISA o comportamento de cada lead e escolhe o follow-up certo:
+
+- 🔥 *hot_click*: lead CLICOU em link → tom comercial direto, proposta de agendamento (prioridade 1)
+- 👀 *curious_open*: abriu 2+ vezes sem responder → compartilhar valor adicional (curiosidade latente)
+- 📬 *silent_open*: abriu 1x e sumiu → lembrete gentil, 3 linhas
+- 🧊 *revival*: nao abriu nada em 7+ dias → assunto novo, angulo totalmente diferente
+
+O scheduler roda diariamente (se ativado em Configuracoes) e Fernando recebe resumo por tipo no WhatsApp. Cada follow-up passa pela fila de aprovacao antes de enviar.
+
+*Quando usar classificar_followups:*
+- "Quais leads estao prontos para follow-up?"
+- "Quem esta quente?"
+- "Me mostra os followups devidos"
+- "Tem gente que clicou?"
+
+*Quando usar configurar_followups_automaticos:*
+- "Ativa os followups automaticos"
+- "Muda horario dos followups para 10h"
+- "Aumenta limite para 30 followups por dia"
+- "So quero followups de quem clicou" → tipos_permitidos=["hot_click"]
+
+*Quando usar rodar_followups_agora:*
+- "Gera os followups agora"
+- "Roda os followups manuais"
+- "Cria os followups pendentes"
+
+*Quando usar gerar_followups (legado):* mesma coisa que rodar_followups_agora — prefira o novo.
+
+IMPORTANTE: se o lead JA RESPONDEU ao email, o intent_detector assume (nao manda follow-up, alerta Fernando). Follow-ups sao so para quem NAO respondeu.
 
 == FORMATACAO WHATSAPP (SOFISTICADA) ==
 Suas respostas devem ser VISUALMENTE RICAS e bem organizadas. Use TODOS estes recursos:
