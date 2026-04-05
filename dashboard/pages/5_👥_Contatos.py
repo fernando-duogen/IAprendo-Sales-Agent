@@ -300,13 +300,14 @@ DM_TYPE_LABEL = {
 tab_lista, tab_hierarquia = st.tabs(["📋 Lista", "🏛️ Hierarquia (Power Map)"])
 
 # ===========================================================================
-# TAB 1: LISTA — Agrupada por escola (expanders) com delete inline
+# TAB 1: LISTA — Tabela completa com filtros avançados, agrupamento e ações
 # ===========================================================================
 with tab_lista:
     import unicodedata
+    import pandas as pd
 
     def _normalize_name(name: str) -> str:
-        """Normaliza nome para deteccao de duplicatas: lowercase, sem acentos, sem espacos extras."""
+        """Normaliza nome para deteccao de duplicatas: lowercase, sem acentos."""
         if not name:
             return ""
         nfkd = unicodedata.normalize("NFKD", name)
@@ -314,27 +315,45 @@ with tab_lista:
         return " ".join(ascii_str.lower().split())
 
     def _find_duplicates(contacts_list):
-        """Encontra contatos duplicados (mesmo nome normalizado OR mesmo email) dentro do mesmo grupo.
-        Retorna lista de grupos de duplicatas: [[c1, c2], [c3, c4, c5], ...]
-        """
+        """Encontra grupos de contatos duplicados (mesmo email OR mesmo nome normalizado)."""
         by_key = {}
         for ct in contacts_list:
             email = (ct.get("email") or "").strip().lower()
             name_norm = _normalize_name(ct.get("full_name") or "")
-            # Prioridade: email > nome
             key = f"email:{email}" if email else f"name:{name_norm}"
             if not email and not name_norm:
                 continue
             by_key.setdefault(key, []).append(ct)
         return [group for group in by_key.values() if len(group) > 1]
 
-    # Botao de remocao de duplicatas (topo)
+    # Montar lista plana de contatos das escolas filtradas
     filtered_ids = {c["id"] for c in filtered}
-    contatos_das_escolas_filtradas = [
-        ct for ct in all_contacts if ct.get("company_id") in filtered_ids
-    ]
+    company_by_id = {c["id"]: c for c in all_companies}
+    contatos_plano = []
+    for ct in all_contacts:
+        cid = ct.get("company_id")
+        if cid not in filtered_ids:
+            continue
+        comp = company_by_id.get(cid, {})
+        contatos_plano.append({
+            "id": ct.get("id"),
+            "company_id": cid,
+            "Escola": comp.get("name", "?"),
+            "Cidade": comp.get("city", ""),
+            "UF": comp.get("state", ""),
+            "Score Escola": comp.get("qualification_score") or 0,
+            "Nome": ct.get("full_name") or "?",
+            "Cargo": ct.get("role") or "",
+            "Tipo": DM_TYPE_LABEL.get(ct.get("decision_maker_type", "outro"), "👤 Outro"),
+            "Email": ct.get("email") or "",
+            "Telefone": ct.get("phone") or "",
+            "WhatsApp": ct.get("phone_whatsapp") or "",
+            "Prioridade": ct.get("outreach_priority") or 99,
+            "Fonte": SRC_LABELS.get(ct.get("source", ""), ct.get("source", "") or ""),
+            "Confiança": ct.get("confidence_score") or 0,
+        })
 
-    # Detectar duplicatas POR escola
+    # Detectar duplicatas (por escola) para mostrar aviso + botao de limpeza
     total_duplicatas = 0
     duplicatas_por_escola = {}
     for comp in filtered:
@@ -345,6 +364,54 @@ with tab_lista:
             duplicatas_por_escola[cid] = dup_groups
             total_duplicatas += sum(len(g) - 1 for g in dup_groups)
 
+    # ------------------- FILTROS AVANÇADOS -------------------
+    st.markdown(
+        '<p style="font-size:12px;font-weight:600;color:#757575;text-transform:uppercase;'
+        'letter-spacing:0.5px;margin-bottom:4px">Filtros e agrupamento</p>',
+        unsafe_allow_html=True,
+    )
+    fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 2])
+    with fc1:
+        ct_search = st.text_input(
+            "Buscar (nome, escola, email, cargo):",
+            placeholder="Digite qualquer texto...",
+            key="ct_global_search",
+        )
+    with fc2:
+        tipo_opts = sorted({c["Tipo"] for c in contatos_plano})
+        ct_tipo = st.multiselect("Tipo de decisor:", tipo_opts, default=[], key="ct_tipo_filter")
+    with fc3:
+        ct_email_filter = st.selectbox(
+            "Email:",
+            ["Todos", "Com email", "Sem email"],
+            key="ct_email_filter",
+        )
+    with fc4:
+        ct_group_by = st.selectbox(
+            "Agrupar por:",
+            ["Nenhum (tabela plana)", "Escola", "Cidade/UF", "Tipo", "Fonte"],
+            key="ct_group_by",
+        )
+
+    # Aplicar filtros
+    filtered_cts = contatos_plano
+    if ct_search:
+        q = ct_search.lower()
+        filtered_cts = [
+            c for c in filtered_cts
+            if q in c["Nome"].lower()
+            or q in c["Escola"].lower()
+            or q in c["Email"].lower()
+            or q in c["Cargo"].lower()
+        ]
+    if ct_tipo:
+        filtered_cts = [c for c in filtered_cts if c["Tipo"] in ct_tipo]
+    if ct_email_filter == "Com email":
+        filtered_cts = [c for c in filtered_cts if c["Email"]]
+    elif ct_email_filter == "Sem email":
+        filtered_cts = [c for c in filtered_cts if not c["Email"]]
+
+    # ------------------- AVISO DUPLICATAS -------------------
     if total_duplicatas > 0:
         dup_col1, dup_col2 = st.columns([3, 1])
         with dup_col1:
@@ -363,7 +430,6 @@ with tab_lista:
                 removed = 0
                 for cid, dup_groups in duplicatas_por_escola.items():
                     for group in dup_groups:
-                        # Manter o contato com MAIOR confianca; se empate, o que tem email
                         def _score(c):
                             return (
                                 c.get("confidence_score") or 0,
@@ -372,92 +438,153 @@ with tab_lista:
                                 -((c.get("outreach_priority") or 99)),
                             )
                         sorted_group = sorted(group, key=_score, reverse=True)
-                        keep = sorted_group[0]
                         for c in sorted_group[1:]:
                             try:
                                 db.client.table("contacts").delete().eq("id", c["id"]).execute()
                                 removed += 1
-                            except Exception as e:
-                                logger.error(f"Erro ao deletar duplicata: {e}") if False else None
+                            except Exception:
+                                pass
                 st.success(f"Removidas {removed} duplicatas!")
                 st.rerun()
 
-    if not contatos_das_escolas_filtradas:
-        alert_banner("Nenhum contato encontrado nas escolas filtradas.", "info")
+    # ------------------- EXIBIÇÃO -------------------
+    if not filtered_cts:
+        alert_banner("Nenhum contato encontrado com esses filtros.", "info")
     else:
-        st.caption(f"Exibindo {len(contatos_das_escolas_filtradas)} contato(s) em {len(filtered)} escola(s). Clique em uma escola para expandir.")
+        col_defs = {
+            "Escola": st.column_config.TextColumn("Escola", width="medium"),
+            "Cidade": st.column_config.TextColumn("Cidade", width="small"),
+            "UF": st.column_config.TextColumn("UF", width="small"),
+            "Score Escola": st.column_config.ProgressColumn("Score", width="small", min_value=0, max_value=100, format="%d"),
+            "Nome": st.column_config.TextColumn("Nome", width="medium"),
+            "Cargo": st.column_config.TextColumn("Cargo", width="medium"),
+            "Tipo": st.column_config.TextColumn("Tipo", width="small"),
+            "Email": st.column_config.TextColumn("Email", width="medium"),
+            "Telefone": st.column_config.TextColumn("Telefone", width="small"),
+            "Prioridade": st.column_config.NumberColumn("Prior.", width="small", format="%d"),
+            "Fonte": st.column_config.TextColumn("Fonte", width="small"),
+            "Confiança": st.column_config.ProgressColumn("Confiança", width="small", min_value=0, max_value=100, format="%d"),
+        }
+        display_cols = ["Escola", "Cidade", "UF", "Nome", "Cargo", "Tipo", "Email", "Telefone", "Prioridade", "Fonte", "Confiança", "Score Escola"]
 
-        # Agrupar contatos por escola
-        contatos_por_escola_filtrada = {}
-        for ct in contatos_das_escolas_filtradas:
-            cid = ct.get("company_id")
-            contatos_por_escola_filtrada.setdefault(cid, []).append(ct)
+        # ========== TABELA PLANA (sem agrupamento) ==========
+        if ct_group_by == "Nenhum (tabela plana)":
+            st.caption(f"Exibindo {len(filtered_cts)} contato(s). Ordene clicando nos cabeçalhos. Clique em uma linha para ver ações.")
 
-        # Ordenar escolas por quantidade de contatos (mais ricas primeiro)
-        escolas_ordenadas = sorted(
-            filtered,
-            key=lambda c: len(contatos_por_escola_filtrada.get(c["id"], [])),
-            reverse=True,
-        )
+            df_contatos = pd.DataFrame(filtered_cts)
+            selected = st.dataframe(
+                df_contatos[display_cols],
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                column_config=col_defs,
+                height=500,
+                key="contatos_table_flat",
+            )
 
-        for comp in escolas_ordenadas:
-            cid = comp["id"]
-            school_name = comp.get("name", "?")
-            cts = contatos_por_escola_filtrada.get(cid, [])
-            if not cts:
-                continue
-            city_state = f"{comp.get('city', '')}/{comp.get('state', '')}" if comp.get("city") else ""
-            header_txt = f"🏫 {school_name} — {city_state} ({len(cts)} contato{'s' if len(cts) > 1 else ''})"
-
-            # Indicar duplicatas no titulo da escola
-            if cid in duplicatas_por_escola:
-                ndup = sum(len(g) - 1 for g in duplicatas_por_escola[cid])
-                header_txt += f" ⚠ {ndup} duplicata(s)"
-
-            with st.expander(header_txt, expanded=False):
-                # Renderizar cada contato como linha com acoes inline
-                for ct in sorted(cts, key=lambda c: (c.get("outreach_priority") or 99, c.get("full_name") or "")):
-                    ct_id = ct.get("id")
-                    nome = ct.get("full_name") or "?"
-                    cargo = ct.get("role") or ""
-                    tipo = DM_TYPE_LABEL.get(ct.get("decision_maker_type", "outro"), "👤 Outro")
-                    email = ct.get("email") or ""
-                    phone = ct.get("phone") or ""
-                    fonte = SRC_LABELS.get(ct.get("source", ""), ct.get("source", "") or "")
-                    conf = ct.get("confidence_score") or 0
-
-                    row_col1, row_col2, row_col3, row_col4 = st.columns([4, 3, 1, 1])
-                    with row_col1:
-                        st.markdown(
-                            f"**{nome}** {tipo}<br/>"
-                            f"<span style='font-size:12px;color:#757575'>{cargo}</span>",
-                            unsafe_allow_html=True,
-                        )
-                    with row_col2:
-                        email_display = email or "_sem email_"
-                        phone_display = phone or ""
-                        st.markdown(
-                            f"<span style='font-size:12px;color:#1976D2'>{email_display}</span><br/>"
-                            f"<span style='font-size:12px;color:#757575'>{phone_display}</span><br/>"
-                            f"<span style='font-size:10px;color:#9E9E9E'>{fonte} • {conf}%</span>",
-                            unsafe_allow_html=True,
-                        )
-                    with row_col3:
-                        if st.button("✏️", key=f"edit_inline_{ct_id}", help="Editar",
-                                      use_container_width=True):
-                            st.session_state["editing_contact"] = ct_id
-                            st.session_state["editing_company"] = cid
+            # Ações rápidas abaixo da tabela quando uma linha é selecionada
+            selection = selected.get("selection", {}) if selected else {}
+            selected_rows = selection.get("rows", []) if selection else []
+            if selected_rows:
+                sel = filtered_cts[selected_rows[0]]
+                st.markdown(
+                    '<p style="font-size:12px;font-weight:600;color:#757575;text-transform:uppercase;'
+                    'letter-spacing:0.5px;margin-top:12px;margin-bottom:4px">Ações rápidas</p>',
+                    unsafe_allow_html=True,
+                )
+                ac1, ac2, ac3, ac4 = st.columns([3, 1, 1, 1])
+                with ac1:
+                    st.markdown(f"**{sel['Nome']}** — _{sel['Escola']}_ ({sel['Tipo']})")
+                with ac2:
+                    if st.button("Editar", type="primary", icon=":material/edit:",
+                                  use_container_width=True, key="ct_flat_edit"):
+                        st.session_state["editing_contact"] = sel["id"]
+                        st.session_state["editing_company"] = sel["company_id"]
+                        st.rerun()
+                with ac3:
+                    if st.button("Ver escola", icon=":material/school:",
+                                  use_container_width=True, key="ct_flat_school"):
+                        st.session_state["escola_detail_id"] = sel["company_id"]
+                        st.switch_page("pages/3_🏫_Escolas.py")
+                with ac4:
+                    if st.button("Excluir", icon=":material/delete:",
+                                  use_container_width=True, key="ct_flat_del"):
+                        try:
+                            db.client.table("contacts").delete().eq("id", sel["id"]).execute()
+                            st.toast(f"{sel['Nome']} excluido!")
                             st.rerun()
-                    with row_col4:
-                        if st.button("🗑️", key=f"del_inline_{ct_id}", help="Excluir",
-                                      use_container_width=True):
-                            try:
-                                db.client.table("contacts").delete().eq("id", ct_id).execute()
-                                st.toast(f"{nome} excluido!")
+                        except Exception as e:
+                            st.error(f"Erro: {e}")
+
+        # ========== TABELA AGRUPADA ==========
+        else:
+            group_key_map = {
+                "Escola": "Escola",
+                "Cidade/UF": "Cidade",
+                "Tipo": "Tipo",
+                "Fonte": "Fonte",
+            }
+            group_col = group_key_map[ct_group_by]
+            groups = {}
+            for c in filtered_cts:
+                key = c[group_col] or "(sem valor)"
+                if ct_group_by == "Cidade/UF":
+                    key = f"{c.get('Cidade') or '?'}/{c.get('UF') or '?'}"
+                groups.setdefault(key, []).append(c)
+
+            # Ordenar grupos pelo tamanho (maior primeiro)
+            sorted_groups = sorted(groups.items(), key=lambda kv: len(kv[1]), reverse=True)
+            st.caption(f"Exibindo {len(filtered_cts)} contato(s) em {len(sorted_groups)} grupo(s). Clique em um grupo para expandir.")
+
+            expand_all_groups = st.checkbox("Expandir todos os grupos", value=False, key="ct_expand_all")
+
+            # Colunas visíveis dentro de cada grupo (remover a coluna usada como grupo)
+            inner_cols = [c for c in display_cols if c != group_col]
+            if ct_group_by == "Cidade/UF":
+                inner_cols = [c for c in inner_cols if c not in ("Cidade", "UF")]
+            inner_col_defs = {k: v for k, v in col_defs.items() if k in inner_cols}
+
+            for group_name, group_cts in sorted_groups:
+                header = f"📁 {group_name} — {len(group_cts)} contato(s)"
+                with st.expander(header, expanded=expand_all_groups):
+                    df_group = pd.DataFrame(group_cts)
+                    sel_group = st.dataframe(
+                        df_group[inner_cols],
+                        use_container_width=True,
+                        hide_index=True,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        column_config=inner_col_defs,
+                        key=f"ct_group_{group_name}",
+                    )
+                    sel_info = sel_group.get("selection", {}) if sel_group else {}
+                    sel_rows = sel_info.get("rows", []) if sel_info else []
+                    if sel_rows:
+                        sel_ct = group_cts[sel_rows[0]]
+                        ac1, ac2, ac3, ac4 = st.columns([3, 1, 1, 1])
+                        with ac1:
+                            st.markdown(f"**{sel_ct['Nome']}** — _{sel_ct['Escola']}_")
+                        with ac2:
+                            if st.button("Editar", type="primary", icon=":material/edit:",
+                                          use_container_width=True, key=f"ct_g_edit_{sel_ct['id']}"):
+                                st.session_state["editing_contact"] = sel_ct["id"]
+                                st.session_state["editing_company"] = sel_ct["company_id"]
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro: {e}")
-                    st.divider()
+                        with ac3:
+                            if st.button("Ver escola", icon=":material/school:",
+                                          use_container_width=True, key=f"ct_g_sch_{sel_ct['id']}"):
+                                st.session_state["escola_detail_id"] = sel_ct["company_id"]
+                                st.switch_page("pages/3_🏫_Escolas.py")
+                        with ac4:
+                            if st.button("Excluir", icon=":material/delete:",
+                                          use_container_width=True, key=f"ct_g_del_{sel_ct['id']}"):
+                                try:
+                                    db.client.table("contacts").delete().eq("id", sel_ct["id"]).execute()
+                                    st.toast(f"{sel_ct['Nome']} excluido!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro: {e}")
 
 # ===========================================================================
 # TAB 2: HIERARQUIA — Power Map (visualizacao original)
