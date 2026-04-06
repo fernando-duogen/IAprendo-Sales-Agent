@@ -481,7 +481,7 @@ with col_msg:
                         f'<div style="font-size:12px;color:#1976D2;margin:2px 0">{prev_msg.get("subject", "")}</div>'
                         f'<div style="font-size:12px;color:#616161;white-space:pre-wrap;'
                         f'max-height:120px;overflow-y:auto;margin-top:4px">'
-                        f'{(prev_msg.get("body") or "")[:500]}</div>'
+                        f'{prev_msg.get("body") or ""}</div>'
                         f'{f"<div style=font-size:11px;color:#757575;margin-top:4px>{tracking_text}</div>" if tracking_text else ""}'
                         f'</div>',
                         unsafe_allow_html=True,
