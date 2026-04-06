@@ -154,7 +154,7 @@ try:
                         use_container_width=True,
                     ):
                         st.session_state["escola_detail_id"] = comp["id"]
-                        st.switch_page("pages/3_🏫_Escolas.py")
+                        st.switch_page("pages/5_🏫_Escolas.py")
 
         # Move school between stages
         st.markdown('<hr class="divider">', unsafe_allow_html=True)

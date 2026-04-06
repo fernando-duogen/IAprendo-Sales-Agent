@@ -620,7 +620,7 @@ if selected_rows:
             with mc2:
                 if st.button("Abrir detalhes da escola"):
                     st.session_state.escola_detail_id = cid
-                    st.switch_page("pages/3_🏫_Escolas.py")
+                    st.switch_page("pages/5_🏫_Escolas.py")
 
 if is_csv_mode and len(df_map) > 500:
     st.caption(f"Mostrando 500 de {len(df_map):,} escolas. Use filtros para refinar.".replace(",", "."))

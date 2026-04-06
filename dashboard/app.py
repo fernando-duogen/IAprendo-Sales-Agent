@@ -183,7 +183,7 @@ try:
             unsafe_allow_html=True,
         )
         if st.button("Abrir Pipeline", key="goto_pipeline", use_container_width=True, type="primary"):
-            st.switch_page("pages/1_📊_Pipeline.py")
+            st.switch_page("pages/3_📊_Pipeline.py")
     with ac2:
         st.markdown(
             f'<div class="data-card">'
@@ -194,7 +194,7 @@ try:
             unsafe_allow_html=True,
         )
         if st.button("Aprovar Emails", key="goto_queue", use_container_width=True):
-            st.switch_page("pages/6_✉️_Aprovacao.py")
+            st.switch_page("pages/8_✉️_Aprovacao.py")
     with ac3:
         st.markdown(
             f'<div class="data-card">'
@@ -205,7 +205,7 @@ try:
             unsafe_allow_html=True,
         )
         if st.button("Ver Follow-ups", key="goto_fups", use_container_width=True):
-            st.switch_page("pages/7_🔄_Follow-ups.py")
+            st.switch_page("pages/9_🔄_Follow-ups.py")
 
     ac4, ac5, ac6 = st.columns(3)
     with ac4:
@@ -218,7 +218,7 @@ try:
             unsafe_allow_html=True,
         )
         if st.button("Abrir CRM", key="goto_crm", use_container_width=True):
-            st.switch_page("pages/2_🎯_CRM.py")
+            st.switch_page("pages/4_🎯_CRM.py")
     with ac5:
         st.markdown(
             '<div class="data-card">'
@@ -229,7 +229,7 @@ try:
             unsafe_allow_html=True,
         )
         if st.button("Ver Contatos", key="goto_contatos", use_container_width=True):
-            st.switch_page("pages/5_👥_Contatos.py")
+            st.switch_page("pages/7_👥_Contatos.py")
     with ac6:
         st.markdown(
             '<div class="data-card">'
@@ -240,7 +240,7 @@ try:
             unsafe_allow_html=True,
         )
         if st.button("Ver Mapa", key="goto_mapa", use_container_width=True):
-            st.switch_page("pages/4_🗺️_Mapa.py")
+            st.switch_page("pages/6_🗺️_Mapa.py")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
