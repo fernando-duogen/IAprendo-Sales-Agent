@@ -16,11 +16,19 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from anthropic import Anthropic
-
 from config.settings import settings
 from database.supabase_client import db
 from utils.logger import logger, log_api_call
+
+# LLM: OpenAI primary (configurado no projeto), Anthropic fallback
+try:
+    from openai import OpenAI as _OpenAI
+except ImportError:
+    _OpenAI = None
+try:
+    from anthropic import Anthropic as _Anthropic
+except ImportError:
+    _Anthropic = None
 
 
 class BaseAgent(ABC):
@@ -46,7 +54,24 @@ class BaseAgent(ABC):
             agent_name: Nome identificador do agente.
         """
         self.agent_name = agent_name
-        self.client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+        # Determinar LLM disponivel: OpenAI primary, Anthropic fallback
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        self._openai_key = os.getenv("OPENAI_API_KEY", "")
+        self._anthropic_key = settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
+        self._openai_model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
+
+        if self._openai_key and _OpenAI:
+            self._llm_backend = "openai"
+            self._openai_client = _OpenAI(api_key=self._openai_key)
+        elif self._anthropic_key and _Anthropic:
+            self._llm_backend = "anthropic"
+            self._anthropic_client = _Anthropic(api_key=self._anthropic_key)
+        else:
+            self._llm_backend = "none"
+            logger.warning(f"Agent {agent_name}: nenhuma API key LLM disponivel")
 
         logger.info(
             f"Agente inicializado: {agent_name}",
@@ -98,38 +123,54 @@ class BaseAgent(ABC):
         Example:
             >>> response = self._call_claude("Analise esta escola", model='fast')
         """
-        model_id = (
-            settings.CLAUDE_MODEL_FAST if model == 'fast'
-            else settings.CLAUDE_MODEL_QUALITY
-        )
-
-        messages = [{"role": "user", "content": prompt}]
+        # Resolver model_id baseado no backend
+        if self._llm_backend == "openai":
+            model_id = self._openai_model
+        elif self._llm_backend == "anthropic":
+            model_id = (
+                settings.CLAUDE_MODEL_FAST if model == 'fast'
+                else settings.CLAUDE_MODEL_QUALITY
+            )
+        else:
+            raise RuntimeError("Nenhuma API key LLM configurada (OpenAI ou Anthropic)")
 
         for attempt in range(max_retries):
             start_time = time.time()
             try:
-                kwargs: Dict[str, Any] = {
-                    "model": model_id,
-                    "max_tokens": max_tokens,
-                    "messages": messages,
-                }
-                if system_prompt:
-                    kwargs["system"] = system_prompt
-
-                response = self.client.messages.create(**kwargs)
+                if self._llm_backend == "openai":
+                    msgs = []
+                    if system_prompt:
+                        msgs.append({"role": "system", "content": system_prompt})
+                    msgs.append({"role": "user", "content": prompt})
+                    resp = self._openai_client.chat.completions.create(
+                        model=model_id,
+                        messages=msgs,
+                        max_tokens=max_tokens,
+                        temperature=0.3,
+                    )
+                    response_text = resp.choices[0].message.content or ""
+                else:
+                    kwargs: Dict[str, Any] = {
+                        "model": model_id,
+                        "max_tokens": max_tokens,
+                        "messages": [{"role": "user", "content": prompt}],
+                    }
+                    if system_prompt:
+                        kwargs["system"] = system_prompt
+                    resp = self._anthropic_client.messages.create(**kwargs)
+                    response_text = resp.content[0].text
 
                 elapsed_ms = (time.time() - start_time) * 1000
 
                 log_api_call(
-                    api_name='anthropic',
+                    api_name=self._llm_backend,
                     endpoint=model_id,
                     status_code=200,
                     response_time_ms=elapsed_ms
                 )
 
-                # Registra uso no banco
                 db.insert_api_usage({
-                    'api_name': 'anthropic',
+                    'api_name': self._llm_backend,
                     'endpoint': model_id,
                     'credits_used': 1,
                     'success': True,
@@ -137,17 +178,18 @@ class BaseAgent(ABC):
                     'context': {'agent': self.agent_name}
                 })
 
-                return response.content[0].text
+                return response_text
 
             except Exception as e:
                 elapsed_ms = (time.time() - start_time) * 1000
                 error_msg = str(e)
 
                 logger.warning(
-                    f"Claude API tentativa {attempt + 1}/{max_retries} falhou",
+                    f"LLM API tentativa {attempt + 1}/{max_retries} falhou",
                     extra={
                         'agent': self.agent_name,
                         'model': model_id,
+                        'backend': self._llm_backend,
                         'attempt': attempt + 1,
                         'error': error_msg
                     }
@@ -158,7 +200,7 @@ class BaseAgent(ABC):
                     time.sleep(wait_time)
                 else:
                     db.insert_api_usage({
-                        'api_name': 'anthropic',
+                        'api_name': self._llm_backend,
                         'endpoint': model_id,
                         'credits_used': 0,
                         'success': False,

@@ -31,7 +31,15 @@ from database.supabase_client import db
 from utils.logger import logger
 from config.settings import settings
 
-from anthropic import Anthropic
+# LLM imports: OpenAI primary, Anthropic fallback
+try:
+    from openai import OpenAI as _OpenAI
+except ImportError:
+    _OpenAI = None
+try:
+    from anthropic import Anthropic as _Anthropic
+except ImportError:
+    _Anthropic = None
 
 # ===========================================================================
 # Configuracao comportamental (Item 6 do roadmap)
@@ -585,25 +593,51 @@ def generate_follow_up(
         .replace("{meeting_link}", meeting_link)
     )
 
-    # Chamar Claude Sonnet
+    # Chamar LLM (OpenAI primary, Anthropic fallback)
     try:
-        client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        model_id = settings.CLAUDE_MODEL_QUALITY
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        openai_key = os.getenv("OPENAI_API_KEY", "")
+        anthropic_key = settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
 
         start_time = time.time()
-        response = client.messages.create(
-            model=model_id,
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        elapsed_ms = (time.time() - start_time) * 1000
+        response_text = ""
+        api_used = ""
 
-        response_text = response.content[0].text
+        if openai_key and _OpenAI:
+            # OpenAI (primary)
+            client = _OpenAI(api_key=openai_key)
+            model_id = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
+            resp = client.chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1024,
+                temperature=0.4,
+            )
+            response_text = resp.choices[0].message.content or ""
+            api_used = "openai"
+        elif anthropic_key and _Anthropic:
+            # Anthropic (fallback)
+            client = _Anthropic(api_key=anthropic_key)
+            model_id = settings.CLAUDE_MODEL_QUALITY
+            resp = client.messages.create(
+                model=model_id,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            response_text = resp.content[0].text
+            api_used = "anthropic"
+        else:
+            logger.error("Nenhuma API key disponivel (OpenAI ou Anthropic) para gerar follow-up")
+            return None
+
+        elapsed_ms = (time.time() - start_time) * 1000
 
         # Registrar uso de API
         try:
             db.insert_api_usage({
-                "api_name": "anthropic",
+                "api_name": api_used,
                 "endpoint": model_id,
                 "credits_used": 1,
                 "success": True,
@@ -618,7 +652,7 @@ def generate_follow_up(
             pass
 
     except Exception as e:
-        logger.error("Erro ao chamar Claude para follow-up", extra={
+        logger.error("Erro ao chamar LLM para follow-up", extra={
             "company_id": company_id, "error": str(e)})
         return None
 
