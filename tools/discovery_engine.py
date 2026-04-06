@@ -143,21 +143,127 @@ class DiscoveryEngine:
             return None
 
     # =========================================================================
-    # Perplexity wrapper + LLM parser (2-step: busca → parse)
+    # Web search + LLM parser (DuckDuckGo primary, Perplexity fallback)
     # =========================================================================
+
+    def _search_web(self, query: str, max_results: int = 15) -> str:
+        """Busca na web via DuckDuckGo HTML (gratuito, sem API key, sem browser).
+        Retorna texto concatenado dos snippets dos resultados.
+        Funciona em qualquer ambiente (local, Streamlit Cloud, servidor)."""
+        import requests
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            try:
+                from bs4 import BeautifulSoup
+            except Exception:
+                logger.error("BeautifulSoup nao disponivel para web search")
+                return ""
+
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "pt-BR,pt;q=0.9",
+            }
+            encoded_q = requests.utils.quote(query)
+            url = f"https://html.duckduckgo.com/html/?q={encoded_q}"
+            resp = requests.get(url, headers=headers, timeout=20)
+
+            if resp.status_code != 200:
+                logger.warning(f"DuckDuckGo retornou {resp.status_code}")
+                return ""
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+            snippets = []
+            for result in soup.select(".result"):
+                title_el = result.select_one(".result__title, .result__a")
+                snippet_el = result.select_one(".result__snippet")
+                title = title_el.get_text(strip=True) if title_el else ""
+                snippet = snippet_el.get_text(strip=True) if snippet_el else ""
+                if title or snippet:
+                    snippets.append(f"{title}\n{snippet}")
+                if len(snippets) >= max_results:
+                    break
+
+            text = "\n\n".join(snippets)
+            logger.info(f"DuckDuckGo: {len(snippets)} resultados para '{query[:50]}'")
+            return text
+        except Exception as e:
+            logger.error(f"DuckDuckGo search error: {e}")
+            return ""
 
     def _ask_perplexity(self, prompt: str, timeout: int = 60) -> str:
         """Chama Perplexity Browser e retorna resposta em texto livre.
-        Se nao disponivel, retorna string vazia."""
+        Fallback — so usado se DuckDuckGo + GPT nao funcionarem."""
         try:
             from tools.perplexity_browser import perplexity_browser
             if not perplexity_browser.is_available():
-                logger.warning("Perplexity Browser nao disponivel (Playwright ausente?)")
+                logger.warning("Perplexity Browser nao disponivel")
                 return ""
             return perplexity_browser._query_perplexity_text(prompt, timeout_seconds=timeout)
         except Exception as e:
             logger.error(f"Perplexity error: {e}")
             return ""
+
+    def _discover_via_llm(
+        self,
+        cidade: str,
+        tipo: str,
+        keyword: str,
+        limit: int,
+        web_context: str,
+    ) -> List[Dict[str, Any]]:
+        """Pede ao GPT para listar escolas com base no contexto de web search
+        + seu proprio conhecimento. Pipeline: DuckDuckGo snippets → GPT."""
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            logger.warning("OPENAI_API_KEY nao disponivel para discovery LLM")
+            return []
+
+        keyword_line = f" com diferencial: {keyword}" if keyword else ""
+        tipo_txt = {"privada": "privadas", "publica": "publicas", "qualquer": ""}.get(tipo, "")
+
+        system_msg = (
+            "Voce e um especialista em escolas do Brasil. "
+            "Com base nos resultados de busca web E no seu proprio conhecimento, "
+            "liste escolas reais que existem na cidade indicada. "
+            "Retorne APENAS um JSON array valido, sem texto antes ou depois. "
+            "Se nao tiver certeza sobre um dado, coloque null."
+        )
+        user_msg = (
+            f"Liste ate {limit} escolas {tipo_txt} em {cidade} que ofereçam "
+            f"ensino Fundamental anos finais e/ou Ensino Medio{keyword_line}.\n\n"
+            f"RESULTADOS DE BUSCA WEB (contexto):\n---\n{web_context[:6000]}\n---\n\n"
+            f"Para cada escola, retorne JSON com: "
+            f'"nome" (string), "endereco" (string ou null), "bairro" (string ou null), '
+            f'"site" (URL ou null), "telefone" (string ou null), '
+            f'"diferenciais" (array de strings), "tipo" ("privada" ou "publica").\n\n'
+            f"Retorne APENAS o JSON array:"
+        )
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+                max_tokens=3000,
+                temperature=0.2,
+            )
+            result_text = resp.choices[0].message.content or ""
+            logger.info("Discovery LLM: resposta recebida", extra={"len": len(result_text)})
+            return self._extract_json_array(result_text)
+        except Exception as e:
+            logger.error(f"Discovery LLM error: {e}")
+            return []
 
     def _text_to_json_via_llm(
         self, text: str, schema_instruction: str, max_tokens: int = 2048
@@ -297,45 +403,58 @@ class DiscoveryEngine:
             "cidade": cidade, "tipo": tipo, "keyword": keyword, "limit": limit,
         })
 
-        # Monta prompt para Perplexity (pede TEXTO legivel, nao JSON —
-        # Perplexity nao retorna JSON puro de forma confiavel)
-        keyword_line = f" Priorize escolas com caracteristica: {keyword}." if keyword else ""
+        # Pipeline: DuckDuckGo (web search gratuito) → GPT (parse + completar)
+        # DuckDuckGo traz snippets reais da web, GPT organiza em JSON + complementa
+        # com seu proprio conhecimento sobre escolas da cidade.
+
+        keyword_line = f" {keyword}" if keyword else ""
         tipo_txt = {
             "privada": "privadas",
             "publica": "publicas",
-            "qualquer": "privadas ou publicas",
+            "qualquer": "",
         }.get(tipo, "privadas")
 
-        prompt = (
-            f"Liste ate {limit} escolas {tipo_txt} em {cidade} que ofereçam "
-            f"ensino Fundamental anos finais e/ou Ensino Medio.{keyword_line} "
-            f"Para cada escola, inclua: nome completo, endereco (rua e bairro), "
-            f"site oficial, telefone e diferenciais (bilingue, integral, etc). "
-            f"Organize em lista numerada."
-        )
+        # Multiplas queries para cobrir mais resultados
+        queries = [
+            f"escolas {tipo_txt}{keyword_line} {cidade} ensino fundamental medio",
+            f"colegios {tipo_txt}{keyword_line} {cidade}",
+        ]
+        if keyword:
+            queries.append(f"escolas {keyword} {cidade}")
 
-        logger.info("Discovery: consultando Perplexity", extra={"prompt_len": len(prompt)})
-        response_text = self._ask_perplexity(prompt, timeout=90)
+        logger.info("Discovery: buscando via DuckDuckGo", extra={"queries": len(queries)})
+        all_snippets = []
+        for q in queries:
+            snippets = self._search_web(q, max_results=10)
+            if snippets:
+                all_snippets.append(snippets)
 
-        if not response_text or len(response_text.strip()) < 30:
-            logger.warning("Discovery: Perplexity retornou resposta vazia/curta")
+        web_context = "\n\n---\n\n".join(all_snippets)
+
+        if not web_context or len(web_context.strip()) < 30:
+            logger.warning("Discovery: DuckDuckGo retornou pouco contexto, tentando Perplexity...")
+            # Fallback: Perplexity Browser (se disponivel)
+            prompt = (
+                f"Liste ate {limit} escolas {tipo_txt} em {cidade} que ofereçam "
+                f"ensino Fundamental anos finais e/ou Ensino Medio.{keyword_line} "
+                f"Para cada escola, inclua: nome completo, endereco, site oficial, "
+                f"telefone e diferenciais."
+            )
+            web_context = self._ask_perplexity(prompt, timeout=90)
+
+        if not web_context or len(web_context.strip()) < 30:
             return {
                 "cidade": cidade, "tipo": tipo, "keyword": keyword,
                 "novas": [], "existentes_atualizadas": [],
-                "erros": ["Perplexity nao retornou dados suficientes"],
+                "erros": ["Nenhuma fonte retornou dados suficientes (DuckDuckGo e Perplexity falharam)"],
                 "total_encontradas": 0,
             }
 
-        # 2-step: usar LLM (GPT) para parsear texto livre em JSON estruturado
-        logger.info("Discovery: parseando texto via LLM", extra={"text_len": len(response_text)})
-        schema = (
-            'Array JSON. Cada item: {"nome": "string", "endereco": "string ou null", '
-            '"bairro": "string ou null", "site": "URL ou null", '
-            '"telefone": "string ou null", '
-            '"diferenciais": ["bilingue","integral",...], '
-            '"tipo": "privada" ou "publica"}'
-        )
-        schools = self._text_to_json_via_llm(response_text, schema)
+        # GPT: combina snippets web + conhecimento proprio → JSON estruturado
+        logger.info("Discovery: pedindo ao GPT para estruturar resultados", extra={
+            "web_context_len": len(web_context),
+        })
+        schools = self._discover_via_llm(cidade, tipo, keyword, limit, web_context)
 
         if not schools:
             logger.warning("Discovery: nenhuma escola extraida da resposta", extra={
@@ -510,25 +629,35 @@ class DiscoveryEngine:
 
         logger.info("Enrich signals", extra={"company_id": company_id, "name": name})
 
-        prompt = (
-            f"Pesquise sobre a escola '{name}' em {city}/{state}. "
-            f"Quero saber: rankings educacionais em que aparece, premios recebidos, "
-            f"noticias importantes, expansoes ou reconhecimentos dos ultimos 3 anos "
-            f"(2023-2026). Para cada item, informe o tipo (ranking, premio, noticia, "
-            f"expansao, reconhecimento), titulo e ano. "
-            f"Se nao encontrar nada relevante, diga que nao ha informacoes."
-        )
+        # Buscar sinais via DuckDuckGo + GPT (mesmo pipeline do discover)
+        queries = [
+            f'"{name}" {city} premio ranking educacao',
+            f'"{name}" {city} noticias destaque',
+        ]
+        all_snippets = []
+        for q in queries:
+            s = self._search_web(q, max_results=8)
+            if s:
+                all_snippets.append(s)
+        web_context = "\n\n".join(all_snippets)
 
-        response_text = self._ask_perplexity(prompt, timeout=60)
+        if not web_context or len(web_context.strip()) < 20:
+            # Fallback Perplexity
+            prompt = (
+                f"Pesquise sobre a escola '{name}' em {city}/{state}. "
+                f"Quero saber: rankings educacionais, premios recebidos, noticias "
+                f"importantes, expansoes ou reconhecimentos (2023-2026)."
+            )
+            web_context = self._ask_perplexity(prompt, timeout=60)
 
-        if not response_text or len(response_text.strip()) < 30:
+        if not web_context or len(web_context.strip()) < 20:
             return {
                 "company_id": company_id, "escola": name,
                 "sinais_adicionados": 0, "preview": [],
-                "erros": ["Perplexity nao retornou dados suficientes"],
+                "erros": ["Nenhuma fonte retornou dados"],
             }
 
-        # Parsear texto livre via LLM
+        # GPT extrai sinais estruturados do contexto web
         schema = (
             'Array JSON. Cada item: {"tipo": "ranking|premio|noticia|expansao|reconhecimento", '
             '"titulo": "string descrevendo o sinal", '
@@ -536,7 +665,7 @@ class DiscoveryEngine:
             '"fonte_url": "URL_ou_null"}. '
             'Se o texto nao contem sinais relevantes, retorne [].'
         )
-        signals = self._text_to_json_via_llm(response_text, schema)
+        signals = self._text_to_json_via_llm(web_context, schema)
 
         if not signals:
             return {
