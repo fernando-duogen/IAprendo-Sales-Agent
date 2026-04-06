@@ -198,18 +198,23 @@ with col_info:
     sc_val = score if score is not None else 0
     sc_col = score_color(sc_val) if score is not None else COLORS["on_surface_secondary"]
 
-    st.markdown(f"""
-    <div class="data-card" style="border-left: 4px solid {COLORS['primary']};">
-        <div style="display:flex; align-items:center; gap:10px;">
-            {avatar(school_name, COLORS['primary'])}
-            <div style="flex:1;">
-                <div style="font-weight:600; font-size:15px; color:#212121;">{school_name}</div>
-                <div style="font-size:12px; color:#757575;">{city}{', ' + state if state else ''}</div>
-            </div>
-            {'<div style="text-align:right;"><div style="font-size:24px; font-weight:700; color:' + sc_col + ';">' + str(sc_val) + '</div><div style="font-size:10px; color:#757575;">score</div></div>' if score is not None else ''}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    score_html = ""
+    if score is not None:
+        score_html = (
+            f'<div style="text-align:right;">'
+            f'<div style="font-size:24px;font-weight:700;color:{sc_col};">{sc_val}</div>'
+            f'<div style="font-size:10px;color:#757575;">score</div></div>'
+        )
+    school_card_html = (
+        f'<div class="data-card" style="border-left:4px solid {COLORS["primary"]}">'
+        f'<div style="display:flex;align-items:center;gap:10px">'
+        f'{avatar(school_name, COLORS["primary"])}'
+        f'<div style="flex:1">'
+        f'<div style="font-weight:600;font-size:15px;color:#212121">{school_name}</div>'
+        f'<div style="font-size:12px;color:#757575">{city}{", " + state if state else ""}</div>'
+        f'</div>{score_html}</div></div>'
+    )
+    st.markdown(school_card_html, unsafe_allow_html=True)
 
     reasoning = company_data.get("qualification_reasoning", "")
     if reasoning:
@@ -301,18 +306,21 @@ with col_info:
 
         # Destinatario card
         dest_color = COLORS["success"] if contact_email else COLORS["error"]
-        st.markdown(f"""
-        <div class="data-card" style="border-left: 4px solid {dest_color};">
-            <div style="display:flex; align-items:center; gap:10px;">
-                {avatar(contact_name, dest_color)}
-                <div>
-                    <div style="font-weight:600; font-size:14px;">{contact_name}</div>
-                    <div style="font-size:12px; color:{dest_color};">{contact_email}</div>
-                    {'<div style="font-size:10px; color:#9E9E9E;">Email gerado automaticamente -- verifique</div>' if sel_source == 'email_pattern' else ''}
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        pattern_warning = (
+            '<div style="font-size:10px;color:#9E9E9E">Email gerado automaticamente -- verifique</div>'
+            if sel_source == "email_pattern" else ""
+        )
+        contact_card_html = (
+            f'<div class="data-card" style="border-left:4px solid {dest_color}">'
+            f'<div style="display:flex;align-items:center;gap:10px">'
+            f'{avatar(contact_name, dest_color)}'
+            f'<div>'
+            f'<div style="font-weight:600;font-size:14px">{contact_name}</div>'
+            f'<div style="font-size:12px;color:{dest_color}">{contact_email}</div>'
+            f'{pattern_warning}'
+            f'</div></div></div>'
+        )
+        st.markdown(contact_card_html, unsafe_allow_html=True)
     else:
         alert_banner("Nenhum contato com email nesta escola!", "warning")
         contact_name = contact_data.get("full_name") or "Nao identificado"
