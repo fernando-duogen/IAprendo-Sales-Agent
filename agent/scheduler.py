@@ -71,7 +71,7 @@ class IALexScheduler:
             time.sleep(30)
 
     def _send_to_owner(self, text: str):
-        """Envia mensagem para o Fernando."""
+        """Envia mensagem para o Fernando via WhatsApp."""
         try:
             from agent.whatsapp_bridge import WhatsAppBridge
             bridge = WhatsAppBridge()
@@ -83,6 +83,62 @@ class IALexScheduler:
                 logger.warning("IALEX_OWNER_NUMBER nao configurado")
         except Exception as e:
             logger.error(f"Erro ao enviar mensagem proativa: {e}")
+
+    def _run_background_with_feedback(
+        self,
+        task_name: str,
+        task_fn,
+        timeout_minutes: int = 10,
+    ):
+        """Executa uma funcao em background thread com GARANTIA de feedback.
+        Se a task terminar (sucesso ou erro), envia resultado via WhatsApp.
+        Se exceder timeout, envia aviso de timeout.
+
+        REGRA: toda task background DEVE ter feedback. Fernando nunca fica sem resposta.
+
+        Args:
+            task_name: nome amigavel (ex: "Follow-ups", "Pipeline")
+            task_fn: callable que recebe None e retorna None (usa _send_to_owner internamente)
+            timeout_minutes: timeout em minutos (default 10)
+        """
+        import time as _time
+
+        def _wrapped():
+            started = _time.time()
+            feedback_sent = False
+            try:
+                task_fn()
+                feedback_sent = True  # task_fn deve ter chamado _send_to_owner
+            except Exception as e:
+                logger.error(f"Task background '{task_name}' falhou: {e}", exc_info=True)
+                if not feedback_sent:
+                    try:
+                        self._send_to_owner(
+                            f"❌ *{task_name} — ERRO*\n\n"
+                            f"A tarefa falhou apos {int((_time.time() - started) / 60)} min.\n"
+                            f"Erro: `{str(e)[:300]}`\n\n"
+                            f"_Verifique os logs no dashboard._"
+                        )
+                    except Exception:
+                        pass
+
+        def _with_timeout():
+            import time as _t
+            task_thread = threading.Thread(target=_wrapped, daemon=True)
+            task_thread.start()
+            task_thread.join(timeout=timeout_minutes * 60)
+            if task_thread.is_alive():
+                logger.error(f"Task background '{task_name}' excedeu timeout de {timeout_minutes} min")
+                try:
+                    self._send_to_owner(
+                        f"⏰ *{task_name} — TIMEOUT*\n\n"
+                        f"A tarefa nao terminou em {timeout_minutes} minutos.\n"
+                        f"Pode estar travada. Verifique os logs."
+                    )
+                except Exception:
+                    pass
+
+        threading.Thread(target=_with_timeout, daemon=True).start()
 
     def _morning_briefing(self):
         """Envia briefing matinal as 8h."""
@@ -279,86 +335,75 @@ class IALexScheduler:
 
     def _run_automated_pipeline(self, triggered_by: str = "schedule"):
         """Executa o pipeline automatico conforme config e envia resumo WhatsApp.
-        Roda em thread separada para nao travar o scheduler loop.
+        Usa _run_background_with_feedback para garantir que Fernando sempre recebe retorno.
         """
-        def _runner():
-            started = datetime.now()
-            try:
-                from integrations.pipeline_config import pipeline_config
-                from workflows.daily_pipeline import run_pipeline
+        def _task():
+            self.__run_pipeline_inner(triggered_by)
 
-                cfg = pipeline_config.get_config()
+        self._run_background_with_feedback(
+            task_name="Pipeline automatico",
+            task_fn=_task,
+            timeout_minutes=15,
+        )
 
-                # Se foi disparado por schedule, validar dia atual
-                if triggered_by == "schedule":
-                    today = pipeline_config.weekday_short_from_date(started)
-                    if today not in cfg.get("days", []):
-                        logger.info(
-                            f"Pipeline auto: hoje ({today}) nao esta nos dias permitidos, skip"
-                        )
-                        return
+    def __run_pipeline_inner(self, triggered_by: str):
+        """Logica interna do pipeline (chamada pelo wrapper com feedback)."""
+        started = datetime.now()
+        from integrations.pipeline_config import pipeline_config
+        from workflows.daily_pipeline import run_pipeline
 
-                # Gate de autonomia em runtime (defense in depth)
-                autonomy = cfg.get("autonomy_level", "semi_auto")
-                effective_send = cfg.get("send_approved", False) and autonomy == "full_auto"
-                effective_steps = list(cfg.get("steps") or [])
-                if autonomy != "full_auto" and "send" in effective_steps:
-                    effective_steps = [s for s in effective_steps if s != "send"]
-                    logger.warning(
-                        "Step 'send' removido em runtime (autonomy_level != full_auto)"
-                    )
+        cfg = pipeline_config.get_config()
 
-                logger.info("Pipeline automatico INICIANDO", extra={
-                    "triggered_by": triggered_by,
-                    "autonomy_level": autonomy,
-                    "steps": effective_steps,
-                    "send_approved": effective_send,
-                })
-
-                limits = cfg.get("limits", {})
-                report = run_pipeline(
-                    qualify_limit=limits.get("qualify_limit", 20),
-                    enrich_limit=limits.get("enrich_limit", 10),
-                    write_limit=limits.get("write_limit", 10),
-                    send_approved=effective_send,
-                    dry_run=cfg.get("dry_run", False),
-                    write_mode=cfg.get("write_mode", "ai"),
-                    steps=effective_steps,
+        # Se foi disparado por schedule, validar dia atual
+        if triggered_by == "schedule":
+            today = pipeline_config.weekday_short_from_date(started)
+            if today not in cfg.get("days", []):
+                self._send_to_owner(
+                    f"🤖 *Pipeline automatico*: hoje ({today}) nao esta nos dias configurados. Nada a fazer."
                 )
+                return
 
-                finished = datetime.now()
-                duration_min = int((finished - started).total_seconds() // 60)
+        # Gate de autonomia em runtime (defense in depth)
+        autonomy = cfg.get("autonomy_level", "semi_auto")
+        effective_send = cfg.get("send_approved", False) and autonomy == "full_auto"
+        effective_steps = list(cfg.get("steps") or [])
+        if autonomy != "full_auto" and "send" in effective_steps:
+            effective_steps = [s for s in effective_steps if s != "send"]
 
-                # Formatar resumo WhatsApp
-                message = self._format_pipeline_summary(
-                    cfg=cfg,
-                    report=report,
-                    started=started,
-                    finished=finished,
-                    duration_min=duration_min,
-                    triggered_by=triggered_by,
-                )
-                self._send_to_owner(message)
+        logger.info("Pipeline automatico INICIANDO", extra={
+            "triggered_by": triggered_by,
+            "autonomy_level": autonomy,
+            "steps": effective_steps,
+        })
 
-                pipeline_config.update_last_run(
-                    status="success",
-                    summary=report.get("summary", {}),
-                )
-            except Exception as e:
-                logger.error(f"Erro no pipeline automatico: {e}", exc_info=True)
-                try:
-                    self._send_to_owner(
-                        f"❌ *Pipeline automatico FALHOU*\n\n"
-                        f"Erro: `{str(e)[:300]}`\n\n"
-                        f"Verifique os logs no dashboard."
-                    )
-                    from integrations.pipeline_config import pipeline_config as pc
-                    pc.update_last_run(status="error", summary={"error": str(e)[:500]})
-                except Exception:
-                    pass
+        limits = cfg.get("limits", {})
+        report = run_pipeline(
+            qualify_limit=limits.get("qualify_limit", 20),
+            enrich_limit=limits.get("enrich_limit", 10),
+            write_limit=limits.get("write_limit", 10),
+            send_approved=effective_send,
+            dry_run=cfg.get("dry_run", False),
+            write_mode=cfg.get("write_mode", "ai"),
+            steps=effective_steps,
+        )
 
-        t = threading.Thread(target=_runner, daemon=True)
-        t.start()
+        finished = datetime.now()
+        duration_min = int((finished - started).total_seconds() // 60)
+
+        message = self._format_pipeline_summary(
+            cfg=cfg,
+            report=report,
+            started=started,
+            finished=finished,
+            duration_min=duration_min,
+            triggered_by=triggered_by,
+        )
+        self._send_to_owner(message)
+
+        pipeline_config.update_last_run(
+            status="success",
+            summary=report.get("summary", {}),
+        )
 
     def _format_pipeline_summary(
         self,
@@ -488,36 +533,34 @@ class IALexScheduler:
         self._register_automated_followup()
 
     def _run_follow_up_generation(self, triggered_by: str = "schedule"):
-        """Executa geracao de follow-ups comportamentais em background."""
-        def _runner():
-            try:
-                from workflows.follow_up_manager import run_follow_up_check
-                from integrations.pipeline_config import pipeline_config
+        """Executa geracao de follow-ups comportamentais com feedback garantido."""
+        def _task():
+            self.__run_followup_inner(triggered_by)
 
-                cfg = pipeline_config.get_config()
-                limit = cfg.get("followup_limit", 20)
-                allowed = cfg.get("followup_types") or None
+        self._run_background_with_feedback(
+            task_name="Follow-ups",
+            task_fn=_task,
+            timeout_minutes=10,
+        )
 
-                logger.info("Follow-ups automaticos: INICIANDO", extra={
-                    "triggered_by": triggered_by,
-                    "limit": limit,
-                    "allowed_types": allowed,
-                })
+    def __run_followup_inner(self, triggered_by: str):
+        """Logica interna de follow-ups (chamada pelo wrapper com feedback)."""
+        from workflows.follow_up_manager import run_follow_up_check
+        from integrations.pipeline_config import pipeline_config
 
-                result = run_follow_up_check(limit=limit, allowed_types=allowed)
-                message = self._format_followup_summary(result, triggered_by)
-                self._send_to_owner(message)
-            except Exception as e:
-                logger.error(f"Erro follow-ups automaticos: {e}", exc_info=True)
-                try:
-                    self._send_to_owner(
-                        f"❌ *Follow-ups automaticos FALHARAM*\n\n"
-                        f"Erro: `{str(e)[:300]}`"
-                    )
-                except Exception:
-                    pass
+        cfg = pipeline_config.get_config()
+        limit = cfg.get("followup_limit", 20)
+        allowed = cfg.get("followup_types") or None
 
-        threading.Thread(target=_runner, daemon=True).start()
+        logger.info("Follow-ups automaticos: INICIANDO", extra={
+            "triggered_by": triggered_by,
+            "limit": limit,
+            "allowed_types": allowed,
+        })
+
+        result = run_follow_up_check(limit=limit, allowed_types=allowed)
+        message = self._format_followup_summary(result, triggered_by)
+        self._send_to_owner(message)
 
     def _format_followup_summary(self, result: dict, triggered_by: str) -> str:
         """Formata o resumo de follow-ups para WhatsApp."""
