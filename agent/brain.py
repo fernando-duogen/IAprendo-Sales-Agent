@@ -400,6 +400,37 @@ TOOLS = [
         }
     },
     {
+        "name": "ver_email_completo",
+        "description": "Mostra o assunto e corpo COMPLETO de um email na fila de aprovacao. Use ANTES de "
+                       "editar ou aprovar, para que Fernando possa ler o email inteiro. Use quando Fernando "
+                       "disser: 'mostra o email 1', 'ver email completo do Anchieta', 'me mostra o que vai "
+                       "ser enviado pra escola X'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "queue_id": {"type": "string", "description": "ID da mensagem na fila"},
+                "posicao": {"type": "integer", "description": "Posicao na fila (1=primeiro, 2=segundo). Alternativa ao queue_id."}
+            }
+        }
+    },
+    {
+        "name": "reescrever_email",
+        "description": "Reescreve o corpo de um email da fila de aprovacao com base em instrucoes do Fernando. "
+                       "Usa GPT para aplicar as mudancas e retorna o texto novo para Fernando confirmar "
+                       "ANTES de aprovar. NAO aprova automaticamente — Fernando precisa dizer 'sim' ou 'aprova' "
+                       "depois de ver o resultado. Use quando Fernando disser: 'reescreve esse email mais curto', "
+                       "'tira a parte sobre o ENEM', 'coloca algo sobre BNCC', 'seja mais formal', 'muda o tom'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "queue_id": {"type": "string", "description": "ID da mensagem na fila"},
+                "posicao": {"type": "integer", "description": "Posicao na fila (alternativa ao queue_id)"},
+                "instrucoes": {"type": "string", "description": "Instrucoes de Fernando para reescrita (ex: 'tira a parte sobre o ENEM, seja mais curto, adiciona algo sobre BNCC')"}
+            },
+            "required": ["instrucoes"]
+        }
+    },
+    {
         "name": "relatorio_pipeline",
         "description": "Gera relatorio completo do pipeline de vendas sob demanda. "
                        "Inclui: escolas por status, taxa de conversao, emails enviados/abertos/respondidos, "
@@ -1349,6 +1380,191 @@ def _handle_tracking_emails(params: Dict) -> str:
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro no tracking: {str(e)[:200]}"})
+
+
+def _resolve_queue_id(params: Dict) -> Optional[str]:
+    """Resolve queue_id a partir de queue_id direto ou posicao na fila."""
+    qid = params.get("queue_id")
+    if qid:
+        return qid
+    pos = params.get("posicao")
+    if pos and isinstance(pos, int) and pos >= 1:
+        try:
+            r = db.client.table("approval_queue").select("id").eq(
+                "status", "pending"
+            ).order("created_at", desc=False).limit(pos).execute()
+            items = r.data or []
+            if len(items) >= pos:
+                return items[pos - 1]["id"]
+        except Exception:
+            pass
+    return None
+
+
+def _handle_ver_email_completo(params: Dict) -> str:
+    """Mostra email COMPLETO (assunto + corpo inteiro) de um item da fila."""
+    try:
+        qid = _resolve_queue_id(params)
+        if not qid:
+            return json.dumps({"erro": "Informe queue_id ou posicao (1, 2, 3...)"})
+
+        r = db.client.table("approval_queue").select(
+            "id,subject,body,channel,status,company_id,contact_id,follow_up_number,created_at"
+        ).eq("id", qid).single().execute()
+        if not r.data:
+            return json.dumps({"erro": f"Mensagem {qid} nao encontrada."})
+
+        item = r.data
+        # Buscar nome da escola e contato
+        escola_nome = ""
+        contato_nome = ""
+        contato_email = ""
+        if item.get("company_id"):
+            try:
+                c = db.client.table("companies").select("name").eq("id", item["company_id"]).single().execute()
+                escola_nome = (c.data or {}).get("name", "")
+            except Exception:
+                pass
+        if item.get("contact_id"):
+            try:
+                ct = db.client.table("contacts").select("full_name,email").eq("id", item["contact_id"]).single().execute()
+                contato_nome = (ct.data or {}).get("full_name", "")
+                contato_email = (ct.data or {}).get("email", "")
+            except Exception:
+                pass
+
+        return json.dumps({
+            "queue_id": item["id"],
+            "escola": escola_nome,
+            "contato": contato_nome,
+            "email_destino": contato_email,
+            "assunto": item.get("subject", ""),
+            "corpo": item.get("body", ""),  # COMPLETO
+            "canal": item.get("channel", "email"),
+            "status": item.get("status", ""),
+            "follow_up_numero": item.get("follow_up_number", 0),
+            "criado_em": item.get("created_at", ""),
+            "instrucao": (
+                "Email completo acima. Fernando pode: (1) aprovar direto, "
+                "(2) colar texto editado e pedir pra aprovar, "
+                "(3) dar instrucoes pra reescrever ('tira X', 'coloca Y', 'seja mais curto')."
+            ),
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_reescrever_email(params: Dict) -> str:
+    """Reescreve email com instrucoes do Fernando via GPT e retorna pra confirmar."""
+    try:
+        qid = _resolve_queue_id(params)
+        instrucoes = params.get("instrucoes", "")
+        if not qid:
+            return json.dumps({"erro": "Informe queue_id ou posicao (1, 2, 3...)"})
+        if not instrucoes or len(instrucoes.strip()) < 3:
+            return json.dumps({"erro": "Informe instrucoes de reescrita (ex: 'tira a parte sobre o ENEM, seja mais curto')"})
+
+        # Buscar email atual
+        r = db.client.table("approval_queue").select(
+            "id,subject,body,company_id,contact_id"
+        ).eq("id", qid).single().execute()
+        if not r.data:
+            return json.dumps({"erro": f"Mensagem {qid} nao encontrada."})
+
+        item = r.data
+        subject_atual = item.get("subject", "")
+        body_atual = item.get("body", "")
+
+        # Buscar contexto
+        escola_nome = ""
+        if item.get("company_id"):
+            try:
+                c = db.client.table("companies").select("name").eq("id", item["company_id"]).single().execute()
+                escola_nome = (c.data or {}).get("name", "")
+            except Exception:
+                pass
+
+        # Chamar GPT pra reescrever
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            return json.dumps({"erro": "OPENAI_API_KEY nao configurada. Nao consigo reescrever sem IA."})
+
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
+
+        system_msg = (
+            "Voce e um especialista em emails de vendas B2B para escolas. "
+            "Reescreva o email abaixo seguindo EXATAMENTE as instrucoes do Fernando. "
+            "Mantenha o tom profissional e humano. Responda APENAS com o JSON: "
+            '{"assunto": "...", "corpo": "..."}'
+        )
+        user_msg = (
+            f"EMAIL ATUAL:\n"
+            f"Assunto: {subject_atual}\n"
+            f"Corpo:\n{body_atual}\n\n"
+            f"ESCOLA: {escola_nome}\n\n"
+            f"INSTRUCOES DO FERNANDO:\n{instrucoes}\n\n"
+            f"Reescreva o email seguindo as instrucoes. Retorne JSON com assunto e corpo."
+        )
+
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=1500,
+            temperature=0.3,
+        )
+        result_text = resp.choices[0].message.content or ""
+
+        # Parse JSON
+        import re
+        cleaned = result_text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+        try:
+            data = json.loads(cleaned)
+        except Exception:
+            # Tentar extrair JSON embutido
+            match = re.search(r'\{[\s\S]*\}', cleaned)
+            if match:
+                data = json.loads(match.group(0))
+            else:
+                return json.dumps({
+                    "erro": "Nao consegui reescrever. Tente instrucoes mais claras.",
+                    "resposta_bruta": result_text[:500],
+                })
+
+        novo_assunto = data.get("assunto") or subject_atual
+        novo_corpo = data.get("corpo") or body_atual
+
+        return json.dumps({
+            "queue_id": qid,
+            "escola": escola_nome,
+            "assunto_novo": novo_assunto,
+            "corpo_novo": novo_corpo,
+            "instrucoes_aplicadas": instrucoes,
+            "mensagem": (
+                "Email reescrito conforme suas instrucoes. "
+                "Revise acima. Para APROVAR com esse texto, diga 'aprova' ou 'sim'. "
+                "Para ajustar mais, descreva o que mudar."
+            ),
+            "_acao_pendente": "confirmar_reescrita",
+            "_novo_assunto": novo_assunto,
+            "_novo_corpo": novo_corpo,
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao reescrever: {str(e)[:200]}"})
 
 
 def _handle_editar_e_aprovar(params: Dict) -> str:
@@ -3144,6 +3360,8 @@ TOOL_HANDLERS = {
     "aprovar_mensagem": _handle_aprovar_mensagem,
     "rejeitar_mensagem": _handle_rejeitar_mensagem,
     "editar_e_aprovar": _handle_editar_e_aprovar,
+    "ver_email_completo": _handle_ver_email_completo,
+    "reescrever_email": _handle_reescrever_email,
     "enviar_aprovados": _handle_enviar_aprovados,
     "gerar_followups": _handle_gerar_followups,
     # Analytics e tracking
@@ -3216,7 +3434,7 @@ Voce tem acesso a:
 2. *COMPANHEIRO DE CAMPO*: Quando Fernando esta na rua visitando escolas, ajuda-lo a encontrar escolas perto, dar informacoes rapidas, registrar visitas
 3. *AGENTE DE VENDAS*: Qualificar leads, enriquecer contatos, gerar emails, acompanhar pipeline, sugerir acoes comerciais
 
-== ESCOLHA DE FERRAMENTAS (55 disponiveis) ==
+== ESCOLHA DE FERRAMENTAS (57 disponiveis) ==
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
@@ -3340,6 +3558,39 @@ O scheduler roda a cada 30 min e ENVIA ALERTAS PROATIVOS para Fernando no WhatsA
 - Comeco do dia para saber prioridades
 
 *Quando chegar um alerta automatico:* Fernando ja recebe no WhatsApp formatado com a escola, contato, motivos, keywords e acao recomendada.
+
+== REVISAO E EDICAO DE EMAILS VIA WHATSAPP (CRITICO) ==
+Fernando pode revisar, editar e aprovar emails DIRETO pelo WhatsApp em 3 modos:
+
+*Modo A — Ver + colar texto editado:*
+1. Fernando: "mostra o email 1 completo" → CHAME ver_email_completo (mostra corpo INTEIRO)
+2. Fernando cola o texto novo inteiro → CHAME editar_e_aprovar com novo_corpo=texto colado
+3. Pronto, email aprovado com edicoes
+
+*Modo B — Dar instrucoes pra reescrever:*
+1. Fernando: "reescreve o email 1: tira a parte do ENEM, seja mais curto, coloca algo sobre BNCC"
+2. CHAME reescrever_email com instrucoes. GPT reescreve e voce MOSTRA o resultado.
+3. Fernando: "sim"/"aprova" → CHAME editar_e_aprovar com o texto que o GPT gerou
+4. Fernando: "ajusta mais X" → CHAME reescrever_email de novo com novas instrucoes
+
+*Modo C — Trocar trechos especificos (find & replace):*
+1. Fernando: "no email 1, troca 'conhecemos' por 'admiramos' e aprova"
+2. CHAME ver_email_completo, faca o str.replace, CHAME editar_e_aprovar com novo_corpo
+
+*REGRAS OBRIGATORIAS:*
+- SEMPRE chame ver_email_completo ANTES de qualquer edicao (Fernando precisa VER o que vai mudar)
+- Apos reescrever_email, MOSTRE o texto novo e PERGUNTE se Fernando quer aprovar — NUNCA aprove automaticamente
+- Se Fernando disser apenas "aprova" sem ver o email, PERGUNTE se quer ver primeiro
+- Use posicao (1, 2, 3) quando Fernando diz "o primeiro", "o segundo", etc
+
+*Quando usar cada tool:*
+- "mostra a fila" → fila_aprovacao
+- "mostra o email 1 completo" / "ver email da escola X" → ver_email_completo
+- "reescreve: tira isso, coloca aquilo" → reescrever_email → mostrar → aguardar confirmacao
+- Fernando cola texto editado + "usa esse texto" → editar_e_aprovar
+- "troca X por Y e aprova" → editar_e_aprovar
+- "aprova" / "manda" → aprovar_mensagem
+- "rejeita" → rejeitar_mensagem
 
 == DISCOVERY INTELIGENTE DE ESCOLAS (ITEM 8) ==
 Alem do CSV MEC (212k escolas), o IAlex pode descobrir escolas novas via Perplexity e buscar sinais contextuais (rankings, premios, noticias) sobre qualquer escola.
