@@ -403,18 +403,101 @@ with col_info:
 
 # --- COLUNA DIREITA: Preview e edicao da mensagem ---
 with col_msg:
-    # Email preview card
     current_subject = item.get("subject", "")
     current_body = item.get("body", "")
+    follow_up_number = item.get("follow_up_number", 0) or 0
+    parent_id = item.get("parent_id")
 
-    st.markdown(f"""
-    <div class="data-card" style="border-left: 4px solid {COLORS['info']}; padding:20px;">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-            <span class="material-icons-outlined" style="color:{COLORS['info']}">email</span>
-            <span style="font-weight:600; font-size:16px; color:#212121;">Preview da Mensagem</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # --- HISTORICO DE MENSAGENS ANTERIORES (para follow-ups) ---
+    if follow_up_number > 0 and parent_id:
+        # Buscar toda a cadeia de mensagens anteriores (do mais recente ao original)
+        chain = []
+        current_parent = parent_id
+        visited = set()
+        while current_parent and current_parent not in visited and len(chain) < 5:
+            visited.add(current_parent)
+            try:
+                prev = db.client.table("approval_queue").select(
+                    "id,subject,body,follow_up_number,sent_at,status,parent_id,"
+                    "opened_at,clicked_at,replied_at"
+                ).eq("id", current_parent).single().execute()
+                if prev.data:
+                    chain.append(prev.data)
+                    current_parent = prev.data.get("parent_id")
+                else:
+                    break
+            except Exception:
+                break
+
+        if chain:
+            # Mostrar em ordem cronologica (original primeiro)
+            chain.reverse()
+
+            # Badge do tipo de follow-up
+            fu_type_tag = ""
+            for tag in ("hot_click", "curious_open", "silent_open", "revival"):
+                if tag in (item.get("original_body") or "") or tag in (item.get("body") or ""):
+                    fu_type_tag = tag
+                    break
+
+            fu_label = f"Follow-up #{follow_up_number}"
+            st.markdown(
+                f'<div class="data-card" style="border-left:4px solid #FF6D00;padding:12px 16px">'
+                f'<div style="display:flex;align-items:center;gap:8px">'
+                f'<span class="material-icons-outlined" style="color:#FF6D00;font-size:20px">history</span>'
+                f'<span style="font-weight:600;font-size:14px;color:#FF6D00">'
+                f'{fu_label} — {len(chain)} mensagem(ns) anterior(es)</span>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+
+            with st.expander(f"📨 Ver mensagens anteriores ({len(chain)})", expanded=True):
+                for i, prev_msg in enumerate(chain):
+                    prev_fu = prev_msg.get("follow_up_number", 0) or 0
+                    prev_label = "Email original" if prev_fu == 0 else f"Follow-up #{prev_fu}"
+                    prev_sent = (prev_msg.get("sent_at") or "")[:10]
+                    prev_status = prev_msg.get("status", "")
+
+                    # Indicadores de tracking
+                    tracking_icons = []
+                    if prev_msg.get("opened_at"):
+                        tracking_icons.append("👀 Abriu")
+                    if prev_msg.get("clicked_at"):
+                        tracking_icons.append("🔗 Clicou")
+                    if prev_msg.get("replied_at"):
+                        tracking_icons.append("💬 Respondeu")
+                    if not tracking_icons and prev_status == "sent":
+                        tracking_icons.append("📤 Enviado, sem abertura")
+                    tracking_text = " · ".join(tracking_icons) if tracking_icons else ""
+
+                    border_color = "#E0E0E0" if prev_fu == 0 else "#BDBDBD"
+                    st.markdown(
+                        f'<div style="border-left:3px solid {border_color};padding:8px 12px;'
+                        f'margin-bottom:8px;background:#FAFAFA;border-radius:0 6px 6px 0">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                        f'<strong style="font-size:13px;color:#424242">{prev_label}</strong>'
+                        f'<span style="font-size:11px;color:#9E9E9E">{prev_sent}</span>'
+                        f'</div>'
+                        f'<div style="font-size:12px;color:#1976D2;margin:2px 0">{prev_msg.get("subject", "")}</div>'
+                        f'<div style="font-size:12px;color:#616161;white-space:pre-wrap;'
+                        f'max-height:120px;overflow-y:auto;margin-top:4px">'
+                        f'{(prev_msg.get("body") or "")[:500]}</div>'
+                        f'{f"<div style=font-size:11px;color:#757575;margin-top:4px>{tracking_text}</div>" if tracking_text else ""}'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+    # Email preview card
+    preview_label = f"Follow-up #{follow_up_number}" if follow_up_number > 0 else "Email"
+    preview_icon_color = "#FF6D00" if follow_up_number > 0 else COLORS["info"]
+    st.markdown(
+        f'<div class="data-card" style="border-left:4px solid {preview_icon_color};padding:20px">'
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+        f'<span class="material-icons-outlined" style="color:{preview_icon_color}">email</span>'
+        f'<span style="font-weight:600;font-size:16px;color:#212121">Preview — {preview_label}</span>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
 
     edited_subject = st.text_input("Assunto:", value=current_subject, key=f"subj_{queue_id}")
     edited_body = st.text_area("Corpo:", value=current_body, height=350, key=f"body_{queue_id}")
