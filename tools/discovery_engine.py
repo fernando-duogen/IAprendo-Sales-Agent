@@ -627,7 +627,7 @@ class DiscoveryEngine:
         city = company.get("city") or ""
         state = company.get("state") or ""
 
-        logger.info("Enrich signals", extra={"company_id": company_id, "name": name})
+        logger.info("Enrich signals", extra={"company_id": company_id, "school_name": name})
 
         # Buscar sinais via DuckDuckGo + GPT (mesmo pipeline do discover)
         queries = [
