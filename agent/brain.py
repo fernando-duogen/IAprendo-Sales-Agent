@@ -200,7 +200,11 @@ TOOLS = [
     },
     {
         "name": "gerar_email",
-        "description": "Gera um email personalizado de prospecção para uma escola. O email é criado com base nos dados da escola (porte, niveis de ensino, categoria) e do contato (nome, cargo). O email vai para a fila de aprovação — Fernando revisa antes de enviar. Retorna o email gerado.",
+        "description": "Gera um email de prospecção para uma escola. Dois modos:\n"
+                       "- modo='ia' (default): IA gera email personalizado do zero\n"
+                       "- modo='template': usa template salvo no banco, substituindo variaveis\n"
+                       "Quando Fernando pedir 'usa template', passe modo='template'. "
+                       "O email vai para a fila de aprovação.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -209,7 +213,9 @@ TOOLS = [
                 "contato_cargo": {"type": "string", "description": "Cargo do contato (ex: Diretor, Coordenador)"},
                 "contato_email": {"type": "string", "description": "Email do contato"},
                 "tom": {"type": "string", "description": "Tom do email: formal, amigavel, direto (default: amigavel)"},
-                "foco": {"type": "string", "description": "Foco do email: apresentacao, demo, case de sucesso, convite evento (default: apresentacao)"}
+                "foco": {"type": "string", "description": "Foco do email: apresentacao, demo, case de sucesso, convite evento (default: apresentacao)"},
+                "modo": {"type": "string", "enum": ["ia", "template"], "description": "Modo: 'ia' (IA gera do zero) ou 'template' (usa template salvo). Default: ia"},
+                "template_nome": {"type": "string", "description": "Nome do template a usar (se modo=template). Se nao informado, usa o template padrao."}
             },
             "required": ["escola_nome"]
         }
@@ -2268,7 +2274,98 @@ def _handle_gerar_email(params: Dict) -> str:
 
     tom = params.get("tom", "amigavel")
     foco = params.get("foco", "apresentacao")
+    modo = params.get("modo", "ia").lower()
 
+    # === MODO TEMPLATE: buscar template salvo e substituir variáveis ===
+    if modo == "template":
+        try:
+            template_nome = params.get("template_nome")
+            if template_nome:
+                tpl_q = db.client.table("message_templates").select("*").eq(
+                    "is_active", True
+                ).ilike("name", f"%{template_nome}%").limit(1).execute()
+            else:
+                # Buscar template padrão
+                tpl_q = db.client.table("message_templates").select("*").eq(
+                    "is_active", True
+                ).eq("is_default", True).limit(1).execute()
+                if not tpl_q.data:
+                    # Fallback: qualquer template ativo
+                    tpl_q = db.client.table("message_templates").select("*").eq(
+                        "is_active", True
+                    ).limit(1).execute()
+
+            if not tpl_q.data:
+                return json.dumps({"erro": "Nenhum template encontrado. Crie um em Templates no dashboard."})
+
+            tpl = tpl_q.data[0]
+            meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
+            meeting_link_text = os.getenv("HUBSPOT_MEETING_LINK_TEXT", "Agendar conversa com Fernando")
+
+            # Extrair primeiro nome do contato
+            contact_first = contato_nome.split()[0] if contato_nome else "Diretor(a)"
+
+            # Substituir variáveis no template
+            subject = (tpl.get("subject_template") or "").replace(
+                "{school_name}", escola.get("name", "")
+            ).replace("{contact_name}", contato_nome).replace(
+                "{contact_first_name}", contact_first
+            ).replace("{city}", escola.get("city", "")).replace(
+                "{sender_name}", os.getenv("YOUR_NAME", "Fernando")
+            )
+
+            body = (tpl.get("body_template") or "").replace(
+                "{school_name}", escola.get("name", "")
+            ).replace("{contact_name}", contato_nome).replace(
+                "{contact_first_name}", contact_first
+            ).replace("{city}", escola.get("city", "")).replace(
+                "{sender_name}", os.getenv("YOUR_NAME", "Fernando")
+            ).replace("{sender_email}", os.getenv("YOUR_EMAIL", "")).replace(
+                "{company_name}", os.getenv("COMPANY_NAME", "IAprendo")
+            ).replace("{meeting_link}", meeting_link).replace(
+                "{meeting_link_text}", meeting_link_text
+            )
+
+            # Inserir na fila
+            queue_data = {
+                "company_id": escola["id"],
+                "subject": subject[:500],
+                "body": body,
+                "original_subject": subject[:500],
+                "original_body": body,
+                "channel": "email",
+                "status": "pending",
+            }
+            if contato_email:
+                # Buscar contact_id
+                ct = db.client.table("contacts").select("id").eq(
+                    "company_id", escola["id"]
+                ).eq("email", contato_email).limit(1).execute()
+                if ct.data:
+                    queue_data["contact_id"] = ct.data[0]["id"]
+
+            result = db.client.table("approval_queue").insert(queue_data).execute()
+            if result.data:
+                return json.dumps({
+                    "sucesso": True,
+                    "modo": "template",
+                    "template_usado": tpl.get("name", "?"),
+                    "queue_id": result.data[0]["id"],
+                    "assunto": subject,
+                    "corpo": body,
+                    "escola": escola.get("name"),
+                    "contato": contato_nome,
+                    "email_contato": contato_email,
+                    "mensagem": (
+                        f"Email gerado usando template '{tpl.get('name', '?')}'. "
+                        f"Na fila de aprovacao — revise antes de enviar."
+                    ),
+                }, ensure_ascii=False, default=str)
+            return json.dumps({"erro": "Falha ao inserir na fila."})
+        except Exception as e:
+            return json.dumps({"erro": f"Erro ao usar template: {str(e)[:200]}"})
+
+    # === MODO IA: gerar do zero ===
     # RAG: buscar emails que ja funcionaram (respostas/clicks/opens)
     # e usar como exemplos de referencia no prompt
     examples_section = ""
