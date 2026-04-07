@@ -63,9 +63,17 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
                 pass
 
         if not to_email:
-            logger.warning("Sem email - pulando", extra={"queue_id": queue_id, "company_id": company_id})
+            logger.warning("Sem email - bloqueando", extra={"queue_id": queue_id, "company_id": company_id})
+            # Marcar como bloqueada (sai da fila de aprovadas, Fernando ve o motivo)
+            try:
+                db.client.table("approval_queue").update({
+                    "status": "blocked",
+                    "rejection_reason": "Contato sem email cadastrado. Adicione o email e reprocesse.",
+                }).eq("id", queue_id).execute()
+            except Exception:
+                pass
             skipped += 1
-            details.append({"queue_id": queue_id, "status": "skipped", "reason": "sem_email"})
+            details.append({"queue_id": queue_id, "status": "blocked", "reason": "sem_email"})
             continue        # Enviar via Brevo
         result = brevo_sender.send_email(
             to_email=to_email,

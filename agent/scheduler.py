@@ -145,17 +145,29 @@ class IALexScheduler:
     def _send_scheduled_messages(self):
         """Verifica e envia mensagens agendadas cujo horario ja passou.
         Roda a cada 5 minutos. Se scheduled_send_at <= NOW() ou NULL, envia.
+        Notifica Fernando sobre envios E bloqueios (sem email).
         """
         try:
             from workflows.send_approved import send_approved_messages
             result = send_approved_messages(limit=20)
             n_sent = result.get("sent", 0)
+            n_skipped = result.get("skipped", 0)
+
             if n_sent > 0:
                 logger.info(f"Envio agendado: {n_sent} mensagem(ns) enviada(s)")
                 self._send_to_owner(
-                    f"📤 *Envio agendado concluido*\n\n"
-                    f"✅ {n_sent} mensagem(ns) enviada(s) agora.\n"
-                    f"_Emails que estavam agendados para este horario foram disparados._"
+                    f"📤 *Envio concluido*\n\n"
+                    f"✅ {n_sent} mensagem(ns) enviada(s) agora."
+                )
+
+            if n_skipped > 0:
+                blocked_details = [d for d in result.get("details", []) if d.get("status") == "blocked"]
+                logger.warning(f"Envio: {n_skipped} mensagem(ns) bloqueada(s) por falta de email")
+                self._send_to_owner(
+                    f"⚠️ *{n_skipped} mensagem(ns) BLOQUEADA(S)*\n\n"
+                    f"Motivo: contato sem email cadastrado.\n"
+                    f"Adicione o email do contato no dashboard e reprocesse.\n"
+                    f"_As mensagens foram movidas para status 'blocked'._"
                 )
         except Exception as e:
             logger.error(f"Erro no envio agendado: {e}")
