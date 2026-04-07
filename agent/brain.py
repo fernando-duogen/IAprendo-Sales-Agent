@@ -404,6 +404,24 @@ TOOLS = [
         }
     },
     {
+        "name": "iniciar_prospeccao",
+        "description": "Inicia uma SESSAO GUIADA de prospeccao: busca escolas enriquecidas prontas para "
+                       "receber email (com contatos e email), apresenta uma a uma com dados e contatos "
+                       "disponiveis, e pergunta a Fernando se quer gerar email, qual contato usar e se "
+                       "prefere IA ou template. Use quando Fernando disser: 'vamos prospectar', 'gera emails "
+                       "para as escolas', 'quero enviar emails', 'começa a prospeccao', 'me sugere escolas "
+                       "para abordar', 'quais escolas estao prontas?'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cidade": {"type": "string", "description": "Filtrar por cidade (opcional)"},
+                "tipo": {"type": "string", "description": "Filtrar: privada, publica (opcional)"},
+                "limite": {"type": "integer", "description": "Quantas escolas apresentar (default 5, max 20)"},
+                "score_minimo": {"type": "integer", "description": "Score minimo de qualificacao (default 0)"}
+            }
+        }
+    },
+    {
         "name": "ver_email_completo",
         "description": "Mostra o assunto e corpo COMPLETO de um email na fila de aprovacao. Use ANTES de "
                        "editar ou aprovar, para que Fernando possa ler o email inteiro. Use quando Fernando "
@@ -1384,6 +1402,106 @@ def _handle_tracking_emails(params: Dict) -> str:
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro no tracking: {str(e)[:200]}"})
+
+
+def _handle_iniciar_prospeccao(params: Dict) -> str:
+    """Busca escolas enriquecidas prontas para prospeccao e apresenta com contatos."""
+    try:
+        cidade = params.get("cidade")
+        tipo = params.get("tipo")
+        limite = min(int(params.get("limite", 5)), 20)
+        score_min = int(params.get("score_minimo", 0))
+
+        # Buscar escolas enriquecidas (com contatos)
+        q = db.client.table("companies").select(
+            "id,name,city,state,admin_category,school_size,qualification_score,education_levels"
+        ).eq("status", "enriched")
+        if cidade:
+            q = q.ilike("city", f"%{cidade}%")
+        if tipo:
+            q = q.ilike("admin_category", f"%{tipo}%")
+        if score_min > 0:
+            q = q.gte("qualification_score", score_min)
+        q = q.order("qualification_score", desc=True).limit(limite * 2)
+        schools = q.execute().data or []
+
+        if not schools:
+            return json.dumps({
+                "total": 0,
+                "mensagem": "Nenhuma escola enriquecida encontrada com esses filtros. Rode o pipeline primeiro para qualificar e enriquecer escolas.",
+            })
+
+        # Filtrar as que ja tem email pendente/aprovado/enviado
+        result_schools = []
+        for school in schools:
+            if len(result_schools) >= limite:
+                break
+            sid = school["id"]
+            # Checar se ja tem msg
+            msgs = db.client.table("approval_queue").select("id,status").eq(
+                "company_id", sid
+            ).in_("status", ["pending", "approved", "sent"]).limit(1).execute().data or []
+            if msgs:
+                continue  # ja tem msg, pula
+
+            # Buscar contatos com email
+            contacts = db.client.table("contacts").select(
+                "id,full_name,email,role,decision_maker_type,outreach_priority"
+            ).eq("company_id", sid).not_.is_("email", "null").order(
+                "outreach_priority"
+            ).limit(5).execute().data or []
+
+            if not contacts:
+                continue  # sem contato com email, pula
+
+            result_schools.append({
+                "escola": {
+                    "id": sid,
+                    "nome": school.get("name", "?"),
+                    "cidade": school.get("city", ""),
+                    "estado": school.get("state", ""),
+                    "tipo": school.get("admin_category", ""),
+                    "porte": school.get("school_size", ""),
+                    "score": school.get("qualification_score", 0),
+                    "niveis": school.get("education_levels", ""),
+                },
+                "contatos": [{
+                    "nome": c.get("full_name", "?"),
+                    "email": c.get("email", ""),
+                    "cargo": c.get("role", ""),
+                    "tipo": c.get("decision_maker_type", ""),
+                    "prioridade": c.get("outreach_priority", 99),
+                } for c in contacts],
+            })
+
+        # Buscar templates disponiveis
+        templates = []
+        try:
+            tpls = db.client.table("message_templates").select(
+                "id,template_name,subject_template"
+            ).eq("is_active", True).limit(5).execute().data or []
+            templates = [{"nome": t.get("template_name"), "assunto": t.get("subject_template", "")} for t in tpls]
+        except Exception:
+            pass
+
+        return json.dumps({
+            "total_prontas": len(result_schools),
+            "escolas": result_schools,
+            "templates_disponiveis": templates,
+            "instrucao": (
+                "Apresente as escolas UMA A UMA para Fernando, mostrando: nome, cidade, score, "
+                "porte e contatos disponiveis (nome, cargo, email). Para cada escola, pergunte:\n"
+                "1. Quer gerar email para esta escola?\n"
+                "2. Qual contato usar? (mostrar opcoes numeradas)\n"
+                "3. Usar IA personalizada ou template? (mostrar templates se houver)\n"
+                "4. Alguma instrucao especial para o email?\n"
+                "Se Fernando disser 'sim' ou 'gera', chame gerar_email com os dados. "
+                "Se disser 'pula' ou 'proxima', passe para a proxima escola. "
+                "Se disser 'para' ou 'chega', encerre a sessao."
+            ),
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
 def _resolve_queue_id(params: Dict) -> Optional[str]:
@@ -3412,6 +3530,7 @@ TOOL_HANDLERS = {
     "aprovar_mensagem": _handle_aprovar_mensagem,
     "rejeitar_mensagem": _handle_rejeitar_mensagem,
     "editar_e_aprovar": _handle_editar_e_aprovar,
+    "iniciar_prospeccao": _handle_iniciar_prospeccao,
     "ver_email_completo": _handle_ver_email_completo,
     "reescrever_email": _handle_reescrever_email,
     "enviar_aprovados": _handle_enviar_aprovados,
@@ -3610,6 +3729,66 @@ O scheduler roda a cada 30 min e ENVIA ALERTAS PROATIVOS para Fernando no WhatsA
 - Comeco do dia para saber prioridades
 
 *Quando chegar um alerta automatico:* Fernando ja recebe no WhatsApp formatado com a escola, contato, motivos, keywords e acao recomendada.
+
+== LINGUAGEM NATURAL E CONVERSACAO LIVRE (IMPORTANTE) ==
+Fernando fala com voce de maneira NATURAL e LIVRE — como se fosse um colega de trabalho.
+Voce DEVE entender e responder naturalmente, sem exigir comandos exatos.
+
+*Exemplos do que Fernando pode dizer e como interpretar:*
+- "quero mandar email pra umas escolas" → iniciar_prospeccao
+- "vamos prospectar" → iniciar_prospeccao
+- "mostra minhas escolas" → consultar_escolas
+- "tem alguma escola boa?" → consultar_escolas com score alto
+- "aquela escola la de canoas" → buscar por cidade Canoas
+- "o que eu tenho pra fazer hoje?" → estatisticas_gerais + fila_aprovacao
+- "manda aquele email" → fila_aprovacao → aprovar
+- "tira isso e coloca aquilo" → reescrever_email
+- "achei meio longo" → reescrever_email com instrucao "encurte"
+- "e o santa ines?" → detalhes_escola + buscar_memorias do Santa Ines
+- Qualquer frase informal → TENTE ENTENDER A INTENCAO e use a ferramenta certa
+
+*NUNCA diga "nao entendi" se puder inferir a intencao.* Tente sempre. Se realmente nao souber, pergunte de forma natural: "Voce quer que eu [acao A] ou [acao B]?"
+
+== SESSAO GUIADA DE PROSPECCAO (NOVO — MUITO IMPORTANTE) ==
+Quando Fernando disser "vamos prospectar", "gera emails para as escolas", "quero enviar emails",
+"começa a prospeccao", "me sugere escolas" ou qualquer variacao:
+
+1. CHAME iniciar_prospeccao — retorna escolas enriquecidas prontas + contatos + templates
+2. APRESENTE A PRIMEIRA ESCOLA com formato rico:
+
+🏫 *1/5 — COLEGIO MARISTA CHAMPAGNAT*
+📍 Porto Alegre/RS | 🎯 Score: 92 | 📊 Porte: 1000+ alunos
+📋 Tipo: Privada | Niveis: Fundamental, Medio
+
+👤 *Contatos disponiveis:*
+1️⃣ Joao Silva — Diretor (joao@marista.com.br)
+2️⃣ Maria Santos — Coord. Pedagogica (maria@marista.com.br)
+3️⃣ Ana Lima — Vice-Diretora (ana@marista.com.br)
+
+📝 *Opcoes de email:*
+A) IA personalizada (recomendado — cria email unico)
+B) Template "[nome do template]"
+
+⚡ O que quer fazer?
+1️⃣ Gerar email (IA) para contato 1
+2️⃣ Gerar email (IA) para outro contato
+3️⃣ Usar template
+4️⃣ Pular para proxima escola
+5️⃣ Encerrar sessao
+
+3. QUANDO Fernando responder (ex: "1", "gera pro diretor", "pula"):
+   - "1" ou "gera" → chame gerar_email com escola + contato selecionado
+   - Apos gerar → MOSTRE o email e pergunte: "Aprovar, editar, ou pular?"
+   - "pula" ou "proxima" → apresente a proxima escola
+   - "para" ou "chega" → encerre a sessao com resumo
+
+4. AO ENCERRAR, mostre resumo: "Sessao encerrada. X emails gerados, Y aprovados, Z na fila."
+
+*REGRAS DA SESSAO:*
+- Mantenha o FLUXO — nao perca o contexto da sessao entre mensagens
+- Se Fernando disser algo fora do fluxo (ex: "qual meu score?"), responda e RETOME a sessao
+- Numere as escolas (1/5, 2/5, etc) para Fernando saber o progresso
+- Se Fernando disser "gera pra todas" → gere email para cada escola com o contato de maior prioridade, sem pedir confirmacao individual (batch mode)
 
 == AGENDAMENTO DE ENVIO (NOVO) ==
 Fernando pode AGENDAR o horario de envio de emails e follow-ups. Se ele nao disser nada sobre horario, envia imediatamente (comportamento padrao). Se ele especificar data/hora, o email fica na fila ate o momento certo.
@@ -3869,16 +4048,16 @@ Email gerado:
 6️⃣ Ver proximo email da fila
 
 Conversa inicial / menu geral:
-1️⃣ Ver fila de aprovacao
-2️⃣ Rodar pipeline
-3️⃣ Gerar follow-ups
-4️⃣ Descobrir escolas novas (Discovery)
-5️⃣ Buscar escola no MEC
-6️⃣ Ver estatisticas
-7️⃣ Score preditivo (top oportunidades)
-8️⃣ Sinais de compra (quem esta quente)
-9️⃣ Configurar automacoes
-🔟 Ver modo de autonomia
+1️⃣ Iniciar prospeccao (gerar emails escola a escola)
+2️⃣ Ver fila de aprovacao
+3️⃣ Rodar pipeline
+4️⃣ Gerar follow-ups
+5️⃣ Descobrir escolas novas (Discovery)
+6️⃣ Buscar escola no MEC
+7️⃣ Ver estatisticas
+8️⃣ Score preditivo (top oportunidades)
+9️⃣ Sinais de compra (quem esta quente)
+🔟 Configurar automacoes
 
 *Regras:*
 - SEMPRE ofereça opcoes ao final — Fernando nao deve precisar adivinhar o que voce faz
@@ -3899,7 +4078,8 @@ Quando Fernando pedir menu, ajuda, ou disser "o que voce faz", mostre TODAS as c
 • Descobrir escolas novas (Discovery)
 • Buscar sinais (rankings/premios)
 
-📊 *Pipeline e qualificacao:*
+📊 *Pipeline e prospeccao:*
+• Iniciar prospeccao guiada (escola a escola, com contatos)
 • Rodar pipeline (qualificar/enriquecer/contatos/emails)
 • Ver estatisticas gerais
 • Funil de vendas
