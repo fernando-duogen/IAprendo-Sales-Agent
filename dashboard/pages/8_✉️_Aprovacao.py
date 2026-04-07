@@ -39,38 +39,157 @@ st.caption("Revise, edite e aprove cada mensagem antes do envio. Nenhuma mensage
 pending = queue_manager.get_pending(limit=50)
 total = len(pending)
 
-if total == 0:
-    alert_banner("Nenhuma mensagem aguardando aprovacao.", "success")
-    alert_banner("Execute o pipeline para gerar novas mensagens e volte aqui para aprova-las.", "info")
-    if st.button("Verificar novamente", icon=":material/refresh:"):
-        st.rerun()
-    st.stop()
+# Contar por status
+try:
+    approved_count = (db.client.table("approval_queue").select("id", count="exact").eq("status", "approved").execute()).count or 0
+except Exception:
+    approved_count = 0
+try:
+    sent_count = (db.client.table("approval_queue").select("id", count="exact").eq("status", "sent").execute()).count or 0
+except Exception:
+    sent_count = 0
+try:
+    rejected_count = (db.client.table("approval_queue").select("id", count="exact").eq("status", "rejected").execute()).count or 0
+except Exception:
+    rejected_count = 0
 
 # ===========================================================================
 # METRICAS RAPIDAS
 # ===========================================================================
-mc1, mc2, mc3 = st.columns(3)
+mc1, mc2, mc3, mc4 = st.columns(4)
 with mc1:
     metric_card("Pendentes", total, COLORS["warning"], icon="pending_actions")
 with mc2:
-    # Contar aprovadas hoje (aproximado)
-    try:
-        approved_today = db.client.table("approval_queue").select("id", count="exact").eq(
-            "status", "approved").execute()
-        approved_count = approved_today.count or 0
-    except Exception:
-        approved_count = 0
     metric_card("Aprovadas", approved_count, COLORS["success"], icon="check_circle")
 with mc3:
-    try:
-        rejected_today = db.client.table("approval_queue").select("id", count="exact").eq(
-            "status", "rejected").execute()
-        rejected_count = rejected_today.count or 0
-    except Exception:
-        rejected_count = 0
+    metric_card("Enviadas", sent_count, COLORS["info"], icon="send")
+with mc4:
     metric_card("Rejeitadas", rejected_count, COLORS["error"], icon="cancel")
 
 st.markdown("")
+
+# ===========================================================================
+# TABS: Pendentes / Aprovadas (aguardando envio) / Enviadas
+# ===========================================================================
+import pandas as pd
+
+tab_pending, tab_approved, tab_sent = st.tabs([
+    f"📝 Pendentes ({total})",
+    f"✅ Aprovadas ({approved_count})",
+    f"📤 Enviadas ({sent_count})",
+])
+
+# --- TAB: APROVADAS (aguardando envio) ---
+with tab_approved:
+    try:
+        approved_msgs = db.client.table("approval_queue").select(
+            "id,subject,company_id,contact_id,channel,approved_at,scheduled_send_at,"
+            "companies(name,city),contacts(full_name,email)"
+        ).eq("status", "approved").is_("sent_at", "null").order(
+            "approved_at", desc=True
+        ).limit(50).execute().data or []
+    except Exception:
+        approved_msgs = []
+
+    if not approved_msgs:
+        alert_banner("Nenhuma mensagem aprovada aguardando envio.", "info")
+    else:
+        st.caption(f"{len(approved_msgs)} mensagem(ns) aprovada(s), aguardando envio.")
+
+        for msg in approved_msgs:
+            comp = msg.get("companies") or {}
+            cont = msg.get("contacts") or {}
+            sched = msg.get("scheduled_send_at")
+            sched_label = ""
+            if sched:
+                try:
+                    from datetime import datetime as _dt
+                    sched_dt = _dt.fromisoformat(sched.replace("Z", "+00:00"))
+                    sched_label = f" | ⏰ Agendado: {sched_dt.strftime('%d/%m %H:%M')}"
+                except Exception:
+                    sched_label = f" | ⏰ {sched[:16]}"
+            else:
+                sched_label = " | 📤 Envio imediato (proximo ciclo)"
+
+            st.markdown(
+                f'<div class="data-card" style="border-left:4px solid {COLORS["success"]};padding:10px 14px">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                f'<strong style="font-size:14px">{comp.get("name", "?")}</strong>'
+                f'<span style="font-size:11px;color:#757575">{(msg.get("approved_at") or "")[:10]}</span>'
+                f'</div>'
+                f'<div style="font-size:12px;color:#424242;margin-top:2px">{msg.get("subject", "")}</div>'
+                f'<div style="font-size:11px;color:#757575;margin-top:2px">'
+                f'Para: {cont.get("full_name", "?")} ({cont.get("email", "?")}){sched_label}'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+
+        st.caption(
+            "💡 Mensagens sem agendamento serao enviadas automaticamente pelo scheduler (a cada 5 min). "
+            "Mensagens agendadas serao enviadas no horario definido."
+        )
+
+# --- TAB: ENVIADAS (historico) ---
+with tab_sent:
+    try:
+        sent_msgs = db.client.table("approval_queue").select(
+            "id,subject,company_id,contact_id,sent_at,opened_at,clicked_at,replied_at,"
+            "follow_up_number,companies(name),contacts(full_name,email)"
+        ).eq("status", "sent").order("sent_at", desc=True).limit(50).execute().data or []
+    except Exception:
+        sent_msgs = []
+
+    if not sent_msgs:
+        alert_banner("Nenhuma mensagem enviada ainda.", "info")
+    else:
+        st.caption(f"Ultimas {len(sent_msgs)} mensagem(ns) enviada(s).")
+
+        for msg in sent_msgs:
+            comp = msg.get("companies") or {}
+            cont = msg.get("contacts") or {}
+            fu = msg.get("follow_up_number", 0) or 0
+            fu_tag = f" (FU#{fu})" if fu > 0 else ""
+
+            # Tracking icons
+            icons = []
+            if msg.get("replied_at"):
+                icons.append("💬 Respondeu")
+            elif msg.get("clicked_at"):
+                icons.append("🔗 Clicou")
+            elif msg.get("opened_at"):
+                icons.append("👀 Abriu")
+            else:
+                icons.append("📤 Enviado")
+            tracking = " · ".join(icons)
+
+            border_color = COLORS["success"] if msg.get("replied_at") else (
+                COLORS["info"] if msg.get("clicked_at") or msg.get("opened_at") else "#9E9E9E"
+            )
+
+            st.markdown(
+                f'<div class="data-card" style="border-left:4px solid {border_color};padding:10px 14px">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                f'<strong style="font-size:14px">{comp.get("name", "?")}{fu_tag}</strong>'
+                f'<span style="font-size:11px;color:#757575">{(msg.get("sent_at") or "")[:10]}</span>'
+                f'</div>'
+                f'<div style="font-size:12px;color:#424242;margin-top:2px">{msg.get("subject", "")}</div>'
+                f'<div style="font-size:11px;color:#757575;margin-top:2px">'
+                f'Para: {cont.get("full_name", "?")} | {tracking}'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+
+# --- TAB: PENDENTES (tela principal de aprovação) ---
+with tab_pending:
+
+    if total == 0:
+        alert_banner("Nenhuma mensagem aguardando aprovacao.", "success")
+        alert_banner("Execute o pipeline para gerar novas mensagens e volte aqui para aprova-las.", "info")
+        if st.button("Verificar novamente", icon=":material/refresh:"):
+            st.rerun()
+        st.stop()
+
+    st.markdown("")
 
 # ===========================================================================
 # ACOES EM MASSA — expander estilizado

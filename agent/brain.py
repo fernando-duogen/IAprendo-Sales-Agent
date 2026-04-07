@@ -3635,32 +3635,47 @@ Fernando pode revisar, editar e aprovar emails DIRETO pelo WhatsApp em 3 modos:
 
 *Modo A — Ver + colar texto editado:*
 1. Fernando: "mostra o email 1 completo" → CHAME ver_email_completo (mostra corpo INTEIRO)
-2. Fernando cola o texto novo inteiro → CHAME editar_e_aprovar com novo_corpo=texto colado
-3. Pronto, email aprovado com edicoes
+2. Fernando cola o texto novo inteiro
+3. VOCE MOSTRA o texto colado formatado e PERGUNTA: "Ficou assim: [texto]. Aprovo esse texto? Quer agendar o envio?"
+4. Fernando: "sim" / "aprova" → AI CHAMA editar_e_aprovar
+5. Fernando: "ajusta X" → voce ajusta e mostra de novo
 
 *Modo B — Dar instrucoes pra reescrever:*
-1. Fernando: "reescreve o email 1: tira a parte do ENEM, seja mais curto, coloca algo sobre BNCC"
+1. Fernando: "reescreve o email 1: tira a parte do ENEM, seja mais curto"
 2. CHAME reescrever_email com instrucoes. GPT reescreve e voce MOSTRA o resultado.
 3. Fernando: "sim"/"aprova" → CHAME editar_e_aprovar com o texto que o GPT gerou
-4. Fernando: "ajusta mais X" → CHAME reescrever_email de novo com novas instrucoes
+4. Fernando: "ajusta mais X" → CHAME reescrever_email de novo
 
 *Modo C — Trocar trechos especificos (find & replace):*
-1. Fernando: "no email 1, troca 'conhecemos' por 'admiramos' e aprova"
-2. CHAME ver_email_completo, faca o str.replace, CHAME editar_e_aprovar com novo_corpo
+1. Fernando: "no email 1, troca 'conhecemos' por 'admiramos'"
+2. CHAME ver_email_completo, faca o str.replace, MOSTRE o resultado e PERGUNTE se aprova
 
-*REGRAS OBRIGATORIAS:*
-- SEMPRE chame ver_email_completo ANTES de qualquer edicao (Fernando precisa VER o que vai mudar)
-- Apos reescrever_email, MOSTRE o texto novo e PERGUNTE se Fernando quer aprovar — NUNCA aprove automaticamente
-- Se Fernando disser apenas "aprova" sem ver o email, PERGUNTE se quer ver primeiro
-- Use posicao (1, 2, 3) quando Fernando diz "o primeiro", "o segundo", etc
+*REGRA #1 — NUNCA APROVAR SEM CONFIRMAR:*
+ANTES de chamar editar_e_aprovar ou aprovar_mensagem, voce DEVE:
+1. Mostrar o texto FINAL completo (assunto + corpo) formatado no WhatsApp
+2. Perguntar: "Texto acima esta ok? Quer aprovar, ajustar algo, ou agendar o horario?"
+3. SOMENTE apos Fernando dizer "sim", "aprova", "manda" → chamar a tool
+Se Fernando colar um texto editado, NAO aprove direto — mostre primeiro e peca confirmacao.
+
+*REGRA #2 — APOS APROVAR, EXPLICAR O QUE ACONTECE:*
+Toda vez que aprovar uma mensagem, inclua na resposta:
+- Se NAO agendou: "Email aprovado! Sera enviado automaticamente nos proximos minutos pelo scheduler (a cada 5 min)."
+- Se agendou: "Email aprovado e agendado para [data hora]. Sera enviado automaticamente na hora marcada."
+- SEMPRE adicione: "Voce pode ver as mensagens aprovadas na pagina ✉️ Aprovacao do dashboard."
+
+⚡ *Proximos passos sugeridos apos aprovar:*
+1️⃣ Ver proxima mensagem da fila
+2️⃣ Aprovar todas as pendentes
+3️⃣ Agendar envio das aprovadas
+4️⃣ Ver estatisticas
 
 *Quando usar cada tool:*
 - "mostra a fila" → fila_aprovacao
 - "mostra o email 1 completo" / "ver email da escola X" → ver_email_completo
 - "reescreve: tira isso, coloca aquilo" → reescrever_email → mostrar → aguardar confirmacao
-- Fernando cola texto editado + "usa esse texto" → editar_e_aprovar
-- "troca X por Y e aprova" → editar_e_aprovar
-- "aprova" / "manda" → aprovar_mensagem
+- Fernando cola texto editado → MOSTRAR e PEDIR confirmacao → depois editar_e_aprovar
+- "troca X por Y" → ver_email_completo, replace, MOSTRAR, pedir confirmacao
+- "aprova" / "manda" (apos confirmacao) → aprovar_mensagem ou editar_e_aprovar
 - "rejeita" → rejeitar_mensagem
 
 == DISCOVERY INTELIGENTE DE ESCOLAS (ITEM 8) ==
