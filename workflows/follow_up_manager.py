@@ -734,7 +734,7 @@ def generate_follow_up(
                     scope_id=company_id,
                     category="insight",
                     importance=5,
-                    source="follow_up_manager",
+                    source="ialex",
                 )
             except Exception:
                 pass

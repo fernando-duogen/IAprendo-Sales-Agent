@@ -92,7 +92,7 @@ class EmailSignature:
                 "category": "fact",
                 "content": payload[:2000],
                 "importance": 8,
-                "source": "email_signature",
+                "source": "ialex",
             }).execute()
             logger.info("Assinatura de email salva")
             return True

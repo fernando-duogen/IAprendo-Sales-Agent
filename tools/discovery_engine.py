@@ -500,7 +500,7 @@ class DiscoveryEngine:
                             scope_id=existing["id"],
                             category="fact",
                             importance=4,
-                            source="discovery_engine",
+                            source="ialex",
                         )
                     except Exception:
                         pass
@@ -559,7 +559,7 @@ class DiscoveryEngine:
                                 scope_id=new_id,
                                 category="insight",
                                 importance=6,
-                                source="discovery_engine",
+                                source="ialex",
                             )
                         except Exception:
                             pass
@@ -715,7 +715,7 @@ class DiscoveryEngine:
                     scope_id=company_id,
                     category="insight",
                     importance=7 if tipo in ("premio", "ranking") else 6,
-                    source="discovery_engine",
+                    source="ialex",
                 )
                 if mem_id:
                     added += 1

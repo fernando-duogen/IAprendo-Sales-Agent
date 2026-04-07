@@ -127,6 +127,45 @@ try:
         else:
             st.info("Configure o texto e/ou imagem ao lado para ver o preview.")
 
+    # Botao de email de teste
+    st.markdown('<div style="margin-top:16px"></div>', unsafe_allow_html=True)
+    section_header("Testar assinatura por email", "send")
+
+    test_col1, test_col2 = st.columns([2, 1])
+    with test_col1:
+        test_email = st.text_input(
+            "Email para teste",
+            placeholder="seu@email.com",
+            key="sig_test_email",
+        )
+    with test_col2:
+        st.markdown('<div style="margin-top:28px"></div>', unsafe_allow_html=True)
+        if st.button("📧 Enviar teste", use_container_width=True, key="btn_test_sig"):
+            if not test_email or "@" not in test_email:
+                st.error("Digite um email valido.")
+            else:
+                try:
+                    from tools.brevo_sender import BrevoSender
+                    sender = BrevoSender()
+                    result = sender.send_email(
+                        to_email=test_email.strip(),
+                        to_name="Teste",
+                        subject="[TESTE] Preview da assinatura IAprendo",
+                        body=(
+                            "Oi! Este e um email de teste para verificar como a assinatura "
+                            "aparece para o destinatario.\n\n"
+                            "Se a assinatura abaixo estiver correta (texto + imagem), "
+                            "esta tudo configurado!\n\n"
+                            "Atenciosamente,\nFernando"
+                        ),
+                    )
+                    if result.get("success"):
+                        st.success(f"Email de teste enviado para {test_email}! Verifique sua caixa de entrada.")
+                    else:
+                        st.error(f"Falha no envio: {result.get('error', 'erro desconhecido')}")
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+
 except Exception as e:
     st.warning(f"Assinatura indisponivel: {e}")
 

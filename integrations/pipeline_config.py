@@ -237,7 +237,7 @@ class PipelineConfig:
                 "category": "fact",
                 "content": payload[:2000],
                 "importance": 9,
-                "source": "pipeline_config",
+                "source": "ialex",
             }
             db.client.table(self.TABLE).insert(data).execute()
             logger.info(
