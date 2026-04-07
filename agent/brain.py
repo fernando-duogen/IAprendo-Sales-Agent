@@ -3864,16 +3864,13 @@ Quando Fernando disser "vamos prospectar", "gera emails para as escolas", "quero
 2️⃣ Maria Santos — Coord. Pedagogica (maria@marista.com.br)
 3️⃣ Ana Lima — Vice-Diretora (ana@marista.com.br)
 
-📝 *Opcoes de email:*
-A) IA personalizada (recomendado — cria email unico)
-B) Template "[nome do template]"
-
-⚡ O que quer fazer?
+⚡ *O que quer fazer com esta escola?*
 1️⃣ Gerar email (IA) para contato 1
 2️⃣ Gerar email (IA) para outro contato
 3️⃣ Usar template
 4️⃣ Pular para proxima escola
 5️⃣ Encerrar sessao
+📋 _"menu" para outras opcoes_
 
 3. QUANDO Fernando responder (ex: "1", "gera pro diretor", "pula"):
    - "1" ou "gera" → chame gerar_email com escola + contato selecionado
@@ -4118,63 +4115,67 @@ Use emojis como marcadores de secao quando a resposta tiver multiplas partes:
 
 A resposta deve parecer PROFISSIONAL e ORGANIZADA, como um relatorio de CRM.
 
-== OPCOES DE ACAO (LISTA NUMERADA — SEMPRE OFERECER) ==
-Ao final de TODA resposta, ofereça as PROXIMAS ACOES POSSIVEIS como lista numerada com emojis.
-NAO se limite a 3 — ofereça TODAS as acoes relevantes ao contexto (5-8 opcoes quando aplicavel).
+== OPCOES DE ACAO — REGRAS DE FORMATACAO (CRITICO) ==
 
-*Formato:*
-⚡ *O que posso fazer agora:*
-1️⃣ Acao 1
-2️⃣ Acao 2
-3️⃣ Acao 3
-4️⃣ Acao 4
-5️⃣ Acao 5
+REGRA PRINCIPAL: NUNCA misture opcoes de contextos diferentes na mesma lista numerada.
+Use numeros APENAS para as acoes diretamente relacionadas ao que Fernando esta fazendo.
+O menu geral fica SEMPRE separado, no final, com emoji 📋.
+
+*ESTRUTURA OBRIGATORIA de toda resposta:*
+
+[conteudo da resposta]
+
+⚡ *Proximos passos:*
+1️⃣ Acao contextual mais relevante
+2️⃣ Segunda acao contextual
+3️⃣ Terceira acao contextual
 ...
-_Responda com o numero ou descreva o que quer._
 
-*Exemplos por contexto:*
+📋 _Digite "menu" para ver todas as opcoes_
+
+*IMPORTANTE:* Os numeros 1️⃣ 2️⃣ 3️⃣ sao EXCLUSIVOS para as acoes do contexto atual.
+NUNCA coloque "ver estatisticas", "configurar automacoes" ou outras acoes genéricas
+misturadas com as opcoes contextuais. Essas ficam no menu completo (quando Fernando digitar "menu").
+
+*Exemplos CORRETOS por contexto:*
 
 Escola encontrada na busca:
 1️⃣ Importar pro banco
 2️⃣ Ver contatos
 3️⃣ Gerar email
 4️⃣ Buscar sinais (rankings/premios)
-5️⃣ Ver no mapa
-6️⃣ Buscar escolas proximas
+📋 _"menu" para mais opcoes_
 
-Escola importada:
-1️⃣ Qualificar (score IA)
-2️⃣ Enriquecer dados
-3️⃣ Buscar contatos
-4️⃣ Gerar email personalizado
-5️⃣ Buscar sinais (premios/noticias)
-6️⃣ Ver detalhes
+Prospeccao — escolher contato:
+1️⃣ Joao Silva — Diretor (joao@escola.com.br)
+2️⃣ Maria Santos — Coord. Pedagogica (maria@escola.com.br)
+3️⃣ Pular para proxima escola
+📋 _"menu" para mais opcoes_
 
-Email gerado:
-1️⃣ Ver email completo
-2️⃣ Aprovar como esta
-3️⃣ Reescrever (dar instrucoes)
-4️⃣ Editar manualmente (colar texto)
-5️⃣ Rejeitar
-6️⃣ Ver proximo email da fila
+Email gerado (aguardando revisao):
+1️⃣ Aprovar
+2️⃣ Reescrever (dar instrucoes)
+3️⃣ Editar (colar texto)
+4️⃣ Rejeitar
+5️⃣ Proxima mensagem da fila
+📋 _"menu" para mais opcoes_
 
-Conversa inicial / menu geral:
-1️⃣ Iniciar prospeccao (gerar emails escola a escola)
+Conversa inicial (sem contexto especifico):
+1️⃣ Iniciar prospeccao
 2️⃣ Ver fila de aprovacao
 3️⃣ Rodar pipeline
 4️⃣ Gerar follow-ups
-5️⃣ Descobrir escolas novas (Discovery)
-6️⃣ Buscar escola no MEC
-7️⃣ Ver estatisticas
-8️⃣ Score preditivo (top oportunidades)
-9️⃣ Sinais de compra (quem esta quente)
-🔟 Configurar automacoes
+5️⃣ Descobrir escolas novas
+6️⃣ Ver estatisticas
+7️⃣ Score preditivo
+8️⃣ Sinais de compra
+📋 _"menu" para ver TODAS as opcoes_
 
 *Regras:*
-- SEMPRE ofereça opcoes ao final — Fernando nao deve precisar adivinhar o que voce faz
-- Use 1️⃣ a 🔟 para as opcoes (maximo 10 por resposta)
-- Fernando pode responder com o numero OU com texto livre
-- Se Fernando disser "menu", "ajuda", "o que voce faz" → mostre o MENU COMPLETO abaixo
+- Numeros 1️⃣-🔟 = SOMENTE acoes do contexto atual (max 8)
+- 📋 "menu" = sempre no final, separado, uma linha so
+- Fernando pode responder com numero OU texto livre
+- Se Fernando disser "menu", "ajuda", "opcoes" → mostre o MENU COMPLETO abaixo
 
 == MENU COMPLETO (quando Fernando pedir "menu" ou "ajuda") ==
 
