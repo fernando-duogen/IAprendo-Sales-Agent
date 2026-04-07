@@ -49,8 +49,8 @@ class BrevoSender:
             "sender": {"name": self.from_name, "email": self.from_email},
             "to": [{"email": to_email, "name": to_name}],
             "subject": subject,
-            "htmlContent": self._text_to_html(body),
-            "textContent": body,
+            "htmlContent": self._text_to_html(body, with_signature=True),
+            "textContent": body + self._get_text_signature(),
         }
         if queue_id:
             payload["tags"] = [f"queue:{queue_id}"]
@@ -118,8 +118,24 @@ class BrevoSender:
                 "Erro ao atualizar queue com tracking (envio OK, tracking nao salvo)",
                 extra={"queue_id": queue_id, "error": str(e)},
             )
-    def _text_to_html(self, text: str) -> str:
-        """Converte texto plano para HTML com links clicaveis."""
+    def _get_text_signature(self) -> str:
+        """Retorna assinatura em texto puro (para textContent)."""
+        try:
+            from integrations.email_signature import email_signature
+            return email_signature.render_text()
+        except Exception:
+            return ""
+
+    def _get_html_signature(self) -> str:
+        """Retorna assinatura em HTML (para htmlContent)."""
+        try:
+            from integrations.email_signature import email_signature
+            return email_signature.render_html()
+        except Exception:
+            return ""
+
+    def _text_to_html(self, text: str, with_signature: bool = False) -> str:
+        """Converte texto plano para HTML com links clicaveis e assinatura."""
         import re
         # Primeiro, converter URLs em links HTML
         meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
@@ -150,10 +166,17 @@ class BrevoSender:
             else:
                 html_lines.append('<div style="margin:0;padding:0;height:12px">&nbsp;</div>')
         body_html = chr(10).join(html_lines)
+
+        # Assinatura HTML (se habilitada)
+        signature_html = ""
+        if with_signature:
+            signature_html = self._get_html_signature()
+
         return (
             '<html><body style="font-family:Arial,sans-serif;font-size:14px;color:#333;'
             'line-height:1.5;margin:0;padding:20px">'
             + body_html
+            + signature_html
             + '</body></html>'
         )
 

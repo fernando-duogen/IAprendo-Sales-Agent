@@ -15,9 +15,126 @@ from dashboard.theme import (
 apply_theme_no_config()
 
 # --- Header ---
-breadcrumb(["IAprendo", "Templates de Mensagem"])
-st.markdown("# Templates de Mensagem")
-st.caption("Crie e gerencie mensagens padrao. Variaveis como {school_name} sao substituidas automaticamente.")
+breadcrumb(["IAprendo", "Templates e Assinatura"])
+st.markdown("# Templates e Assinatura")
+st.caption("Gerencie mensagens padrao e configure a assinatura que vai em todos os emails.")
+
+# =============================================================================
+# ASSINATURA DE EMAIL (no topo, antes dos templates)
+# =============================================================================
+section_header("Assinatura de Email", "draw")
+
+st.markdown(
+    '<div style="font-size:13px;color:#757575;margin-bottom:12px">'
+    'A assinatura e adicionada automaticamente ao final de <strong>todo email</strong> '
+    'enviado pelo IAlex (emails iniciais, follow-ups, etc). Suporta texto + imagem.'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+try:
+    from integrations.email_signature import email_signature
+
+    sig = email_signature.get_signature()
+
+    sig_col1, sig_col2 = st.columns([1, 1])
+
+    with sig_col1:
+        sig_enabled = st.toggle("Assinatura ativa", value=sig.get("enabled", True), key="sig_enabled")
+        sig_text = st.text_area(
+            "Texto da assinatura",
+            value=sig.get("text", ""),
+            height=120,
+            key="sig_text",
+            placeholder="Fernando Nienaber\nIAprendo - Plataforma Educacional\n(51) 99642-2564\nwww.iaprendo.com.br",
+            help="Cada linha aparece separada. Use para nome, cargo, empresa, telefone, site.",
+        )
+        sig_image_url = st.text_input(
+            "URL da imagem (logo/banner)",
+            value=sig.get("image_url", ""),
+            key="sig_image_url",
+            placeholder="https://exemplo.com/logo.png",
+            help="Cole a URL publica da imagem. Use um servico de hospedagem (Imgur, Google Drive publico, etc).",
+        )
+        sig_col_a, sig_col_b = st.columns(2)
+        with sig_col_a:
+            sig_image_width = st.number_input(
+                "Largura da imagem (px)",
+                min_value=50, max_value=600, step=10,
+                value=int(sig.get("image_width", 200)),
+                key="sig_image_width",
+            )
+        with sig_col_b:
+            sig_link_url = st.text_input(
+                "Link ao clicar na imagem (opcional)",
+                value=sig.get("link_url", ""),
+                key="sig_link_url",
+                placeholder="https://iaprendo.com.br",
+            )
+        sig_separator = st.checkbox(
+            "Mostrar linha separadora acima da assinatura",
+            value=sig.get("separator", True),
+            key="sig_separator",
+        )
+
+        if st.button("💾 Salvar assinatura", type="primary", use_container_width=True, key="btn_save_sig"):
+            new_sig = {
+                "enabled": sig_enabled,
+                "text": sig_text,
+                "image_url": sig_image_url.strip(),
+                "image_width": int(sig_image_width),
+                "image_alt": "Logo",
+                "link_url": sig_link_url.strip(),
+                "separator": sig_separator,
+            }
+            if email_signature.save_signature(new_sig):
+                st.success("Assinatura salva! Todos os proximos emails usarao essa assinatura.")
+                st.rerun()
+            else:
+                st.error("Falha ao salvar assinatura.")
+
+    with sig_col2:
+        st.markdown("**Preview da assinatura:**")
+        # Gerar preview em tempo real
+        preview_sig = {
+            "enabled": sig_enabled,
+            "text": sig_text,
+            "image_url": sig_image_url.strip(),
+            "image_width": int(sig_image_width),
+            "image_alt": "Logo",
+            "link_url": sig_link_url.strip(),
+            "separator": sig_separator,
+        }
+        # Temporariamente gerar HTML sem salvar
+        from integrations.email_signature import EmailSignature
+        temp_sig = EmailSignature()
+        temp_sig.get_signature = lambda: preview_sig
+        preview_html = temp_sig.render_html()
+
+        if preview_html:
+            # Simular um email com assinatura
+            sample_body = (
+                '<div style="font-family:Arial,sans-serif;font-size:14px;color:#333;'
+                'padding:16px;border:1px solid #E0E0E0;border-radius:8px;background:#FAFAFA">'
+                '<div style="color:#999;font-size:12px;margin-bottom:8px">Preview do email:</div>'
+                '<div style="margin:0;line-height:1.5">Oi Joao, tudo bem?</div>'
+                '<div style="height:8px">&nbsp;</div>'
+                '<div style="margin:0;line-height:1.5">Gostariamos de apresentar o IAprendo...</div>'
+                + preview_html
+                + '</div>'
+            )
+            st.markdown(sample_body, unsafe_allow_html=True)
+        else:
+            st.info("Configure o texto e/ou imagem ao lado para ver o preview.")
+
+except Exception as e:
+    st.warning(f"Assinatura indisponivel: {e}")
+
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+# =============================================================================
+# TEMPLATES DE MENSAGEM (conteudo original da pagina)
+# =============================================================================
 
 try:
     from database.supabase_client import db
