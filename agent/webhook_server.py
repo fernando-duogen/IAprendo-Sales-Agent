@@ -212,7 +212,13 @@ def webhook():
                 lat = loc.get("latitude")
                 lng = loc.get("longitude")
                 loc_name = loc.get("name", "")
-                text = f"Estou em {loc_name + ', ' if loc_name else ''}coordenadas {lat}, {lng}. Quais escolas tem perto de mim num raio de 2km?"
+                loc_desc = f"{loc_name}, " if loc_name else ""
+                text = (
+                    f"[LOCALIZACAO RECEBIDA] {loc_desc}coordenadas {lat}, {lng}. "
+                    f"Fernando compartilhou sua localizacao. Pergunte o que ele quer fazer: "
+                    f"buscar escolas proximas (e em qual raio), buscar no banco ou na base "
+                    f"completa do MEC, filtrar por tipo (privada/publica), ou outra coisa."
+                )
                 logger.info("Localizacao recebida", extra={"lat": lat, "lng": lng})
 
             # === AUDIO MESSAGE ===
