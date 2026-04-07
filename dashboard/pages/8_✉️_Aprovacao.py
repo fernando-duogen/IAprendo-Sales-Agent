@@ -129,12 +129,12 @@ with tab_approved:
             "Mensagens agendadas serao enviadas no horario definido."
         )
 
-# --- TAB: ENVIADAS (historico) ---
+# --- TAB: ENVIADAS (historico com corpo completo) ---
 with tab_sent:
     try:
         sent_msgs = db.client.table("approval_queue").select(
-            "id,subject,company_id,contact_id,sent_at,opened_at,clicked_at,replied_at,"
-            "follow_up_number,companies(name),contacts(full_name,email)"
+            "id,subject,body,company_id,contact_id,sent_at,opened_at,clicked_at,replied_at,"
+            "follow_up_number,companies(name,city),contacts(full_name,email)"
         ).eq("status", "sent").order("sent_at", desc=True).limit(50).execute().data or []
     except Exception:
         sent_msgs = []
@@ -142,9 +142,9 @@ with tab_sent:
     if not sent_msgs:
         alert_banner("Nenhuma mensagem enviada ainda.", "info")
     else:
-        st.caption(f"Ultimas {len(sent_msgs)} mensagem(ns) enviada(s).")
+        st.caption(f"Ultimas {len(sent_msgs)} mensagem(ns) enviada(s). Clique para ver o corpo completo.")
 
-        for msg in sent_msgs:
+        for i, msg in enumerate(sent_msgs):
             comp = msg.get("companies") or {}
             cont = msg.get("contacts") or {}
             fu = msg.get("follow_up_number", 0) or 0
@@ -166,18 +166,29 @@ with tab_sent:
                 COLORS["info"] if msg.get("clicked_at") or msg.get("opened_at") else "#9E9E9E"
             )
 
-            st.markdown(
-                f'<div class="data-card" style="border-left:4px solid {border_color};padding:10px 14px">'
-                f'<div style="display:flex;justify-content:space-between;align-items:center">'
-                f'<strong style="font-size:14px">{comp.get("name", "?")}{fu_tag}</strong>'
-                f'<span style="font-size:11px;color:#757575">{(msg.get("sent_at") or "")[:10]}</span>'
-                f'</div>'
-                f'<div style="font-size:12px;color:#424242;margin-top:2px">{msg.get("subject", "")}</div>'
-                f'<div style="font-size:11px;color:#757575;margin-top:2px">'
-                f'Para: {cont.get("full_name", "?")} | {tracking}'
-                f'</div></div>',
-                unsafe_allow_html=True,
-            )
+            escola_nome = comp.get("name", "?")
+            sent_date = (msg.get("sent_at") or "")[:10]
+            contato_info = f'{cont.get("full_name", "?")} ({cont.get("email", "?")})'
+
+            with st.expander(f"{escola_nome}{fu_tag} — {msg.get('subject', '')[:50]} | {sent_date} | {tracking}"):
+                st.markdown(
+                    f'<div class="data-card" style="border-left:4px solid {border_color};padding:12px 16px">'
+                    f'<div style="font-size:14px;font-weight:600;color:#212121">{escola_nome}{fu_tag}</div>'
+                    f'<div style="font-size:12px;color:#757575;margin-top:2px">'
+                    f'{comp.get("city", "")} | Para: {contato_info} | {tracking} | {sent_date}'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(f"**Assunto:** {msg.get('subject', '')}")
+                st.markdown("**Corpo:**")
+                st.text_area(
+                    "Email enviado",
+                    value=msg.get("body", ""),
+                    height=250,
+                    disabled=True,
+                    key=f"sent_body_{msg['id']}",
+                    label_visibility="collapsed",
+                )
 
 # --- TAB: PENDENTES (tela principal de aprovação) ---
 with tab_pending:
