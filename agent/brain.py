@@ -1478,9 +1478,9 @@ def _handle_iniciar_prospeccao(params: Dict) -> str:
         templates = []
         try:
             tpls = db.client.table("message_templates").select(
-                "id,template_name,subject_template"
+                "id,name,subject_template"
             ).eq("is_active", True).limit(5).execute().data or []
-            templates = [{"nome": t.get("template_name"), "assunto": t.get("subject_template", "")} for t in tpls]
+            templates = [{"nome": t.get("name", "Sem nome"), "assunto": t.get("subject_template", "")} for t in tpls]
         except Exception:
             pass
 
