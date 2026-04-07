@@ -548,8 +548,15 @@ class Database:
             raise DatabaseError("Falha ao listar aprovações pendentes") from e
 
 
-    def approve_message(self, queue_id: str, edited_subject: str = None, edited_body: str = None) -> bool:
-        """Aprova mensagem para envio."""
+    def approve_message(
+        self,
+        queue_id: str,
+        edited_subject: str = None,
+        edited_body: str = None,
+        scheduled_send_at: str = None,
+    ) -> bool:
+        """Aprova mensagem para envio. Se scheduled_send_at fornecido, agenda
+        o envio para o horario especificado (ISO 8601). Se None, envia imediatamente."""
         try:
             from datetime import datetime
             update = {'status': 'approved', 'approved_at': datetime.utcnow().isoformat()}
@@ -557,10 +564,15 @@ class Database:
                 update['subject'] = edited_subject
             if edited_body:
                 update['body'] = edited_body
+            if scheduled_send_at:
+                update['scheduled_send_at'] = scheduled_send_at
             result = self.client.table('approval_queue').update(update).eq('id', queue_id).execute()
             success = bool(result.data)
             if success:
-                logger.info('Mensagem aprovada', extra={'queue_id': queue_id})
+                extra = {'queue_id': queue_id}
+                if scheduled_send_at:
+                    extra['scheduled_send_at'] = scheduled_send_at
+                logger.info('Mensagem aprovada', extra=extra)
             return success
         except Exception as e:
             logger.error('Erro ao aprovar mensagem', extra={'queue_id': queue_id, 'error': str(e)})

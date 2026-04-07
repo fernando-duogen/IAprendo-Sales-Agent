@@ -21,11 +21,17 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
     """
     logger.info("Iniciando envio de mensagens aprovadas", extra={"limit": limit})
     # Buscar apenas approved que ainda nao foram enviadas
+    # Respeita agendamento: se scheduled_send_at existe, so envia quando hora chegar
     try:
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
+
         result = db.client.table("approval_queue")
         q = result.select(
-            "id, company_id, contact_id, subject, body, channel"
-        ).eq("status", "approved").is_("sent_at", "null").limit(limit).execute()
+            "id, company_id, contact_id, subject, body, channel, scheduled_send_at"
+        ).eq("status", "approved").is_("sent_at", "null").or_(
+            f"scheduled_send_at.is.null,scheduled_send_at.lte.{now_iso}"
+        ).limit(limit).execute()
         approved_msgs = q.data
     except Exception as e:
         logger.error("Erro ao buscar aprovadas", extra={"error": str(e)})

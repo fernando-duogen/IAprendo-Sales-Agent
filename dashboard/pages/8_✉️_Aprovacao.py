@@ -128,15 +128,33 @@ with st.expander("Acoes em massa", icon=":material/bolt:"):
                 st.rerun()
 
     if st.session_state.get("confirm_bulk_approve"):
-        alert_banner("Isso vai APROVAR todas as mensagens pendentes. Elas serao enviadas na proxima execucao do pipeline.", "warning")
+        alert_banner("Isso vai APROVAR todas as mensagens pendentes.", "warning")
+
+        from datetime import datetime as _dt, time as _dtime, timedelta as _td, timezone as _tz
+        bulk_schedule = st.toggle("⏰ Agendar envio em massa", value=False, key="bulk_schedule_toggle")
+        bulk_sched_iso = None
+        if bulk_schedule:
+            bc1, bc2 = st.columns(2)
+            with bc1:
+                bulk_date = st.date_input("Data", value=_dt.now().date() + _td(days=1), min_value=_dt.now().date(), key="bulk_sched_date")
+            with bc2:
+                bulk_time = st.time_input("Horario", value=_dtime(8, 0), key="bulk_sched_time")
+            bulk_sched_dt = _dt.combine(bulk_date, bulk_time, tzinfo=_tz(_td(hours=-3)))
+            bulk_sched_iso = bulk_sched_dt.isoformat()
+            st.caption(f"⏰ Todas serao enviadas em {bulk_date.strftime('%d/%m/%Y')} as {bulk_time.strftime('%H:%M')}")
+
         ba1, ba2 = st.columns(2)
         with ba1:
-            if st.button("Sim, aprovar todas", type="primary"):
+            label = "Sim, aprovar e agendar" if bulk_sched_iso else "Sim, aprovar todas"
+            if st.button(label, type="primary"):
                 count = 0
                 for p in pending:
-                    if queue_manager.approve(p["id"]):
+                    if queue_manager.approve(p["id"], scheduled_send_at=bulk_sched_iso):
                         count += 1
-                st.success(f"{count} mensagens aprovadas.")
+                msg = f"{count} mensagens aprovadas"
+                if bulk_sched_iso:
+                    msg += f" e agendadas para {bulk_date.strftime('%d/%m')} as {bulk_time.strftime('%H:%M')}"
+                st.success(msg + ".")
                 st.session_state.pop("confirm_bulk_approve", None)
                 st.rerun()
         with ba2:
@@ -509,6 +527,45 @@ with col_msg:
         alert_banner("Adicione o email do contato (coluna esquerda) antes de aprovar para garantir o envio.", "warning")
 
 # ===========================================================================
+# AGENDAMENTO DE ENVIO
+# ===========================================================================
+from datetime import datetime, time as dtime, timedelta, timezone
+
+schedule_send = st.toggle(
+    "⏰ Agendar horario de envio",
+    value=False,
+    key=f"schedule_toggle_{queue_id}",
+    help="Se ativado, o email so sera enviado no dia/hora definidos. Se desativado, envia imediatamente ao aprovar.",
+)
+
+scheduled_send_at_iso = None  # None = enviar imediatamente
+
+if schedule_send:
+    col_date, col_time = st.columns(2)
+    with col_date:
+        tomorrow = datetime.now().date() + timedelta(days=1)
+        sched_date = st.date_input(
+            "Data de envio",
+            value=tomorrow,
+            min_value=datetime.now().date(),
+            key=f"sched_date_{queue_id}",
+        )
+    with col_time:
+        sched_time = st.time_input(
+            "Horario de envio",
+            value=dtime(8, 0),
+            key=f"sched_time_{queue_id}",
+        )
+    sched_dt = datetime.combine(sched_date, sched_time, tzinfo=timezone(timedelta(hours=-3)))
+    scheduled_send_at_iso = sched_dt.isoformat()
+    st.markdown(
+        f'<div style="font-size:13px;color:#FF6D00;margin-top:4px">'
+        f'⏰ Email sera enviado em <strong>{sched_date.strftime("%d/%m/%Y")} as {sched_time.strftime("%H:%M")}</strong> (horario de Brasilia)'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+# ===========================================================================
 # BOTOES DE ACAO — grandes e coloridos
 # ===========================================================================
 st.markdown("")
@@ -537,7 +594,10 @@ with btn_col1:
                  icon=":material/check_circle:"):
         sub = edited_subject if subject_changed else None
         bod = edited_body if body_changed else None
-        ok = queue_manager.approve(queue_id, edited_subject=sub, edited_body=bod)
+        ok = queue_manager.approve(
+            queue_id, edited_subject=sub, edited_body=bod,
+            scheduled_send_at=scheduled_send_at_iso,
+        )
         if ok:
             extra_ids = st.session_state.get(f"extra_contacts_{queue_id}", [])
             extra_count = 0
@@ -545,7 +605,7 @@ with btn_col1:
                 try:
                     final_subject = edited_subject if subject_changed else current_subject
                     final_body = edited_body if body_changed else current_body
-                    db.client.table("approval_queue").insert({
+                    extra_data = {
                         "company_id": company_id,
                         "contact_id": extra_cid,
                         "subject": final_subject,
@@ -554,7 +614,10 @@ with btn_col1:
                         "status": "approved",
                         "original_subject": current_subject,
                         "original_body": current_body,
-                    }).execute()
+                    }
+                    if scheduled_send_at_iso:
+                        extra_data["scheduled_send_at"] = scheduled_send_at_iso
+                    db.client.table("approval_queue").insert(extra_data).execute()
                     extra_count += 1
                 except Exception:
                     pass

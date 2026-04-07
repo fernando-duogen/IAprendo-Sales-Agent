@@ -12,9 +12,15 @@ class QueueManager:
             logger.error("Erro ao buscar pendentes", extra={"error": str(e)})
             return []
 
-    def approve(self, queue_id: str, edited_subject: str = None, edited_body: str = None) -> bool:
-        """Aprova mensagem. Pode editar antes de aprovar."""
-        return db.approve_message(queue_id, edited_subject, edited_body)
+    def approve(
+        self,
+        queue_id: str,
+        edited_subject: str = None,
+        edited_body: str = None,
+        scheduled_send_at: str = None,
+    ) -> bool:
+        """Aprova mensagem. Pode editar e/ou agendar envio."""
+        return db.approve_message(queue_id, edited_subject, edited_body, scheduled_send_at)
 
     def reject(self, queue_id: str, reason: str = "") -> bool:
         """Rejeita mensagem com motivo opcional."""

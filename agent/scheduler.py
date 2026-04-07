@@ -39,6 +39,8 @@ class IALexScheduler:
         schedule.every().friday.at("17:30").do(self._weekly_report)
         schedule.every(15).minutes.do(self._check_replies)
         schedule.every(15).minutes.do(self._hubspot_pull)
+        # Envio de mensagens agendadas — a cada 5 min
+        schedule.every(5).minutes.do(self._send_scheduled_messages)
         # Detector de sinais de compra (intent alerts) — a cada 30 min
         schedule.every(30).minutes.do(self._check_buying_signals)
         # Retreino semanal do modelo preditivo (domingo 03:00)
@@ -139,6 +141,24 @@ class IALexScheduler:
                     pass
 
         threading.Thread(target=_with_timeout, daemon=True).start()
+
+    def _send_scheduled_messages(self):
+        """Verifica e envia mensagens agendadas cujo horario ja passou.
+        Roda a cada 5 minutos. Se scheduled_send_at <= NOW() ou NULL, envia.
+        """
+        try:
+            from workflows.send_approved import send_approved_messages
+            result = send_approved_messages(limit=20)
+            n_sent = result.get("sent", 0)
+            if n_sent > 0:
+                logger.info(f"Envio agendado: {n_sent} mensagem(ns) enviada(s)")
+                self._send_to_owner(
+                    f"📤 *Envio agendado concluido*\n\n"
+                    f"✅ {n_sent} mensagem(ns) enviada(s) agora.\n"
+                    f"_Emails que estavam agendados para este horario foram disparados._"
+                )
+        except Exception as e:
+            logger.error(f"Erro no envio agendado: {e}")
 
     def _morning_briefing(self):
         """Envia briefing matinal as 8h."""

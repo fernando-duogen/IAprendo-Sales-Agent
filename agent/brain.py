@@ -152,12 +152,15 @@ TOOLS = [
     },
     {
         "name": "aprovar_mensagem",
-        "description": "Aprova uma mensagem na fila de aprovacao para envio. ACAO SENSIVEL: sempre confirme com Fernando antes.",
+        "description": "Aprova uma mensagem na fila de aprovacao para envio. ACAO SENSIVEL: sempre confirme com Fernando antes. "
+                       "Suporta AGENDAMENTO: se Fernando disser 'aprova pra amanha as 8h' ou 'envia segunda 14h', "
+                       "passe o parametro agendar_para com data/hora.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "queue_id": {"type": "string", "description": "ID da mensagem na fila"},
-                "aprovar_todas": {"type": "boolean", "description": "Se true, aprova TODAS as pendentes"}
+                "aprovar_todas": {"type": "boolean", "description": "Se true, aprova TODAS as pendentes"},
+                "agendar_para": {"type": "string", "description": "Data/hora para envio agendado. Formatos aceitos: ISO 8601 (ex: '2026-04-07T08:00:00-03:00') ou linguagem natural (ex: 'amanha 8h', 'segunda 14h', 'proxima quarta 10h')"}
             }
         }
     },
@@ -394,7 +397,8 @@ TOOLS = [
             "properties": {
                 "queue_id": {"type": "string", "description": "ID da mensagem na fila"},
                 "novo_assunto": {"type": "string", "description": "Novo assunto (opcional — mantem o atual se nao informado)"},
-                "novo_corpo": {"type": "string", "description": "Novo corpo do email (opcional — mantem o atual se nao informado)"}
+                "novo_corpo": {"type": "string", "description": "Novo corpo do email (opcional — mantem o atual se nao informado)"},
+                "agendar_para": {"type": "string", "description": "Data/hora para envio agendado (ISO 8601 ou linguagem natural). Se nao informado, envia imediatamente."}
             },
             "required": ["queue_id"]
         }
@@ -1568,7 +1572,7 @@ def _handle_reescrever_email(params: Dict) -> str:
 
 
 def _handle_editar_e_aprovar(params: Dict) -> str:
-    """Edita e aprova um email na fila."""
+    """Edita e aprova um email na fila, opcionalmente com agendamento."""
     queue_id = params.get("queue_id")
     if not queue_id:
         return json.dumps({"erro": "Informe o queue_id da mensagem."})
@@ -1576,13 +1580,21 @@ def _handle_editar_e_aprovar(params: Dict) -> str:
         from approval_queue.queue_manager import queue_manager
         novo_assunto = params.get("novo_assunto")
         novo_corpo = params.get("novo_corpo")
-        success = queue_manager.approve(queue_id, edited_subject=novo_assunto, edited_body=novo_corpo)
+        sched_iso = _parse_agendar_para(params.get("agendar_para"))
+        success = queue_manager.approve(
+            queue_id,
+            edited_subject=novo_assunto,
+            edited_body=novo_corpo,
+            scheduled_send_at=sched_iso,
+        )
         if success:
             msg = "Email aprovado"
             if novo_assunto or novo_corpo:
                 msg += " com edicoes"
-            msg += "! Use enviar_aprovados para disparar."
-            return json.dumps({"sucesso": True, "mensagem": msg})
+            if sched_iso:
+                msg += f", agendado para {sched_iso}"
+            msg += "!"
+            return json.dumps({"sucesso": True, "agendamento": sched_iso, "mensagem": msg})
         return json.dumps({"erro": "Falha ao aprovar. Verifique o queue_id."})
     except Exception as e:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
@@ -1934,27 +1946,67 @@ def _handle_fila_aprovacao(params: Dict) -> str:
     return json.dumps({"total": len(items), "items": items}, ensure_ascii=False)
 
 
+def _parse_agendar_para(raw: Optional[str]) -> Optional[str]:
+    """Converte parametro agendar_para (ISO ou linguagem natural) em ISO 8601.
+    Retorna None se nao informado. GPT ja envia ISO na maioria dos casos.
+    """
+    if not raw or not raw.strip():
+        return None
+    raw = raw.strip()
+    # Se ja e ISO 8601 valido, retornar direto
+    try:
+        datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return raw
+    except (ValueError, TypeError):
+        pass
+    # Tentar parsear formatos comuns (GPT costuma enviar ISO, mas por seguranca)
+    import re
+    # "2026-04-07 08:00" → ISO
+    m = re.match(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})", raw)
+    if m:
+        return f"{m.group(1)}T{m.group(2)}:00-03:00"
+    # "07/04/2026 08:00" → ISO
+    m = re.match(r"(\d{2})/(\d{2})/(\d{4})\s+(\d{1,2}:\d{2})", raw)
+    if m:
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}T{m.group(4)}:00-03:00"
+    # Se nao conseguir parsear, retorna como veio (GPT deve ter convertido)
+    return raw
+
+
 def _handle_aprovar_mensagem(params: Dict) -> str:
+    sched_iso = _parse_agendar_para(params.get("agendar_para"))
+    sched_msg = ""
+    if sched_iso:
+        sched_msg = f" Agendada para envio em {sched_iso}."
+
     if params.get("aprovar_todas"):
         pending = db.client.table("approval_queue").select("id").eq("status", "pending").execute()
         count = 0
         for item in pending.data:
-            db.client.table("approval_queue").update({
-                "status": "approved",
-                "approved_at": datetime.now().isoformat()
-            }).eq("id", item["id"]).execute()
+            update = {"status": "approved", "approved_at": datetime.now().isoformat()}
+            if sched_iso:
+                update["scheduled_send_at"] = sched_iso
+            db.client.table("approval_queue").update(update).eq("id", item["id"]).execute()
             count += 1
-        return json.dumps({"aprovadas": count, "mensagem": f"{count} mensagens aprovadas."})
+        return json.dumps({
+            "aprovadas": count,
+            "agendamento": sched_iso,
+            "mensagem": f"{count} mensagens aprovadas.{sched_msg}",
+        })
 
     queue_id = params.get("queue_id")
     if not queue_id:
         return json.dumps({"erro": "Informe o ID da mensagem ou use aprovar_todas=true."})
 
-    db.client.table("approval_queue").update({
-        "status": "approved",
-        "approved_at": datetime.now().isoformat()
-    }).eq("id", queue_id).execute()
-    return json.dumps({"aprovada": queue_id, "mensagem": "Mensagem aprovada com sucesso."})
+    update = {"status": "approved", "approved_at": datetime.now().isoformat()}
+    if sched_iso:
+        update["scheduled_send_at"] = sched_iso
+    db.client.table("approval_queue").update(update).eq("id", queue_id).execute()
+    return json.dumps({
+        "aprovada": queue_id,
+        "agendamento": sched_iso,
+        "mensagem": f"Mensagem aprovada com sucesso.{sched_msg}",
+    })
 
 
 def _handle_consultar_interacoes(params: Dict) -> str:
@@ -3558,6 +3610,25 @@ O scheduler roda a cada 30 min e ENVIA ALERTAS PROATIVOS para Fernando no WhatsA
 - Comeco do dia para saber prioridades
 
 *Quando chegar um alerta automatico:* Fernando ja recebe no WhatsApp formatado com a escola, contato, motivos, keywords e acao recomendada.
+
+== AGENDAMENTO DE ENVIO (NOVO) ==
+Fernando pode AGENDAR o horario de envio de emails e follow-ups. Se ele nao disser nada sobre horario, envia imediatamente (comportamento padrao). Se ele especificar data/hora, o email fica na fila ate o momento certo.
+
+*Quando Fernando diz horario, passe parametro agendar_para:*
+- "Aprova pra amanha as 8h" → agendar_para no formato ISO (calcule a data de amanha + 08:00 no fuso -03:00)
+- "Envia segunda as 14h" → calcule a proxima segunda + 14:00-03:00
+- "Aprova todas pra quarta de manha" → agendar_para na quarta + 08:00
+- "Agenda esse follow-up pra sexta 10h" → sexta + 10:00
+
+*Regras:*
+- SEMPRE converta para ISO 8601 com fuso horario de Brasilia (-03:00). Ex: 2026-04-07T08:00:00-03:00
+- Se Fernando nao mencionar horario, NAO passe agendar_para (envia imediatamente)
+- Funciona em aprovar_mensagem, editar_e_aprovar, e aprovar_todas (mesmo campo)
+- O scheduler verifica a cada 5 minutos e envia emails cujo horario ja passou
+
+*Exemplos de resposta apos agendar:*
+- "Aprovada e agendada para 07/04 as 08:00 (segunda). Sera enviada automaticamente."
+- "3 mensagens aprovadas e agendadas para quarta 14:00."
 
 == REVISAO E EDICAO DE EMAILS VIA WHATSAPP (CRITICO) ==
 Fernando pode revisar, editar e aprovar emails DIRETO pelo WhatsApp em 3 modos:
