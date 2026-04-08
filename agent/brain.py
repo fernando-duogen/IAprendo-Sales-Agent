@@ -199,6 +199,20 @@ TOOLS = [
         }
     },
     {
+        "name": "buscar_whatsapp_escolas",
+        "description": "Busca numeros de WhatsApp Business de escolas que nao tem celular cadastrado. "
+                       "Pesquisa na web (DuckDuckGo) por numeros de celular divulgados pelas escolas. "
+                       "Salva no campo phone_whatsapp do contato. Use quando Fernando disser: "
+                       "'busca whatsapp das escolas', 'acha celular das escolas', "
+                       "'procura whatsapp das escolas de Canoas'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limite": {"type": "integer", "description": "Max escolas a buscar (default 10)"}
+            }
+        }
+    },
+    {
         "name": "processar_respostas",
         "description": "Processa respostas de escolas e gera auto-respostas inteligentes na fila de "
                        "aprovacao. Analisa o conteudo (positivo? negativo? quer agendar? pediu info?) "
@@ -1426,6 +1440,28 @@ def _handle_tracking_emails(params: Dict) -> str:
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro no tracking: {str(e)[:200]}"})
+
+
+def _handle_buscar_whatsapp_escolas(params: Dict) -> str:
+    """Busca WhatsApp Business de escolas sem celular cadastrado."""
+    try:
+        from tools.whatsapp_finder import whatsapp_finder
+        limite = int(params.get("limite", 10))
+        result = whatsapp_finder.find_for_enriched_schools(limit=limite)
+        found = result.get("found", 0)
+        processed = result.get("processed", 0)
+        return json.dumps({
+            "processadas": processed,
+            "whatsapp_encontrados": found,
+            "mensagem": (
+                f"{found} WhatsApp(s) encontrado(s) em {processed} escola(s) pesquisadas. "
+                f"Numeros salvos nos contatos. Agora podem ser usados no multichannel."
+                if found else
+                f"Nenhum WhatsApp novo encontrado em {processed} escola(s)."
+            ),
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
 def _handle_processar_respostas(params: Dict) -> str:
@@ -3908,6 +3944,7 @@ TOOL_HANDLERS = {
     "aprovar_mensagem": _handle_aprovar_mensagem,
     "rejeitar_mensagem": _handle_rejeitar_mensagem,
     "editar_e_aprovar": _handle_editar_e_aprovar,
+    "buscar_whatsapp_escolas": _handle_buscar_whatsapp_escolas,
     "processar_respostas": _handle_processar_respostas,
     "ver_agenda": _handle_ver_agenda,
     "registrar_resultado_reuniao": _handle_registrar_resultado_reuniao,
