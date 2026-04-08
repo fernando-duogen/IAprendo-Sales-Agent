@@ -50,38 +50,105 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
         contact_id = msg.get("contact_id")
         subject = msg.get("subject", "")
         body = msg.get("body", "")
+        channel = msg.get("channel", "email")
 
-        # Buscar email do contato
+        # Buscar dados do contato
         to_email = None
         to_name = "Diretor(a)"
+        to_phone = None
         if contact_id:
             try:
-                c = db.client.table("contacts").select("full_name,email").eq("id", contact_id).single().execute()
-                to_email = c.data.get("email") if c.data else None
-                to_name = c.data.get("full_name") or "Diretor(a)" if c.data else "Diretor(a)"
+                c = db.client.table("contacts").select("full_name,email,phone").eq("id", contact_id).single().execute()
+                if c.data:
+                    to_email = c.data.get("email")
+                    to_name = c.data.get("full_name") or "Diretor(a)"
+                    to_phone = c.data.get("phone")
             except Exception:
                 pass
 
-        if not to_email:
-            logger.warning("Sem email - bloqueando", extra={"queue_id": queue_id, "company_id": company_id})
-            # Marcar como bloqueada (sai da fila de aprovadas, Fernando ve o motivo)
+        # Se nao tem telefone do contato, buscar da escola
+        if not to_phone and company_id:
             try:
-                db.client.table("approval_queue").update({
-                    "status": "blocked",
-                    "rejection_reason": "Contato sem email cadastrado. Adicione o email e reprocesse.",
-                }).eq("id", queue_id).execute()
+                comp = db.client.table("companies").select("phone").eq("id", company_id).single().execute()
+                to_phone = (comp.data or {}).get("phone")
             except Exception:
                 pass
-            skipped += 1
-            details.append({"queue_id": queue_id, "status": "blocked", "reason": "sem_email"})
-            continue        # Enviar via Brevo
-        result = brevo_sender.send_email(
-            to_email=to_email,
-            to_name=to_name,
-            subject=subject,
-            body=body,
-            queue_id=queue_id,
-        )
+
+        # ====== DISPATCH POR CANAL ======
+
+        result = {}
+
+        if channel == "whatsapp":
+            # --- WHATSAPP ---
+            if not to_phone:
+                logger.warning("Sem telefone - bloqueando WhatsApp", extra={"queue_id": queue_id})
+                try:
+                    db.client.table("approval_queue").update({
+                        "status": "blocked",
+                        "rejection_reason": "Sem telefone cadastrado para envio WhatsApp.",
+                    }).eq("id", queue_id).execute()
+                except Exception:
+                    pass
+                skipped += 1
+                details.append({"queue_id": queue_id, "status": "blocked", "reason": "sem_telefone"})
+                continue
+            try:
+                from agent.whatsapp_bridge import WhatsAppBridge
+                bridge = WhatsAppBridge()
+                send_result = bridge.send_message(to_phone, body)
+                result = {"success": bool(send_result.get("success") or send_result.get("key"))}
+            except Exception as e:
+                logger.error(f"WhatsApp send erro: {e}")
+                result = {"success": False, "error": str(e)}
+
+        elif channel == "linkedin":
+            # --- LINKEDIN (manual — notificar Fernando) ---
+            try:
+                import os
+                from agent.whatsapp_bridge import WhatsAppBridge
+                bridge = WhatsAppBridge()
+                owner = os.getenv("IALEX_OWNER_NUMBER", "")
+                if owner:
+                    bridge.send_message(owner, (
+                        f"📩 *Acao manual LinkedIn*\n\n"
+                        f"🏫 Escola: procurar no banco\n"
+                        f"👤 Contato: {to_name}\n\n"
+                        f"📝 *Mensagem para enviar:*\n{body[:500]}\n\n"
+                        f"_Envie manualmente no LinkedIn e depois me diga 'feito'._"
+                    ))
+                # Marcar como manual_action (nao como sent)
+                db.client.table("approval_queue").update({
+                    "status": "manual_action",
+                }).eq("id", queue_id).execute()
+                sent += 1
+                details.append({"queue_id": queue_id, "status": "manual_action", "channel": "linkedin"})
+                logger.info("LinkedIn: notificacao manual enviada", extra={"queue_id": queue_id})
+                continue
+            except Exception as e:
+                logger.error(f"LinkedIn notify erro: {e}")
+                result = {"success": False}
+
+        else:
+            # --- EMAIL (default) ---
+            if not to_email:
+                logger.warning("Sem email - bloqueando", extra={"queue_id": queue_id})
+                try:
+                    db.client.table("approval_queue").update({
+                        "status": "blocked",
+                        "rejection_reason": "Contato sem email cadastrado. Adicione o email e reprocesse.",
+                    }).eq("id", queue_id).execute()
+                except Exception:
+                    pass
+                skipped += 1
+                details.append({"queue_id": queue_id, "status": "blocked", "reason": "sem_email"})
+                continue
+            result = brevo_sender.send_email(
+                to_email=to_email,
+                to_name=to_name,
+                subject=subject,
+                body=body,
+                queue_id=queue_id,
+            )
         if result.get("success"):
             # Marcar como enviada
             try:
@@ -91,11 +158,12 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
                     "sent_at": now,
                 }).eq("id", queue_id).execute()
                 # Registrar interacao
+                interaction_type = f"{channel}_sent" if channel != "email" else "email_sent"
                 db.insert_interaction({
                     "company_id": company_id,
                     "contact_id": contact_id,
-                    "type": "email_sent",
-                    "channel": "email",
+                    "type": interaction_type,
+                    "channel": channel,
                     "subject": subject,
                     "metadata": {"queue_id": queue_id, "message_id": result.get("message_id", "")},
                 })

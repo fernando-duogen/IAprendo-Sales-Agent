@@ -580,6 +580,113 @@ if persona_choice != current_persona:
             st.error("Falha ao salvar.")
 
 # =============================================================================
+# Secao 8 - Cadencia multichannel
+# =============================================================================
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+section_header("Cadencia multichannel", "campaign")
+
+st.caption(
+    "Configure a sequencia de canais para prospecção. "
+    "Quando desabilitado, tudo usa apenas email (comportamento padrao)."
+)
+
+mc_enabled = cfg.get("multichannel_enabled", False)
+mc_toggle = st.toggle(
+    "Ativar cadencia multichannel",
+    value=mc_enabled,
+    key="mc_toggle",
+    help="Quando ativo, follow-ups podem alternar entre email, WhatsApp e LinkedIn conforme a cadencia configurada.",
+)
+
+if mc_toggle:
+    st.markdown("**Canais ativos:**")
+    current_channels = set(cfg.get("multichannel_channels", ["email"]))
+
+    ch_email = st.checkbox("📧 Email (sempre ativo)", value=True, disabled=True, key="ch_email")
+    ch_whatsapp = st.checkbox(
+        "📱 WhatsApp",
+        value="whatsapp" in current_channels,
+        key="ch_whatsapp",
+        help="Follow-ups por WhatsApp (mensagem curta, informal). Requer telefone da escola.",
+    )
+    ch_linkedin = st.checkbox(
+        "💼 LinkedIn (manual)",
+        value="linkedin" in current_channels,
+        key="ch_linkedin",
+        help="Gera texto para LinkedIn, mas Fernando envia manualmente. IAlex notifica no WhatsApp.",
+    )
+
+    selected_channels = ["email"]
+    if ch_whatsapp:
+        selected_channels.append("whatsapp")
+    if ch_linkedin:
+        selected_channels.append("linkedin")
+
+    # Cadencia visual
+    st.markdown("**Cadencia configurada:**")
+    current_cadence = cfg.get("cadence_steps", [])
+
+    # Presets
+    preset = st.selectbox(
+        "Preset rapido",
+        options=["Personalizado", "So email", "Email + WhatsApp", "Completo"],
+        index=0,
+        key="mc_preset",
+    )
+    if preset == "So email":
+        current_cadence = [
+            {"step": 1, "day": 0, "channel": "email", "label": "Email inicial"},
+            {"step": 2, "day": 3, "channel": "email", "label": "Follow-up 1"},
+            {"step": 3, "day": 7, "channel": "email", "label": "Follow-up 2"},
+            {"step": 4, "day": 14, "channel": "email", "label": "Follow-up 3"},
+        ]
+    elif preset == "Email + WhatsApp":
+        current_cadence = [
+            {"step": 1, "day": 0, "channel": "email", "label": "Email inicial"},
+            {"step": 2, "day": 3, "channel": "whatsapp", "label": "WhatsApp curto"},
+            {"step": 3, "day": 7, "channel": "email", "label": "Email follow-up"},
+            {"step": 4, "day": 14, "channel": "whatsapp", "label": "WhatsApp final"},
+        ]
+    elif preset == "Completo":
+        current_cadence = [
+            {"step": 1, "day": 0, "channel": "email", "label": "Email inicial"},
+            {"step": 2, "day": 3, "channel": "whatsapp", "label": "WhatsApp curto"},
+            {"step": 3, "day": 7, "channel": "email", "label": "Email follow-up"},
+            {"step": 4, "day": 14, "channel": "linkedin", "label": "LinkedIn (manual)"},
+        ]
+
+    # Mostrar cadencia
+    channel_icons = {"email": "📧", "whatsapp": "📱", "linkedin": "💼"}
+    for cs in current_cadence:
+        icon = channel_icons.get(cs.get("channel", "email"), "📧")
+        st.markdown(
+            f'<div class="data-card" style="padding:8px 14px;border-left:3px solid #E0E0E0">'
+            f'<strong>Passo {cs["step"]}</strong> — Dia {cs["day"]} — '
+            f'{icon} {cs.get("channel", "email").title()} — '
+            f'<em>{cs.get("label", "")}</em></div>',
+            unsafe_allow_html=True,
+        )
+
+    if st.button("💾 Salvar cadencia", type="primary", use_container_width=True, key="btn_save_mc"):
+        new_cfg = pipeline_config.get_config()
+        new_cfg["multichannel_enabled"] = mc_toggle
+        new_cfg["multichannel_channels"] = selected_channels
+        new_cfg["cadence_steps"] = current_cadence
+        if pipeline_config.save_config(new_cfg):
+            st.success("✅ Cadencia multichannel salva!")
+            st.rerun()
+        else:
+            st.error("Falha ao salvar.")
+elif mc_enabled and not mc_toggle:
+    # Desabilitando
+    if st.button("💾 Desabilitar multichannel", type="primary", key="btn_disable_mc"):
+        new_cfg = pipeline_config.get_config()
+        new_cfg["multichannel_enabled"] = False
+        if pipeline_config.save_config(new_cfg):
+            st.success("✅ Multichannel desabilitado. Tudo voltou a usar apenas email.")
+            st.rerun()
+
+# =============================================================================
 # Rodape - Dica
 # =============================================================================
 st.markdown('<hr class="divider">', unsafe_allow_html=True)

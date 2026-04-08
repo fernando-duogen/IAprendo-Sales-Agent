@@ -86,7 +86,16 @@ class PipelineConfig:
             # Persona de comunicacao
             "persona_mode": "padrao",  # "padrao" (tom fixo) ou "adaptativo" (IA adapta por escola)
             # Follow-up write mode
-            "followup_write_mode": "auto",  # "ia" | "template" | "auto" (auto=template se existir, senao IA)
+            "followup_write_mode": "auto",  # "ia" | "template" | "auto"
+            # Multichannel cadence
+            "multichannel_enabled": False,
+            "multichannel_channels": ["email"],  # ["email", "whatsapp", "linkedin"]
+            "cadence_steps": [
+                {"step": 1, "day": 0, "channel": "email", "label": "Email inicial"},
+                {"step": 2, "day": 3, "channel": "email", "label": "Follow-up 1"},
+                {"step": 3, "day": 7, "channel": "email", "label": "Follow-up 2"},
+                {"step": 4, "day": 14, "channel": "email", "label": "Follow-up 3"},
+            ],
         }
 
     # =========================================================================

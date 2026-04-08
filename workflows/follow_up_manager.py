@@ -732,13 +732,29 @@ def generate_follow_up(
         except Exception as e:
             logger.debug(f"Smart scheduler skip: {e}")
 
+        # Determinar canal baseado na cadencia multichannel
+        fu_channel = "email"
+        try:
+            from integrations.pipeline_config import pipeline_config as _pc
+            cfg = _pc.get_config()
+            if cfg.get("multichannel_enabled"):
+                cadence = cfg.get("cadence_steps") or []
+                # follow_up_number 1 = step 2, 2 = step 3, etc
+                step_idx = follow_up_number  # step 1 = initial, 2+ = follow-ups
+                for cs in cadence:
+                    if cs.get("step") == step_idx + 1:
+                        fu_channel = cs.get("channel", "email")
+                        break
+        except Exception:
+            pass
+
         queue_data = {
             "company_id": company_id,
-            "subject": subject,
+            "subject": subject if fu_channel == "email" else f"WhatsApp - {school_name}",
             "body": body,
             "original_subject": subject,
             "original_body": body,
-            "channel": "email",
+            "channel": fu_channel,
             "status": "pending",
             "follow_up_number": follow_up_number,
             "parent_id": original_queue_id,
