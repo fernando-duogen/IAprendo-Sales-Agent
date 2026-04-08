@@ -365,14 +365,6 @@ class Settings:
         }
 
 
-# =============================================================================
-# Discovery Engine (Item 8) — status/sources de escolas descobertas
-# =============================================================================
-STATUS_DISCOVERED = "discovered"    # escola em staging, aguardando revisao
-STATUS_REJECTED = "rejected"        # escola descartada apos review
-SOURCE_DISCOVERY = "web_discovery"  # origem: busca Perplexity
-SOURCE_MANUAL = "manual_upload"     # origem: upload manual de planilha
-
 
 # Singleton - instância única para todo o sistema
 settings = Settings()

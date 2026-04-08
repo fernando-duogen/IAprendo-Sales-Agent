@@ -373,56 +373,48 @@ class DiscoveryEngine:
         return []
 
     # =========================================================================
-    # 1. Discover Schools
+    # 1. Enriquecer escolas existentes com dados da web
     # =========================================================================
 
-    def discover_schools(
+    def enriquecer_escolas_web(
         self,
         cidade: str,
         tipo: str = "privada",
         keyword: str = "",
         limit: int = 10,
     ) -> Dict[str, Any]:
-        """Descobre escolas em uma cidade via Perplexity. Aplica dedup por
-        nome+cidade antes de inserir. Escolas novas viram status='discovered'.
+        """Busca informacoes na web sobre escolas que JA EXISTEM no banco e
+        enriquece com sinais (rankings, premios, diferenciais) + dados faltantes
+        (site, telefone). NAO cria registros novos.
 
         Args:
-            cidade: cidade alvo (ex: "Canoas")
+            cidade: cidade alvo
             tipo: "privada", "publica" ou "qualquer"
-            keyword: diferencial opcional ("bilingue", "integral", "Waldorf")
-            limit: max escolas a retornar
+            keyword: diferencial opcional ("bilingue", "integral")
+            limit: max escolas a enriquecer
 
         Returns:
-            dict com novas, existentes_atualizadas, erros, resumo
+            dict com enriquecidas, sinais_adicionados, dados_atualizados, erros
         """
         limit = max(1, min(int(limit or 10), 30))
         tipo = (tipo or "privada").lower().strip()
         keyword = (keyword or "").strip()
 
-        logger.info("Discovery: iniciando", extra={
+        logger.info("Enriquecer escolas web: iniciando", extra={
             "cidade": cidade, "tipo": tipo, "keyword": keyword, "limit": limit,
         })
 
-        # Pipeline: DuckDuckGo (web search gratuito) → GPT (parse + completar)
-        # DuckDuckGo traz snippets reais da web, GPT organiza em JSON + complementa
-        # com seu proprio conhecimento sobre escolas da cidade.
-
+        # Busca na web: DuckDuckGo + GPT
         keyword_line = f" {keyword}" if keyword else ""
-        tipo_txt = {
-            "privada": "privadas",
-            "publica": "publicas",
-            "qualquer": "",
-        }.get(tipo, "privadas")
+        tipo_txt = {"privada": "privadas", "publica": "publicas", "qualquer": ""}.get(tipo, "privadas")
 
-        # Multiplas queries para cobrir mais resultados
         queries = [
             f"escolas {tipo_txt}{keyword_line} {cidade} ensino fundamental medio",
-            f"colegios {tipo_txt}{keyword_line} {cidade}",
+            f"colegios {tipo_txt}{keyword_line} {cidade} rankings premios",
         ]
         if keyword:
             queries.append(f"escolas {keyword} {cidade}")
 
-        logger.info("Discovery: buscando via DuckDuckGo", extra={"queries": len(queries)})
         all_snippets = []
         for q in queries:
             snippets = self._search_web(q, max_results=10)
@@ -432,47 +424,28 @@ class DiscoveryEngine:
         web_context = "\n\n---\n\n".join(all_snippets)
 
         if not web_context or len(web_context.strip()) < 30:
-            logger.warning("Discovery: DuckDuckGo retornou pouco contexto, tentando Perplexity...")
-            # Fallback: Perplexity Browser (se disponivel)
-            prompt = (
-                f"Liste ate {limit} escolas {tipo_txt} em {cidade} que ofereçam "
-                f"ensino Fundamental anos finais e/ou Ensino Medio.{keyword_line} "
-                f"Para cada escola, inclua: nome completo, endereco, site oficial, "
-                f"telefone e diferenciais."
-            )
-            web_context = self._ask_perplexity(prompt, timeout=90)
-
-        if not web_context or len(web_context.strip()) < 30:
             return {
-                "cidade": cidade, "tipo": tipo, "keyword": keyword,
-                "novas": [], "existentes_atualizadas": [],
-                "erros": ["Nenhuma fonte retornou dados suficientes (DuckDuckGo e Perplexity falharam)"],
-                "total_encontradas": 0,
+                "cidade": cidade, "tipo": tipo,
+                "enriquecidas": [], "sinais_adicionados": 0,
+                "dados_atualizados": [], "erros": ["Web search nao retornou dados"],
             }
 
-        # GPT: combina snippets web + conhecimento proprio → JSON estruturado
-        logger.info("Discovery: pedindo ao GPT para estruturar resultados", extra={
-            "web_context_len": len(web_context),
-        })
+        # GPT: extrai informacoes estruturadas
         schools = self._discover_via_llm(cidade, tipo, keyword, limit, web_context)
 
         if not schools:
-            logger.warning("Discovery: nenhuma escola extraida da resposta", extra={
-                "response_preview": response_text[:300] if response_text else "(vazio)",
-            })
             return {
-                "cidade": cidade,
-                "tipo": tipo,
-                "keyword": keyword,
-                "novas": [],
-                "existentes_atualizadas": [],
-                "erros": ["Perplexity nao retornou JSON valido"],
-                "total_encontradas": 0,
+                "cidade": cidade, "tipo": tipo,
+                "enriquecidas": [], "sinais_adicionados": 0,
+                "dados_atualizados": [], "erros": ["GPT nao retornou dados estruturados"],
             }
 
-        novas: List[Dict[str, Any]] = []
-        existentes: List[Dict[str, Any]] = []
+        enriquecidas: List[Dict[str, Any]] = []
+        dados_atualizados: List[Dict[str, Any]] = []
+        total_sinais = 0
         erros: List[str] = []
+
+        from integrations.memory import memory
 
         for school in schools[:limit]:
             if not isinstance(school, dict):
@@ -481,116 +454,92 @@ class DiscoveryEngine:
             if not name or len(name) < 3:
                 continue
 
-            school_city = cidade  # assume cidade da busca
-            school_state = self._infer_state_for_city(cidade)
-
             try:
-                # Dedup
-                existing = self._dedup_by_name_city(name, school_city)
-                if existing:
-                    # Ja existe — apenas registra que teve sinal de discovery
-                    try:
-                        from integrations.memory import memory
-                        memory.remember(
-                            content=(
-                                f"Discovery confirmou escola existente via Perplexity "
-                                f"(busca: {cidade}/{tipo}/{keyword or 'geral'})"
-                            ),
-                            scope="company",
-                            scope_id=existing["id"],
-                            category="fact",
-                            importance=4,
-                            source="ialex",
-                        )
-                    except Exception:
-                        pass
-                    existentes.append({
-                        "id": existing["id"],
-                        "nome": existing.get("name"),
-                        "status_atual": existing.get("status"),
-                    })
-                    continue
+                # Buscar escola existente no banco por nome+cidade
+                existing = self._dedup_by_name_city(name, cidade)
+                if not existing:
+                    continue  # Nao esta no banco — ignora (nao cria registro novo)
 
-                # Nova escola
-                inep = self._synthetic_inep(name, school_city)
-                address = school.get("endereco") or ""
-                bairro = school.get("bairro") or ""
-                full_address = (
-                    f"{address}, {bairro}" if address and bairro else (address or bairro or "")
-                )
+                company_id = existing["id"]
+                company_name = existing.get("name", name)
+
+                # 1. Atualizar dados faltantes (site, telefone)
+                update_fields = {}
+                site = (school.get("site") or "").strip()
+                telefone = (school.get("telefone") or "").strip()
+
+                if site and not existing.get("website"):
+                    update_fields["website"] = site
+                if telefone and not existing.get("phone"):
+                    update_fields["phone"] = telefone
+
+                if update_fields:
+                    try:
+                        db.client.table("companies").update(update_fields).eq(
+                            "id", company_id
+                        ).execute()
+                        dados_atualizados.append({
+                            "escola": company_name,
+                            "campos": list(update_fields.keys()),
+                        })
+                    except Exception as e:
+                        logger.debug(f"Erro ao atualizar dados: {e}")
+
+                # 2. Salvar diferenciais como insights
                 differentiators = school.get("diferenciais") or []
                 if isinstance(differentiators, str):
                     differentiators = [differentiators]
+                if differentiators:
+                    try:
+                        memory.remember(
+                            content=f"Diferenciais: {', '.join(differentiators)}",
+                            scope="company",
+                            scope_id=company_id,
+                            category="insight",
+                            importance=6,
+                            source="ialex",
+                        )
+                        total_sinais += 1
+                    except Exception:
+                        pass
 
-                company_data = {
-                    "inep_code": inep,
-                    "name": name[:500],
-                    "city": school_city,
-                    "state": school_state,
-                    "address": (full_address or None),
-                    "phone": school.get("telefone"),
-                    "website": school.get("site"),
-                    "admin_category": (
-                        "Privada" if str(school.get("tipo") or tipo).lower().startswith("priv")
-                        else "Publica"
-                    ),
-                    "education_levels": "Fundamental, Medio",
-                    "status": "discovered",
-                    "source": "web_discovery",
-                    "notes": json.dumps({
-                        "discovery_query": {
-                            "cidade": cidade, "tipo": tipo, "keyword": keyword,
-                        },
-                        "diferenciais": differentiators,
-                        "discovered_at": datetime.now(timezone.utc).isoformat(),
-                        "origem": "perplexity",
-                    }, ensure_ascii=False),
-                }
+                # 3. Buscar sinais (rankings/premios) para esta escola
+                try:
+                    sig_result = self.enrich_signals(company_id)
+                    total_sinais += sig_result.get("sinais_adicionados", 0)
+                except Exception:
+                    pass
 
-                new_id = db.insert_company(company_data)
-                if new_id:
-                    # Grava diferenciais como memory (insights)
-                    if differentiators:
-                        try:
-                            from integrations.memory import memory
-                            memory.remember(
-                                content=f"Diferenciais: {', '.join(differentiators)}",
-                                scope="company",
-                                scope_id=new_id,
-                                category="insight",
-                                importance=6,
-                                source="ialex",
-                            )
-                        except Exception:
-                            pass
-                    novas.append({
-                        "id": new_id,
-                        "nome": name,
-                        "cidade": school_city,
-                        "inep_sintetico": inep,
-                        "site": school.get("site"),
-                        "telefone": school.get("telefone"),
-                        "diferenciais": differentiators,
-                    })
+                enriquecidas.append({
+                    "id": company_id,
+                    "escola": company_name,
+                    "dados_novos": list(update_fields.keys()) if update_fields else [],
+                    "diferenciais": differentiators,
+                })
+
             except Exception as e:
-                logger.error(f"Erro ao processar escola discovery: {e}")
                 erros.append(f"{name}: {str(e)[:100]}")
 
         result = {
             "cidade": cidade,
             "tipo": tipo,
             "keyword": keyword,
-            "total_encontradas": len(schools),
-            "novas": novas,
-            "existentes_atualizadas": existentes,
+            "total_web": len(schools),
+            "enriquecidas": enriquecidas,
+            "sinais_adicionados": total_sinais,
+            "dados_atualizados": dados_atualizados,
             "erros": erros,
         }
-        logger.info("Discovery concluido", extra={
-            "novas": len(novas),
-            "existentes": len(existentes),
-            "erros": len(erros),
+        logger.info("Enriquecimento web concluido", extra={
+            "enriquecidas": len(enriquecidas),
+            "sinais": total_sinais,
+            "dados_atualizados": len(dados_atualizados),
         })
         return result
+
+    # Manter compatibilidade — alias
+    def discover_schools(self, *args, **kwargs):
+        return self.enriquecer_escolas_web(*args, **kwargs)
 
     def _infer_state_for_city(self, city: str) -> str:
         """Heuristica simples: cidades conhecidas → UF. Senao retorna ''."""
