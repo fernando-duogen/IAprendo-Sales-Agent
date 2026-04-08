@@ -1,7 +1,5 @@
-"""Pagina 1 - Guia & Manual: manual completo do IAprendo Sales Agent + IAlex.
-Reescrito para cobrir TODAS as features implementadas (Items 1-8 do roadmap).
-Inclui: visao geral, passo a passo, IAlex WhatsApp, autonomia, discovery,
-follow-ups, ciclo semanal, duvidas frequentes."""
+"""Pagina 1 - Guia & Manual Completo do IAprendo Sales Agent.
+Reescrito com todas as features, fluxograma visual e passo a passo didatico."""
 import streamlit as st
 import sys
 from pathlib import Path
@@ -16,18 +14,18 @@ from dashboard.theme import (
 
 apply_theme_no_config()
 
-# --- Header ---
 breadcrumb(["IAprendo", "Guia & Manual"])
-st.markdown("# 📖 Guia & Manual de Instrucoes")
-st.caption("Manual completo: dashboard, IAlex via WhatsApp, automacoes, discovery, follow-ups e regras de seguranca.")
+st.markdown("# 📖 Guia & Manual Completo")
+st.caption("Tudo que voce precisa saber para usar o sistema — do zero ao resultado.")
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "Visao Geral",
-    "Dashboard",
+    "Fluxograma",
+    "Passo a Passo",
     "IAlex (WhatsApp)",
-    "Automacoes",
-    "Discovery",
-    "Follow-ups",
+    "Configuracoes",
+    "Features",
+    "Paginas",
     "Ciclo Semanal",
     "Duvidas",
 ])
@@ -40,447 +38,578 @@ with tab1:
 
     st.markdown(
         '<div class="data-card" style="border-left:4px solid ' + COLORS["primary"] + '">'
-        '<div style="font-size:15px;line-height:1.7">'
-        'Sistema <strong>hibrido IA + Humano</strong> de prospeccao B2B para a plataforma educacional IAprendo. '
-        'Inclui dois canais de controle:'
+        '<div style="font-size:15px;line-height:1.8">'
+        'Sistema <strong>hibrido IA + Humano</strong> de prospeccao B2B para escolas. '
+        'Voce tem dois canais de controle:'
         '<br/><br/>'
-        '<strong>1. Dashboard (esta plataforma)</strong> — interface visual para gerenciar escolas, pipeline, emails, contatos, discovery e configuracoes.'
-        '<br/>'
-        '<strong>2. IAlex (WhatsApp)</strong> — agente IA com 55 ferramentas, disponivel 24/7 no seu WhatsApp para comandos rapidos, consultas e acoes.'
-        '<br/><br/>'
-        '<em>Regra #1: NADA e enviado para uma escola sem a sua aprovacao explicita.</em>'
+        '<strong>1. Dashboard</strong> — esta plataforma visual com 13 paginas<br/>'
+        '<strong>2. IAlex</strong> — agente IA com 58 ferramentas no seu WhatsApp, 24/7<br/><br/>'
+        '<em style="color:#D32F2F">Regra #1: NADA e enviado para uma escola sem a sua aprovacao explicita.</em>'
         '</div></div>',
         unsafe_allow_html=True,
     )
 
     st.markdown('<div class="mt-2"></div>', unsafe_allow_html=True)
-    section_header("Fluxo completo", "account_tree")
+    section_header("Como funciona em 4 etapas", "account_tree")
 
     pipeline_stepper([
-        {"label": "CSV MEC", "count": "212k", "color": "#9E9E9E"},
-        {"label": "Discovery", "count": "Web", "color": "#7B1FA2"},
-        {"label": "Importar", "count": "Filtros", "color": COLORS["primary"]},
-        {"label": "Qualificar", "count": "Score IA", "color": COLORS["secondary"]},
+        {"label": "1. Importar", "count": "CSV MEC", "color": "#9E9E9E"},
+        {"label": "2. Qualificar", "count": "Score IA", "color": COLORS["primary"]},
+        {"label": "3. Enriquecer", "count": "Contatos", "color": COLORS["secondary"]},
+        {"label": "4. Prospectar", "count": "Emails", "color": COLORS["accent"]},
     ])
-    pipeline_stepper([
-        {"label": "Enriquecer", "count": "Dados", "color": COLORS["accent"]},
-        {"label": "Gerar Email", "count": "IA+RAG", "color": "#7B1FA2"},
-        {"label": "Aprovar", "count": "Voce!", "color": COLORS["error"]},
-        {"label": "Enviar+Track", "count": "Brevo", "color": COLORS["success"]},
-    ])
-    pipeline_stepper([
-        {"label": "Follow-up", "count": "Comportamental", "color": COLORS["info"]},
-        {"label": "Sinais", "count": "Rankings", "color": "#FF6D00"},
-        {"label": "ML Score", "count": "Preditivo", "color": "#00897B"},
-        {"label": "CRM", "count": "HubSpot", "color": "#1565C0"},
-    ])
-
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    section_header("Features implementadas", "checklist")
-
-    features = [
-        ("Memoria persistente", "IAlex lembra fatos, preferencias e avisos entre sessoes", "psychology"),
-        ("Score preditivo ML", "Logistic Regression que preve probabilidade de fechamento", "model_training"),
-        ("RAG de emails", "Novos emails sao inspirados nos que ja funcionaram (replies/clicks)", "auto_awesome"),
-        ("Detector de intencao de compra", "Alertas automaticos quando escola mostra sinais quentes", "local_fire_department"),
-        ("Pipeline automatico", "Roda sozinho no horario configurado, envia resumo no WhatsApp", "schedule"),
-        ("Follow-ups comportamentais", "Classifica por comportamento (clicou? abriu? sumiu?) e gera follow-up adequado", "psychology"),
-        ("Modo de Autonomia", "3 niveis (Manual/Semi-Auto/Full-Auto) com confirmacao dupla", "security"),
-        ("Discovery inteligente", "Descobre escolas fora do MEC via web search, busca rankings/premios", "explore"),
-    ]
-    for nome, desc, icon in features:
-        st.markdown(
-            f'<div class="data-card" style="padding:10px 16px;display:flex;align-items:center;gap:12px">'
-            f'<span class="material-icons-outlined" style="color:{COLORS["primary"]};font-size:22px">{icon}</span>'
-            f'<div><strong style="font-size:14px">{nome}</strong>'
-            f'<div style="font-size:13px;color:#757575">{desc}</div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-# =============================================================================
-# TAB 2 — Dashboard (paginas)
-# =============================================================================
-with tab2:
-    section_header("Paginas do dashboard", "dashboard")
-    st.caption("Ordem do menu lateral e funcao de cada pagina.")
-
-    menu_items = [
-        ("🏠 Painel", "Visao geral com KPIs, acoes rapidas, busca global e atividade recente", "home"),
-        ("📖 Guia & Manual", "Este manual. Tudo que voce precisa saber sobre o sistema", "menu_book"),
-        ("⚙️ Configuracoes", "Modo de autonomia, pipeline automatico, follow-ups automaticos", "settings"),
-        ("📊 Pipeline", "Executar as etapas: qualificar, enriquecer, buscar contatos, gerar emails", "play_circle"),
-        ("🎯 CRM", "Pipeline visual de vendas (Kanban) com deals por estagio", "view_kanban"),
-        ("🏫 Escolas", "Gerenciar escolas: editar, excluir, ver contatos e historico", "school"),
-        ("🗺️ Mapa", "Visualizacao geografica das escolas + explorar CSV completo (212k)", "map"),
-        ("👥 Contatos", "Lista e hierarquia de decisores por escola (diretor, vice, coord)", "people"),
-        ("✉️ Aprovacao", "AQUI VOCE APROVA OS EMAILS. Nada e enviado sem passar aqui", "task_alt"),
-        ("🔄 Follow-ups", "Metricas de follow-ups, timeline por escola, deducao de emails", "autorenew"),
-        ("📝 Templates", "Criar e gerenciar modelos de mensagem padrao", "description"),
-        ("📥 Importar", "Filtrar e importar escolas do CSV do MEC para o banco", "cloud_upload"),
-        ("🔍 Discovery", "Descobrir escolas novas via web + buscar sinais (rankings/premios)", "explore"),
-    ]
-    for nome, desc, icon in menu_items:
-        st.markdown(
-            f'<div class="data-card" style="padding:10px 16px;display:flex;align-items:center;gap:12px">'
-            f'<span class="material-icons-outlined" style="color:{COLORS["primary"]};font-size:20px">{icon}</span>'
-            f'<div><strong style="font-size:14px">{nome}</strong>'
-            f'<div style="font-size:13px;color:#757575">{desc}</div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    section_header("Passo a passo basico", "checklist")
 
     st.markdown("""
-**Primeiro uso:**
-1. Va em **📥 Importar** → selecione Estado, Cidade, Tipo → importe 50-100 escolas
-2. Va em **📊 Pipeline** → rode Qualificar + Enriquecer + Contatos + Gerar Emails
-3. Va em **✉️ Aprovacao** → revise cada email, edite se necessario, clique Aprovar
-4. Emails aprovados serao enviados no proximo ciclo do pipeline (ou clique "Enviar aprovados")
-5. Acompanhe em **🎯 CRM** e **🔄 Follow-ups**
+**Etapa 1 — Importar**: Voce seleciona escolas do CSV do MEC (212k) por cidade, tipo e porte.
 
-**Depois que tiver a base rodando:**
-- Configure o **pipeline automatico** em ⚙️ Configuracoes (roda sozinho toda manha)
-- Ative **follow-ups automaticos** (IAlex gera follow-ups baseado em comportamento)
-- Use **🔍 Discovery** para achar escolas novas fora do MEC
+**Etapa 2 — Qualificar**: A IA analisa cada escola e da um score de 0 a 100 (quanto maior, melhor fit).
+
+**Etapa 3 — Enriquecer**: O sistema busca contatos (diretor, coordenador, email, telefone) via web.
+
+**Etapa 4 — Prospectar**: A IA gera emails personalizados. Voce revisa, edita e aprova. So entao sao enviados.
+
+Apos o envio, o sistema acompanha: abriu? clicou? respondeu? E gera follow-ups automaticos baseados no comportamento.
 """)
 
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    section_header("O que torna este sistema especial", "star")
+
+    cols = st.columns(3)
+    with cols[0]:
+        st.markdown(
+            '<div class="data-card" style="text-align:center;padding:16px">'
+            '<div style="font-size:28px">🤖</div>'
+            '<strong>58 ferramentas IA</strong><br/>'
+            '<span style="font-size:13px;color:#757575">Tudo via WhatsApp: buscar, gerar, aprovar, agendar</span>'
+            '</div>', unsafe_allow_html=True,
+        )
+    with cols[1]:
+        st.markdown(
+            '<div class="data-card" style="text-align:center;padding:16px">'
+            '<div style="font-size:28px">🛡️</div>'
+            '<strong>Controle total</strong><br/>'
+            '<span style="font-size:13px;color:#757575">Nada sai sem sua aprovacao. 3 niveis de autonomia.</span>'
+            '</div>', unsafe_allow_html=True,
+        )
+    with cols[2]:
+        st.markdown(
+            '<div class="data-card" style="text-align:center;padding:16px">'
+            '<div style="font-size:28px">🧠</div>'
+            '<strong>Aprende sozinho</strong><br/>'
+            '<span style="font-size:13px;color:#757575">ML preditivo, RAG, memoria, follow-ups comportamentais</span>'
+            '</div>', unsafe_allow_html=True,
+        )
+
 # =============================================================================
-# TAB 3 — IAlex (WhatsApp)
+# TAB 2 — Fluxograma
+# =============================================================================
+with tab2:
+    section_header("Fluxograma completo do sistema", "schema")
+
+    st.caption("Este diagrama mostra TODAS as possibilidades em cada etapa.")
+
+    st.markdown("""
+```
+╔═══════════════════════════════════════════════════════════════════╗
+║                    IAPRENDO SALES AGENT                          ║
+║                     Fluxograma Completo                          ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────┐
+│  FASE 1: ABASTECER O BANCO                                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  CSV MEC (212k escolas) ──→ Importar (filtros: cidade, tipo,    │
+│                              porte, nivel de ensino)             │
+│                              ↓                                   │
+│                         Banco de dados                           │
+│                         (status: raw)                            │
+│                                                                  │
+│  Via Dashboard: pagina 📥 Importar                               │
+│  Via WhatsApp: "importa escolas privadas de Canoas"             │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  FASE 2: QUALIFICAR E ENRIQUECER                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Escolas raw ──→ Qualificacao IA ──→ Score 0-100                │
+│                   (GPT analisa)       (status: qualified)        │
+│                       ↓                                          │
+│              Enriquecimento ──→ Site, telefone, contatos         │
+│              (web scraping)     (status: enriched)               │
+│                       ↓                                          │
+│              Busca de decisores ──→ Diretor, email, cargo       │
+│              (Apollo, DuckDuckGo)                                │
+│                                                                  │
+│  Automatico: pipeline roda no horario configurado               │
+│  Manual: dashboard 📊 Pipeline ou WhatsApp "roda pipeline"      │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  FASE 3: GERAR EMAILS                                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Escola enriched ──→ Gerar email                                │
+│                       ├─ Modo IA (personalizado do zero)        │
+│                       └─ Modo Template (texto padrao)           │
+│                              ↓                                   │
+│                    Persona adaptativa?                            │
+│                    ├─ Padrao (tom fixo)                          │
+│                    └─ Adaptativo (inovadora/conservadora/        │
+│                       pragmatica/entusiasta)                     │
+│                              ↓                                   │
+│                    Calendario inteligente                         │
+│                    (agendado no melhor horario:                   │
+│                     tracking + feriados + fase letiva)            │
+│                              ↓                                   │
+│                    ╔══════════════════════╗                       │
+│                    ║  FILA DE APROVACAO   ║                       │
+│                    ║  (status: pending)   ║                       │
+│                    ╚══════════════════════╝                       │
+│                                                                  │
+│  Via Dashboard: pagina ✉️ Aprovacao                               │
+│  Via WhatsApp: "mostra fila" → revisar → aprovar                │
+│                "vamos prospectar" → sessao guiada                │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  FASE 4: REVISAR E APROVAR                                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Email pendente ──→ Fernando revisa                              │
+│                      ├─ Aprovar (envia agora ou agendado)       │
+│                      ├─ Editar (colar texto ou dar instrucoes)  │
+│                      ├─ Reescrever (IAlex reescreve via GPT)    │
+│                      ├─ Agendar (data/hora de envio)            │
+│                      └─ Rejeitar                                │
+│                              ↓                                   │
+│                    Envio automatico                               │
+│                    ├─ Email: via Brevo (com assinatura)          │
+│                    ├─ WhatsApp: via bridge (se multichannel)     │
+│                    └─ LinkedIn: notificacao manual                │
+│                              ↓                                   │
+│                    Tracking automatico                            │
+│                    (abriu? clicou? respondeu? bounceou?)         │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  FASE 5: FOLLOW-UPS COMPORTAMENTAIS                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Tracking analisa comportamento:                                 │
+│                                                                  │
+│  🔥 Clicou no link ──→ hot_click (tom comercial, agenda)        │
+│  👀 Abriu 2+ vezes ──→ curious_open (valor adicional)           │
+│  📬 Abriu 1x e sumiu ──→ silent_open (lembrete gentil)          │
+│  🧊 Nao abriu nada ──→ revival (angulo novo, assunto novo)      │
+│  💬 Respondeu ──→ ALERTA de intencao de compra (WhatsApp)       │
+│                                                                  │
+│  Follow-up gerado ──→ Fila de aprovacao (mesmo fluxo)           │
+│  Maximo 3 follow-ups por escola (exceto hot_click)              │
+│                                                                  │
+│  Multichannel: email → WhatsApp → email → LinkedIn              │
+│  (se ativado em Configuracoes)                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  FASE 6: INTELIGENCIA CONTINUA                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  🧠 ML Preditivo ──→ Score de probabilidade de fechamento       │
+│  📚 RAG ──→ Novos emails inspirados nos que funcionaram         │
+│  💡 Memoria ──→ Lembra fatos sobre cada escola entre sessoes    │
+│  🔍 Enriquecimento web ──→ Rankings, premios, noticias          │
+│  📅 Outlook Calendar ──→ Briefing pre-reuniao + pos-reuniao     │
+│  📊 Smart Scheduler ──→ Envia no melhor horario por escola      │
+│                                                                  │
+│  Tudo alimenta o proximo ciclo automaticamente                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+""")
+
+    alert_banner(
+        "O fluxo acima e AUTOMATICO quando configurado. Fernando so precisa: "
+        "(1) aprovar emails na fila, (2) responder resumos pos-reuniao. "
+        "Todo o resto o IAlex faz sozinho.",
+        "info",
+    )
+
+# =============================================================================
+# TAB 3 — Passo a Passo (novo usuario)
 # =============================================================================
 with tab3:
+    section_header("Passo a passo — do zero ao primeiro email", "checklist")
+
+    st.markdown(
+        '<div class="data-card" style="border-left:4px solid ' + COLORS["primary"] + '">'
+        '<div style="font-size:14px;line-height:1.7">'
+        'Se voce nunca usou o sistema, siga estes 7 passos na ordem. '
+        'Leva cerca de <strong>20 minutos</strong> para enviar seu primeiro email.'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    steps = [
+        ("PASSO 1 — Importar escolas", "cloud_upload", COLORS["primary"], True, """
+**Onde:** Menu → 📥 Importar (ou WhatsApp: "importa escolas privadas de Porto Alegre")
+
+1. Selecione **Estado** (ex: RS) e **Cidade** (ex: Porto Alegre)
+2. Escolha **Tipo** (Privada, Publica) e **Porte** (comece com maiores)
+3. Defina limite: **50-100 escolas** na primeira vez
+4. Clique **Confirmar e Importar**
+
+_Dica: comece pequeno (50 escolas) para testar o fluxo._"""),
+        ("PASSO 2 — Rodar o pipeline", "play_circle", COLORS["secondary"], False, """
+**Onde:** Menu → 📊 Pipeline (ou WhatsApp: "roda pipeline")
+
+O pipeline faz 4 coisas em sequencia:
+1. **Qualifica** cada escola (score 0-100)
+2. **Enriquece** com dados da web (site, telefone)
+3. **Busca contatos** (diretor, coordenador, emails)
+4. **Gera emails** personalizados
+
+Selecione as escolas e clique **Pipeline Completo** ou rode etapa por etapa.
+
+_Custo: ~R$ 0,50 a R$ 2,00 para 20 qualificacoes + 10 emails._"""),
+        ("PASSO 3 — Revisar e aprovar emails", "task_alt", COLORS["error"], False, """
+**Onde:** Menu → ✉️ Aprovacao (ou WhatsApp: "mostra fila")
+
+Este e o passo mais importante. Voce revisa cada email antes do envio:
+
+- **Aba Pendentes**: emails aguardando sua revisao
+- Para cada email: leia, edite se necessario
+- Pode **reescrever** (dar instrucoes ao IAlex) ou **colar texto** editado
+- Verifique o contato, assunto e link de agendamento
+- Clique **Aprovar** (com ou sem agendamento de horario)
+- Ou **Rejeitar** se nao quiser enviar
+
+_Pelo WhatsApp: "mostra email 1 completo" → revisar → "aprova"_"""),
+        ("PASSO 4 — Acompanhar envios", "analytics", COLORS["info"], False, """
+**Onde:** ✉️ Aprovacao → aba **📤 Enviadas** | Menu → 🎯 CRM
+
+Apos aprovar, o email e enviado automaticamente (a cada 5 minutos).
+
+Na aba **Enviadas** voce ve: escola, assunto, data, tracking (abriu/clicou/respondeu).
+
+No **CRM** (Kanban) voce ve o funil visual de vendas.
+
+_IAlex avisa no WhatsApp quando detecta sinais de compra (escola que clicou ou respondeu)._"""),
+        ("PASSO 5 — Follow-ups automaticos", "autorenew", "#FF6D00", False, """
+**Onde:** Automatico (se configurado em ⚙️ Configuracoes)
+
+O IAlex analisa o comportamento de cada escola apos o email:
+- 🔥 **Clicou** → follow-up comercial direto
+- 👀 **Abriu 2+ vezes** → valor adicional
+- 📬 **Abriu 1x e sumiu** → lembrete gentil
+- 🧊 **Nao abriu** → angulo totalmente novo
+
+Cada follow-up vai para a fila de aprovacao — voce revisa antes de enviar.
+
+_Ative em: ⚙️ Configuracoes → Follow-ups automaticos → ON_"""),
+        ("PASSO 6 — Configurar automacoes (opcional)", "settings", "#7B1FA2", False, """
+**Onde:** Menu → ⚙️ Configuracoes
+
+Quando estiver confortavel, ative as automacoes:
+
+- **Modo de Autonomia**: Semi-Auto (gera tudo, voce aprova)
+- **Pipeline automatico**: roda todo dia no horario que voce definir
+- **Follow-ups automaticos**: gera follow-ups comportamentais diariamente
+- **Persona adaptativa**: IA adapta tom por tipo de escola
+- **Multichannel**: alterna entre email, WhatsApp e LinkedIn
+- **Calendario inteligente**: envia no melhor horario por escola
+
+_Comece com Semi-Auto + Pipeline automatico. Adicione o resto gradualmente._"""),
+        ("PASSO 7 — Usar o IAlex no dia a dia", "chat", COLORS["success"], False, """
+**Onde:** WhatsApp — mande qualquer mensagem para o IAlex
+
+O IAlex e seu assistente 24/7. Exemplos do que pode fazer:
+
+- "vamos prospectar" → sessao guiada escola a escola
+- "mostra fila" → revisar emails pendentes
+- "busca escolas privadas em Canoas" → busca no MEC
+- [compartilhar localizacao] → modo campo (escola proxima)
+- "envia teste pra mim" → testar assinatura e links
+- "menu" → ver todas as opcoes
+
+_Dica: fale naturalmente, como com um colega. Nao precisa de comandos exatos._"""),
+    ]
+
+    for title, icon, color, expanded, content in steps:
+        with st.expander(title, expanded=expanded):
+            st.markdown(content)
+
+# =============================================================================
+# TAB 4 — IAlex (WhatsApp)
+# =============================================================================
+with tab4:
     section_header("IAlex — seu agente no WhatsApp", "chat")
 
     st.markdown(
         '<div class="data-card" style="border-left:4px solid ' + COLORS["primary"] + '">'
         '<div style="font-size:15px;line-height:1.7">'
-        'O <strong>IAlex</strong> e um agente de IA com <strong>55 ferramentas</strong> que roda 24/7 no seu WhatsApp. '
-        'Ele consulta o banco de dados, busca escolas, gera emails, roda o pipeline, '
-        'envia briefings e detecta sinais de compra — tudo via mensagem de texto.'
+        'O <strong>IAlex</strong> e um agente de IA com <strong>58 ferramentas</strong> que roda no seu WhatsApp. '
+        'Fale naturalmente — ele entende portugues livre.'
         '</div></div>',
         unsafe_allow_html=True,
     )
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    section_header("O que PODE fazer via WhatsApp", "check_circle")
+    st.markdown("### O que pode fazer (por categoria)")
 
-    pode = [
-        ("Buscar escolas", '"Busca escolas privadas em Canoas", "Tem alguma escola La Salle no banco?"'),
-        ("Importar escola", '"Importa o Colegio Anchieta de POA" (busca no MEC e adiciona ao banco)'),
-        ("Detalhes de escola", '"Me fala do Colegio Bom Conselho", "Qual o score do Anchieta?"'),
-        ("Buscar contatos", '"Quem e o diretor do La Salle?", "Busca contatos do Anchieta"'),
-        ("Gerar email", '"Gera um email para o Marista Rosario"'),
-        ("Aprovar email", '"Aprova o email do Anchieta", "Aprova todos os pendentes"'),
-        ("Ver fila", '"Mostra fila de aprovacao", "Quantos emails pendentes?"'),
-        ("Rodar pipeline", '"Qualifica 20 escolas", "Roda pipeline completo"'),
-        ("Follow-ups", '"Quais leads estao prontos para follow-up?", "Gera follow-ups agora"'),
-        ("Discovery", '"Descobre escolas bilingues em Canoas", "Busca sinais do Anchieta"'),
-        ("Staging", '"Mostra as descobertas", "Aprova a escola X", "Rejeita a Y"'),
-        ("Memorias", '"Lembra que o diretor do La Salle so atende de tarde"'),
-        ("Score ML", '"Quais escolas tem mais chance de fechar?", "Score preditivo do top 10"'),
-        ("Autonomia", '"Qual o modo de autonomia?", "Ativa o semi-auto"'),
-        ("Configurar", '"Como esta o pipeline automatico?", "Muda horario para 7h"'),
-        ("Estatisticas", '"Estatisticas gerais", "Funil de vendas", "Uso de APIs"'),
+    categorias = [
+        ("🔍 Buscar escolas", [
+            '"busca escolas privadas em Canoas"',
+            '"tem escola La Salle no banco?"',
+            '[compartilhar localizacao] → modo campo',
+            '"escolas proximas num raio de 3km"',
+        ]),
+        ("📊 Pipeline e qualificacao", [
+            '"roda pipeline" / "qualifica 20 escolas"',
+            '"vamos prospectar" → sessao guiada',
+            '"score preditivo top 10"',
+            '"estatisticas gerais"',
+        ]),
+        ("✉️ Emails e comunicacao", [
+            '"mostra fila" / "mostra email 1 completo"',
+            '"reescreve mais curto" / "tira a parte do ENEM"',
+            '"aprova" / "aprova pra segunda 8h"',
+            '"envia teste pra mim" (testar assinatura)',
+        ]),
+        ("🔄 Follow-ups e sinais", [
+            '"quais leads estao quentes?"',
+            '"gera follow-ups agora"',
+            '"busca sinais do Anchieta"',
+            '"enriquece escolas de Canoas"',
+        ]),
+        ("🤖 Automacoes e config", [
+            '"qual modo de autonomia?"',
+            '"ativa pipeline pra 8h de seg a sex"',
+            '"ativa follow-ups automaticos"',
+            '"muda pra persona adaptativa"',
+        ]),
+        ("📅 Calendario e reunioes", [
+            '"me mostra minha agenda"',
+            '"a reuniao com o Marista foi boa"',
+            '"lembra que o diretor do La Salle so atende de tarde"',
+        ]),
     ]
-    for titulo, exemplos in pode:
-        st.markdown(
-            f'<div class="data-card" style="padding:8px 14px">'
-            f'<strong style="font-size:13px;color:{COLORS["primary"]}">{titulo}</strong>'
-            f'<div style="font-size:12px;color:#757575;margin-top:2px"><em>{exemplos}</em></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+
+    for cat_title, examples in categorias:
+        with st.expander(cat_title):
+            for ex in examples:
+                st.markdown(f"- {ex}")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    section_header("O que NAO pode / NAO deve fazer", "block")
+
+    section_header("Regras de seguranca", "security")
 
     alert_banner(
-        "<strong>Regras de seguranca do IAlex:</strong><br/>"
-        "• NUNCA envia email/WhatsApp para escola sem sua aprovacao (modo semi-auto/manual)<br/>"
-        "• NUNCA ativa envio automatico sem a frase exata 'autorizo envio automatico'<br/>"
-        "• NUNCA altera dados de outra escola por engano — cada acao se refere a escola da conversa atual<br/>"
-        "• NUNCA apaga escolas ou contatos sem confirmacao explicita<br/>"
-        "• Follow-ups gerados vao SEMPRE para a fila de aprovacao, nunca sao enviados direto",
+        "• IAlex NUNCA envia email/WhatsApp sem sua aprovacao (modo semi-auto)<br/>"
+        "• Ativar envio automatico (full-auto) exige frase exata 'autorizo envio automatico'<br/>"
+        "• Antes de aprovar, IAlex SEMPRE mostra o texto final e pede confirmacao<br/>"
+        "• Follow-ups vao para a fila de aprovacao, nunca sao enviados direto",
         "warning",
     )
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
     section_header("Briefings automaticos", "notifications_active")
 
     st.markdown("""
-O IAlex envia mensagens proativas no seu WhatsApp:
-
-| Horario | O que envia |
-|---------|-------------|
-| **08:00** | Bom dia com resumo: escolas no pipeline, pendentes, follow-ups devidos |
-| **12:00** | Lembrete de emails pendentes na fila |
+| Horario | O que o IAlex envia no WhatsApp |
+|---|---|
+| **08:00** | Bom dia + resumo do dia (escolas, pendentes, follow-ups) |
+| **12:00** | Lembrete de emails pendentes |
 | **17:00** | Resumo do dia |
-| **Sexta 17:30** | Relatorio semanal completo |
-| **A cada 30 min** | Alertas de sinais de compra (se houver) |
-| **Apos pipeline** | Resumo do pipeline automatico (se ativo) |
-| **Apos follow-ups** | Resumo dos follow-ups gerados (se ativo) |
+| **Sexta 17:30** | Relatorio semanal |
+| **A cada 30 min** | Alertas de sinais de compra |
+| **Apos pipeline** | Resumo do que foi gerado |
+| **30 min antes de reuniao** | Briefing completo da escola (Outlook) |
+| **Apos reuniao** | Pede resumo do resultado |
 """)
 
 # =============================================================================
-# TAB 4 — Automacoes
-# =============================================================================
-with tab4:
-    section_header("Modo de Autonomia", "security")
-
-    st.markdown(
-        '<div class="data-card" style="border-left:4px solid ' + COLORS["error"] + '">'
-        '<div style="font-size:15px;line-height:1.7">'
-        'O sistema tem <strong>3 niveis de autonomia</strong> que controlam o que o IAlex pode fazer sozinho:'
-        '<br/><br/>'
-        '<strong>🛡️ MANUAL</strong> — Zero automacao. Nada roda sozinho. Voce faz tudo manualmente.<br/>'
-        '<strong>🤖 SEMI-AUTO (padrao)</strong> — IAlex gera emails e follow-ups automaticamente, '
-        'mas NUNCA envia sem voce aprovar 1 a 1.<br/>'
-        '<strong>⚡ FULL-AUTO</strong> — IAlex tambem envia automaticamente os que voce ja aprovou. '
-        'Requer confirmacao dupla com a frase "autorizo envio automatico".'
-        '</div></div>',
-        unsafe_allow_html=True,
-    )
-
-    alert_banner(
-        "Para mudar o modo: va em <strong>⚙️ Configuracoes</strong> (topo da pagina) "
-        "ou diga ao IAlex via WhatsApp: <em>\"muda para semi-auto\"</em>.",
-        "info",
-    )
-
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    section_header("Pipeline automatico", "schedule")
-
-    st.markdown("""
-**O que faz:** Roda o pipeline (qualificar, enriquecer, contatos, gerar emails) sozinho no horario configurado.
-
-**Como ativar:**
-1. Va em **⚙️ Configuracoes** → Modo de Autonomia = Semi-Auto ou Full-Auto
-2. Ative o toggle "Pipeline automatico"
-3. Defina horario, dias da semana, etapas e limites
-4. Salve
-
-**Resultado:** Toda manha o IAlex roda, gera emails e envia resumo no WhatsApp. Voce so revisa a fila.
-
-**Via WhatsApp:** *"Ativa o pipeline para rodar as 8h de segunda a sexta"*
-""")
-
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    section_header("Seguranca em camadas", "shield")
-
-    st.markdown("""
-| Camada | Protecao |
-|--------|----------|
-| **Config** | `send_approved=False` por padrao, step "send" removido fora de full-auto |
-| **Scheduler** | Nao registra jobs em modo manual |
-| **Runtime** | Re-valida autonomia em cada execucao |
-| **Tools WhatsApp** | Bloqueia ativar envio sem frase de confirmacao |
-| **Full-Auto** | Exige frase exata "autorizo envio automatico" |
-| **Auditoria** | Toda mudanca de autonomia registrada em memoria |
-""")
-
-# =============================================================================
-# TAB 5 — Discovery
+# TAB 5 — Configuracoes
 # =============================================================================
 with tab5:
-    section_header("Discovery inteligente de escolas", "explore")
+    section_header("Tudo que voce pode configurar", "tune")
 
-    st.markdown(
-        '<div class="data-card" style="border-left:4px solid #7B1FA2">'
-        '<div style="font-size:15px;line-height:1.7">'
-        'Alem do CSV MEC (212k escolas), o IAlex descobre escolas novas via busca web '
-        '(DuckDuckGo + GPT) e busca <strong>sinais contextuais</strong> (rankings, premios, noticias) '
-        'sobre qualquer escola.'
-        '</div></div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("""
-**Como usar no Dashboard:**
-1. Va em **🔍 Discovery** → preencha cidade, tipo e keyword (opcional: "bilingue", "Waldorf")
-2. Clique **Buscar agora** → sistema busca na web e mostra resultados
-3. Escolas novas entram em **staging** (status "discovered")
-4. Revise: **Aprovar** (vai pro pipeline) ou **Rejeitar** (descarta)
-5. Clique **Buscar sinais** para enriquecer com rankings/premios/noticias
-
-**Como usar via WhatsApp:**
-- *"Descobre escolas bilingues em Canoas"*
-- *"Mostra as descobertas"*
-- *"Aprova a escola X"*
-- *"Busca sinais do Colegio Anchieta"* → rankings/premios salvos na memoria
-
-**Seguranca:**
-- Escolas descobertas NUNCA entram no pipeline automaticamente
-- Ficam em staging ate voce aprovar manualmente
-- Discovery NAO envia nada para contatos externos (so le web + escreve no banco)
-""")
-
-# =============================================================================
-# TAB 6 — Follow-ups
-# =============================================================================
-with tab6:
-    section_header("Follow-ups comportamentais", "psychology")
-
-    st.markdown(
-        '<div class="data-card" style="border-left:4px solid ' + COLORS["info"] + '">'
-        '<div style="font-size:15px;line-height:1.7">'
-        'O IAlex nao envia follow-ups por sequencia fixa (dia 3, 7, 14). Ele <strong>analisa o '
-        'comportamento</strong> de cada lead e escolhe o follow-up certo:'
-        '</div></div>',
-        unsafe_allow_html=True,
-    )
-
-    tipos_fu = [
-        ("🔥 Hot Click", "Lead CLICOU em link do email", "Tom comercial direto, propoe agenda", COLORS["error"]),
-        ("👀 Curious Open", "Abriu 2+ vezes sem responder", "Valor adicional, sem pressao", COLORS["accent"]),
-        ("📬 Silent Open", "Abriu 1x e sumiu (3+ dias)", "Lembrete gentil, 3 linhas", COLORS["info"]),
-        ("🧊 Revival", "NAO abriu nada (7+ dias)", "Assunto novo, angulo diferente", "#9E9E9E"),
+    configs = [
+        ("🛡️ Modo de Autonomia", "Manual (zero automacao) | Semi-Auto (gera, nao envia) | Full-Auto (envia aprovados)", "Padrao: Semi-Auto"),
+        ("🤖 Pipeline automatico", "Horario, dias da semana, etapas (qualificar, enriquecer, contatos, emails), limites", "Padrao: desabilitado"),
+        ("🔄 Follow-ups automaticos", "Horario, limite por dia, tipos comportamentais permitidos", "Padrao: desabilitado"),
+        ("🎭 Persona de comunicacao", "Padrao (tom fixo) ou Adaptativo (IA adapta por escola)", "Padrao: Padrao"),
+        ("📧 Assinatura de email", "Texto + imagem (logo) + link clicavel", "Pagina Templates"),
+        ("📱 Multichannel", "Email + WhatsApp + LinkedIn. Checkboxes por canal, presets rapidos", "Padrao: so email"),
+        ("⏰ Agendamento de envio", "Data/hora por email (individual ou em massa)", "Toggle na aprovacao"),
+        ("📅 Calendario inteligente", "Horario otimo baseado em tracking + feriados + fase letiva", "Automatico"),
     ]
-    for emoji_nome, sinal, estilo, color in tipos_fu:
+
+    for nome, desc, padrao in configs:
         st.markdown(
-            f'<div class="data-card" style="border-left:4px solid {color};padding:10px 16px">'
-            f'<strong style="font-size:14px">{emoji_nome}</strong>'
-            f'<div style="font-size:13px;color:#757575">Sinal: {sinal}</div>'
-            f'<div style="font-size:13px;color:#424242">Estilo: <em>{estilo}</em></div>'
+            f'<div class="data-card" style="padding:10px 16px">'
+            f'<strong style="font-size:14px">{nome}</strong>'
+            f'<div style="font-size:13px;color:#757575;margin-top:2px">{desc}</div>'
+            f'<div style="font-size:12px;color:{COLORS["primary"]};margin-top:2px"><em>{padrao}</em></div>'
             f'</div>',
             unsafe_allow_html=True,
         )
 
-    st.markdown("""
-**Importante:** Se o lead JA RESPONDEU ao email, o IAlex NAO manda follow-up — aciona o **detector de intencao** e alerta voce no WhatsApp.
-
-**Todos os follow-ups passam pela fila de aprovacao.** Voce revisa antes de qualquer envio.
-
-**Como ativar automaticos:**
-- **Dashboard:** ⚙️ Configuracoes → secao "Follow-ups automaticos" → ativar + horario + tipos
-- **WhatsApp:** *"Ativa os followups automaticos para rodar as 9h30"*
-
-**Comandos WhatsApp:**
-- *"Quais leads estao prontos para follow-up?"* → lista por tipo
-- *"Gera follow-ups agora"* → dispara e envia resumo
-""")
+    st.caption("Todas as configuracoes estao em: Menu → ⚙️ Configuracoes")
 
 # =============================================================================
-# TAB 7 — Ciclo Semanal
+# TAB 6 — Features
+# =============================================================================
+with tab6:
+    section_header("Todas as features implementadas", "auto_awesome")
+
+    features = [
+        ("Memoria persistente", "IAlex lembra fatos, preferencias e avisos entre sessoes", "psychology"),
+        ("Score preditivo ML", "Logistic Regression que preve probabilidade de fechamento", "model_training"),
+        ("RAG de emails", "Novos emails inspirados nos que ja funcionaram", "auto_awesome"),
+        ("Detector de intencao de compra", "Alertas automaticos quando escola mostra sinais quentes", "local_fire_department"),
+        ("Pipeline automatico", "Roda sozinho no horario configurado", "schedule"),
+        ("Follow-ups comportamentais", "4 tipos: hot_click, curious_open, silent_open, revival", "psychology"),
+        ("Modo de Autonomia", "3 niveis com confirmacao dupla para full-auto", "security"),
+        ("Inteligencia de escolas", "Enriquece escolas com dados web (rankings, premios, noticias)", "explore"),
+        ("Persona adaptativa", "IA adapta tom por tipo de escola (4 personas)", "face"),
+        ("Calendario inteligente", "Envia no melhor horario (tracking + feriados + fase letiva)", "event"),
+        ("Outlook Calendar", "Detecta reunioes, briefing pre-reuniao, pede resumo pos", "calendar_month"),
+        ("Multichannel", "Email + WhatsApp + LinkedIn com cadencia configuravel", "campaign"),
+        ("Modo campo", "Compartilha localizacao → briefing instantaneo da escola proxima", "location_on"),
+        ("Sessao de prospeccao", "IAlex guia escola a escola com contatos e opcoes", "rocket_launch"),
+        ("Revisao de emails via WhatsApp", "Ver completo, reescrever, colar texto, aprovar", "edit_note"),
+        ("Email de teste", "Testar assinatura e links antes de enviar para escolas", "send"),
+        ("Assinatura configuravel", "Texto + imagem em todos os emails", "draw"),
+        ("Templates de follow-up", "Templates por tipo comportamental", "description"),
+        ("Agendamento de envio", "Data/hora individual ou em massa", "schedule_send"),
+    ]
+
+    for nome, desc, icon in features:
+        st.markdown(
+            f'<div class="data-card" style="padding:8px 14px;display:flex;align-items:center;gap:10px">'
+            f'<span class="material-icons-outlined" style="color:{COLORS["primary"]};font-size:20px">{icon}</span>'
+            f'<div><strong style="font-size:13px">{nome}</strong>'
+            f'<div style="font-size:12px;color:#757575">{desc}</div></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+# =============================================================================
+# TAB 7 — Paginas do dashboard
 # =============================================================================
 with tab7:
+    section_header("Paginas do menu lateral", "menu")
+
+    menu_items = [
+        ("🏠 Painel", "KPIs, acoes rapidas, busca global, atividade recente"),
+        ("📖 Guia & Manual", "Este manual completo"),
+        ("⚙️ Configuracoes", "Autonomia, pipeline, follow-ups, persona, multichannel"),
+        ("📊 Pipeline", "Executar etapas: qualificar, enriquecer, contatos, emails"),
+        ("🎯 CRM", "Pipeline visual Kanban de vendas"),
+        ("🏫 Escolas", "Gerenciar escolas: editar, excluir, historico"),
+        ("🗺️ Mapa", "Visualizacao geografica + explorar CSV completo"),
+        ("👥 Contatos", "Lista e hierarquia de decisores por escola"),
+        ("✉️ Aprovacao", "Revisar, editar e aprovar emails (3 abas: Pendentes, Aprovadas, Enviadas)"),
+        ("🔄 Follow-ups", "Metricas, timeline, deducao de emails"),
+        ("📝 Templates", "Assinatura de email + templates de mensagem + templates de follow-up"),
+        ("📥 Importar", "Filtrar e importar escolas do CSV do MEC"),
+        ("🔍 Inteligencia", "Enriquecer escolas com dados web (rankings, premios)"),
+    ]
+
+    for nome, desc in menu_items:
+        st.markdown(
+            f'<div class="data-card" style="padding:8px 14px">'
+            f'<strong style="font-size:14px">{nome}</strong>'
+            f'<div style="font-size:12px;color:#757575">{desc}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+# =============================================================================
+# TAB 8 — Ciclo Semanal
+# =============================================================================
+with tab8:
     section_header("Ciclo semanal recomendado", "event_repeat")
 
-    st.markdown("""
-**Com automacoes ativas (Semi-Auto), seu trabalho e minimo:**
+    st.markdown("**Com automacoes ativas (Semi-Auto), seu trabalho e minimo:**")
 
+    st.markdown("""
 | Dia | O que fazer | Onde | Tempo |
-|-----|------------|------|-------|
-| **Segunda** | Revisar resumo do IAlex no WhatsApp | WhatsApp | 2 min |
-| **Terca** | Aprovar emails na fila (pipeline rodou sozinho) | ✉️ Aprovacao | 10 min |
-| **Quarta** | Verificar respostas + sinais de compra | WhatsApp / CRM | 5 min |
-| **Quinta** | Discovery: buscar escolas novas + aprovar staging | 🔍 Discovery | 10 min |
-| **Sexta** | Checar relatorio semanal do IAlex | WhatsApp | 3 min |
-| **Total** | | | **~30 min/sem** |
+|---|---|---|---|
+| **Segunda** | Revisar resumo do IAlex | WhatsApp | 2 min |
+| **Terca** | Aprovar emails da fila | ✉️ Aprovacao | 10 min |
+| **Quarta** | Verificar respostas + sinais | WhatsApp / CRM | 5 min |
+| **Quinta** | Enriquecer escolas com dados web | 🔍 Inteligencia | 5 min |
+| **Sexta** | Checar relatorio semanal | WhatsApp | 3 min |
+| **Total** | | | **~25 min/sem** |
 """)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     section_header("Fases de crescimento", "trending_up")
 
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
+    cols = st.columns(3)
+    with cols[0]:
         st.markdown(
             f'<div class="data-card" style="border-left:4px solid {COLORS["info"]}">'
-            '<div style="font-size:15px;font-weight:600;margin-bottom:8px">Semana 1-2 — Teste</div>'
-            '<ul style="font-size:13px;color:#757575;margin:0;padding-left:18px">'
-            '<li>Importar 100-200 escolas</li>'
-            '<li>Rodar pipeline manual (20 qualify, 10 emails)</li>'
-            '<li>Aprovar 5-10 emails, verificar qualidade</li>'
-            '<li>Ajustar filtros e tom</li>'
-            '</ul></div>',
+            '<strong>Semana 1-2 — Teste</strong>'
+            '<ul style="font-size:13px;color:#757575;margin:8px 0 0;padding-left:18px">'
+            '<li>Importar 50-100 escolas</li>'
+            '<li>Rodar pipeline manual</li>'
+            '<li>Aprovar 5-10 emails</li>'
+            '<li>Verificar qualidade</li></ul></div>',
             unsafe_allow_html=True,
         )
-    with col_r2:
+    with cols[1]:
         st.markdown(
             f'<div class="data-card" style="border-left:4px solid {COLORS["success"]}">'
-            '<div style="font-size:15px;font-weight:600;margin-bottom:8px">Semana 3-4 — Operacao</div>'
-            '<ul style="font-size:13px;color:#757575;margin:0;padding-left:18px">'
-            '<li>Ativar pipeline + follow-ups automaticos</li>'
+            '<strong>Semana 3-4 — Operacao</strong>'
+            '<ul style="font-size:13px;color:#757575;margin:8px 0 0;padding-left:18px">'
+            '<li>Ativar pipeline automatico</li>'
+            '<li>Ativar follow-ups</li>'
             '<li>50 qualificacoes/semana</li>'
-            '<li>20-30 emails/semana</li>'
-            '<li>Usar Discovery para novas cidades</li>'
-            '</ul></div>',
+            '<li>20-30 emails/semana</li></ul></div>',
             unsafe_allow_html=True,
         )
-    with col_r3:
+    with cols[2]:
         st.markdown(
             f'<div class="data-card" style="border-left:4px solid {COLORS["accent"]}">'
-            '<div style="font-size:15px;font-weight:600;margin-bottom:8px">Mes 2+ — Escala</div>'
-            '<ul style="font-size:13px;color:#757575;margin:0;padding-left:18px">'
+            '<strong>Mes 2+ — Escala</strong>'
+            '<ul style="font-size:13px;color:#757575;margin:8px 0 0;padding-left:18px">'
             '<li>100+ qualificacoes/semana</li>'
-            '<li>Expandir para novas cidades/estados</li>'
-            '<li>ML preditivo identifica top oportunidades</li>'
-            '<li>RAG melhora emails automaticamente</li>'
-            '</ul></div>',
+            '<li>Expandir para novas cidades</li>'
+            '<li>ML preditivo otimiza</li>'
+            '<li>RAG melhora emails</li></ul></div>',
             unsafe_allow_html=True,
         )
 
 # =============================================================================
-# TAB 8 — Duvidas Frequentes
+# TAB 9 — Duvidas
 # =============================================================================
-with tab8:
+with tab9:
     section_header("Perguntas Frequentes", "help_outline")
 
     perguntas = [
-        (
-            "O IAlex pode enviar emails sem eu saber?",
-            "**Somente se voce ativar FULL-AUTO** (exige a frase 'autorizo envio automatico'). "
-            "No modo padrao (Semi-Auto), tudo vai pra fila de aprovacao e voce decide 1 a 1.",
-        ),
-        (
-            "Posso editar os emails antes de enviar?",
-            "**Sim.** Na Fila de Aprovacao, cada email tem campo editavel. Edite antes de aprovar.",
-        ),
-        (
-            "O que sao follow-ups comportamentais?",
-            "Em vez de enviar follow-up fixo no dia 3/7/14, o sistema analisa se o lead "
-            "abriu, clicou ou ignorou o email e gera um follow-up personalizado pro comportamento "
-            "(hot_click, curious_open, silent_open, revival). Tudo passa pela fila de aprovacao.",
-        ),
-        (
-            "O que e o Discovery?",
-            "Funcao que descobre escolas que NAO estao no CSV do MEC — escolas novas, bilingues, "
-            "internacionais, etc. Tambem busca rankings, premios e noticias sobre qualquer escola. "
-            "As descobertas ficam em staging ate voce aprovar.",
-        ),
-        (
-            "O que e o score preditivo ML?",
-            "Um modelo de Machine Learning (Logistic Regression) treinado com seus dados reais "
-            "que preve probabilidade de fechamento de cada escola. Retreina automaticamente todo domingo.",
-        ),
-        (
-            "O que e o RAG de emails?",
-            "Retrieval-Augmented Generation: quando o sistema gera um email novo, ele busca emails "
-            "passados que tiveram resposta/click e usa como referencia de tom e estilo. Quanto mais "
-            "respostas voce recebe, melhores ficam os novos emails.",
-        ),
-        (
-            "Como o IAlex me alerta sobre sinais de compra?",
-            "A cada 30 minutos, o IAlex verifica se alguma escola abriu, clicou ou respondeu ao email. "
-            "Se detectar sinal forte (especialmente keywords como 'orcamento', 'reuniao'), envia alerta "
-            "no WhatsApp com a escola, contato e acao recomendada.",
-        ),
-        (
-            "Posso usar so o dashboard sem WhatsApp?",
-            "**Sim.** O dashboard tem todas as funcoes. O WhatsApp (IAlex) e complementar — "
-            "util quando voce esta fora do computador ou quer comandos rapidos.",
-        ),
-        (
-            "Quanto custa rodar o sistema?",
-            "~R$ 0,50 a R$ 2,00 para 20 qualificacoes + 10 emails (custo da API OpenAI/Claude). "
-            "DuckDuckGo (discovery) e gratuito. Brevo: 300 emails/dia gratis. Supabase: plano free.",
-        ),
-        (
-            "Posso usar em outro computador?",
-            "**Sim.** O banco fica na nuvem (Supabase). Copie o .env e instale o projeto. "
-            "O dashboard tambem esta no Streamlit Cloud (acesso por URL).",
-        ),
+        ("O IAlex pode enviar emails sem eu saber?",
+         "**Somente se voce ativar FULL-AUTO** (exige frase 'autorizo envio automatico'). No modo padrao (Semi-Auto), tudo vai pra fila."),
+        ("Posso editar emails antes de enviar?",
+         "**Sim.** Na fila de aprovacao ou via WhatsApp (colar texto, dar instrucoes, reescrever)."),
+        ("O que sao follow-ups comportamentais?",
+         "Em vez de dias fixos, o sistema analisa comportamento (abriu? clicou? sumiu?) e gera follow-up adequado."),
+        ("Como funciona o modo campo?",
+         "Compartilhe localizacao no WhatsApp. Se tem escola do banco em ate 1km, IAlex mostra briefing instantaneo com diretor, score e pitch."),
+        ("O que e a persona adaptativa?",
+         "A IA classifica cada escola (inovadora, conservadora, pragmatica, entusiasta) e adapta tom, argumentos e CTA."),
+        ("Como funciona o multichannel?",
+         "Quando ativado, follow-ups alternam entre email, WhatsApp e LinkedIn conforme cadencia configurada. LinkedIn e manual."),
+        ("O Outlook Calendar funciona?",
+         "Sim. IAlex detecta reunioes, envia briefing 30 min antes e pede resumo depois. Requer App Registration no Azure."),
+        ("Quanto custa rodar?",
+         "~R$ 0,50 a R$ 2,00 para 20 qualificacoes + 10 emails (API OpenAI). DuckDuckGo, Brevo e Supabase: gratis nos planos free."),
+        ("Posso usar so o dashboard sem WhatsApp?",
+         "**Sim.** O dashboard tem todas as funcoes. O WhatsApp e complementar."),
+        ("Posso usar em outro computador?",
+         "**Sim.** O banco fica na nuvem (Supabase). Dashboard no Streamlit Cloud (acesso por URL)."),
     ]
 
     for pergunta, resposta in perguntas:
@@ -491,13 +620,12 @@ with tab8:
     section_header("Problemas comuns", "bug_report")
 
     st.markdown("""
-| Problema | Causa provavel | Solucao |
-|---------|-------|---------|
-| CSV nao encontrado | Arquivo nao baixado | Baixe do MEC e salve em `data/raw/escolas_brasil.csv` |
-| Discovery "nao retornou dados" | DuckDuckGo bloqueou ou sem internet | Tente novamente em 1 min |
-| Email com nome errado | Contato nao encontrado corretamente | Edite na Fila de Aprovacao antes de aprovar |
-| Dashboard nao abre | venv inativa | `venv/Scripts/python.exe -m streamlit run dashboard/app.py` |
-| IAlex nao responde no WhatsApp | Webhook ou bridge desconectado | Reinicie: `venv/Scripts/python.exe agent/webhook_server.py` |
-| HubSpot nao sincroniza | Token expirado | Gere novo token em app.hubspot.com > Private Apps |
-| Pipeline nao roda automatico | Modo manual ativo | Mude para Semi-Auto em ⚙️ Configuracoes |
+| Problema | Solucao |
+|---|---|
+| CSV nao encontrado | Baixe do MEC e salve em `data/raw/escolas_brasil.csv` |
+| Discovery sem resultados | Tente outra cidade ou keyword |
+| Email nao chegou | Verifique spam. Envie teste para Gmail pessoal |
+| IAlex nao responde | Reinicie: `venv/Scripts/python.exe agent/webhook_server.py` |
+| Pipeline nao roda auto | Mude para Semi-Auto em ⚙️ Configuracoes |
+| Msg bloqueada | Contato sem email/telefone. Adicione no dashboard |
 """)
