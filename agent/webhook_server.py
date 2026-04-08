@@ -123,9 +123,9 @@ def _build_field_mode_briefing(lat: float, lng: float) -> str:
             s["_dist"] = 99999
 
     schools.sort(key=lambda x: x["_dist"])
-    nearby = [s for s in schools[:10] if s["_dist"] <= 2.0]
+    nearby = [s for s in schools[:10] if s["_dist"] <= 2.0]  # apenas ate 2km
     if not nearby:
-        nearby = schools[:3]
+        return ""  # nenhuma escola proxima — nao enviar briefing
 
     closest = nearby[0]
     company_id = closest["id"]
@@ -375,21 +375,22 @@ def webhook():
                     f"Fernando compartilhou sua localizacao."
                 )
 
+                briefing_sent = False
                 if campo_reply:
-                    # Enviar briefing instantaneo primeiro (sem GPT, rapido)
                     try:
                         bridge = get_bridge()
-                        bridge.send_message(sender, campo_reply)
-                        logger.info("Modo campo: briefing enviado")
+                        result = bridge.send_message(sender, campo_reply)
+                        if result.get("success") or result.get("key"):
+                            briefing_sent = True
+                            logger.info("Modo campo: briefing enviado")
                     except Exception as e:
                         logger.error(f"Modo campo send erro: {e}")
 
-                    # Depois, passar para o brain com contexto para opcoes adicionais
+                if briefing_sent:
                     text += (
-                        " Ja enviei o briefing da escola mais proxima. "
-                        "Agora pergunte se Fernando quer algo mais: "
-                        "buscar escolas proximas em outro raio, buscar na base MEC, "
-                        "filtrar por tipo, ou outra acao."
+                        " Ja enviei o briefing da escola mais proxima acima. "
+                        "Agora pergunte se Fernando quer algo mais com essa escola ou "
+                        "se quer buscar outras escolas proximas."
                     )
                 else:
                     # Sem escola proxima no banco — perguntar o que quer
