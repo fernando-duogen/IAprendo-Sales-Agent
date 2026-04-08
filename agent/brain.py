@@ -289,7 +289,8 @@ TOOLS = [
                 "tom": {"type": "string", "description": "Tom do email: formal, amigavel, direto (default: amigavel)"},
                 "foco": {"type": "string", "description": "Foco do email: apresentacao, demo, case de sucesso, convite evento (default: apresentacao)"},
                 "modo": {"type": "string", "enum": ["ia", "template"], "description": "Modo: 'ia' (IA gera do zero) ou 'template' (usa template salvo). Default: ia"},
-                "template_nome": {"type": "string", "description": "Nome do template a usar (se modo=template). Se nao informado, usa o template padrao."}
+                "template_nome": {"type": "string", "description": "Nome do template a usar (se modo=template). Se nao informado, usa o template padrao."},
+                "canal": {"type": "string", "enum": ["email", "whatsapp", "ambos"], "description": "Canal de envio: 'email' (default), 'whatsapp' (msg curta), 'ambos' (gera email + whatsapp)."}
             },
             "required": ["escola_nome"]
         }
@@ -2807,32 +2808,91 @@ Responda em JSON: {{"assunto": "...", "corpo": "...", "reasoning": "persona esco
     except Exception:
         pass
 
-    # Salvar na fila de aprovação
-    queue_entry = {
-        "company_id": escola["id"],
-        "subject": email_data["assunto"],
-        "body": email_data["corpo"],
-        "channel": "email",
-        "status": "pending",
-    }
-    if smart_scheduled_at:
-        queue_entry["scheduled_send_at"] = smart_scheduled_at
+    # Resolver contact_id
+    contact_id = None
     if contato_email:
-        # Buscar contact_id
-        c = db.client.table("contacts").select("id").eq("email", contato_email).limit(1).execute()
-        if c.data:
-            queue_entry["contact_id"] = c.data[0]["id"]
+        try:
+            c = db.client.table("contacts").select("id").eq("email", contato_email).limit(1).execute()
+            if c.data:
+                contact_id = c.data[0]["id"]
+        except Exception:
+            pass
 
-    db.client.table("approval_queue").insert(queue_entry).execute()
+    canal = params.get("canal", "email").lower()
+    resultados = []
+
+    # === CANAL EMAIL (ou ambos) ===
+    if canal in ("email", "ambos"):
+        queue_entry = {
+            "company_id": escola["id"],
+            "subject": email_data["assunto"],
+            "body": email_data["corpo"],
+            "channel": "email",
+            "status": "pending",
+        }
+        if smart_scheduled_at:
+            queue_entry["scheduled_send_at"] = smart_scheduled_at
+        if contact_id:
+            queue_entry["contact_id"] = contact_id
+        db.client.table("approval_queue").insert(queue_entry).execute()
+        resultados.append({"canal": "email", "assunto": email_data["assunto"]})
+
+    # === CANAL WHATSAPP (ou ambos) ===
+    if canal in ("whatsapp", "ambos"):
+        # Gerar mensagem curta para WhatsApp (max 50 palavras, informal)
+        contact_first = contato_nome.split()[0] if contato_nome else "Diretor(a)"
+        meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
+
+        try:
+            wpp_prompt = (
+                f"Escreva uma mensagem CURTA de WhatsApp (max 50 palavras) para {contact_first} "
+                f"da escola {escola.get('name')}. Tom informal e direto, como Fernando "
+                f"escreveria pelo celular. Mencione IAprendo e BNCC. "
+                f"Termine com CTA: link {meeting_link} se houver. "
+                f"Responda APENAS o texto da mensagem, sem JSON."
+            )
+            wpp_resp = client.chat.completions.create(
+                model=model,
+                max_tokens=200,
+                messages=[{"role": "user", "content": wpp_prompt}],
+                temperature=0.4,
+            )
+            wpp_body = (wpp_resp.choices[0].message.content or "").strip()
+            # Limpar markdown
+            wpp_body = wpp_body.strip('"').strip("'")
+        except Exception:
+            wpp_body = (
+                f"Oi {contact_first}! Sou Fernando da IAprendo. "
+                f"Temos uma plataforma educacional 100% BNCC que pode ajudar a {escola.get('name')}. "
+                f"Posso te mostrar em 2 min? {meeting_link}"
+            )
+
+        wpp_entry = {
+            "company_id": escola["id"],
+            "subject": f"WhatsApp - {escola.get('name', '')}",
+            "body": wpp_body,
+            "channel": "whatsapp",
+            "status": "pending",
+        }
+        if smart_scheduled_at:
+            wpp_entry["scheduled_send_at"] = smart_scheduled_at
+        if contact_id:
+            wpp_entry["contact_id"] = contact_id
+        db.client.table("approval_queue").insert(wpp_entry).execute()
+        resultados.append({"canal": "whatsapp", "preview": wpp_body[:80]})
+
+    canal_label = {"email": "Email", "whatsapp": "WhatsApp", "ambos": "Email + WhatsApp"}.get(canal, canal)
 
     return json.dumps({
-        "email_gerado": True,
+        "mensagem_gerada": True,
+        "canal": canal_label,
         "escola": escola.get("name"),
         "contato": contato_nome,
-        "email_destino": contato_email,
-        "assunto": email_data["assunto"],
-        "corpo": email_data["corpo"],
-        "status": "Na fila de aprovacao (pending)"
+        "resultados": resultados,
+        "assunto_email": email_data["assunto"] if canal in ("email", "ambos") else None,
+        "corpo_email": email_data["corpo"] if canal in ("email", "ambos") else None,
+        "corpo_whatsapp": wpp_body if canal in ("whatsapp", "ambos") else None,
+        "status": "Na fila de aprovacao (pending) — revise antes de enviar",
     }, ensure_ascii=False)
 
 
@@ -4224,20 +4284,26 @@ Quando Fernando disser "vamos prospectar", "gera emails para as escolas", "quero
 3️⃣ Ana Lima — Vice-Diretora (ana@marista.com.br)
 
 ⚡ *O que quer fazer com esta escola?*
-1️⃣ Gerar email (IA) para contato 1
-2️⃣ Gerar email (IA) para outro contato
-3️⃣ Usar template
-4️⃣ Pular para proxima escola
-5️⃣ Encerrar sessao
-📋 _"menu" para outras opcoes_
+1️⃣ Email para contato 1
+2️⃣ WhatsApp para contato 1
+3️⃣ Ambos (email + WhatsApp)
+4️⃣ Usar template (email)
+5️⃣ Outro contato
+6️⃣ Pular escola
+7️⃣ Encerrar sessao
+📋 _"menu" para mais_
 
-3. QUANDO Fernando responder (ex: "1", "gera pro diretor", "pula"):
-   - "1" ou "gera" → chame gerar_email com escola + contato selecionado
-   - Apos gerar → MOSTRE O EMAIL COMPLETO (assunto + corpo) e pergunte: "Texto ok? Quer aprovar, editar, ou pular?"
-   - ESPERE Fernando confirmar ANTES de aprovar (REGRA ABSOLUTA — vale tambem aqui)
-   - NAO aprove automaticamente apos gerar — SEMPRE mostre e pergunte
-   - "pula" ou "proxima" → apresente a proxima escola
-   - "para" ou "chega" → encerre a sessao com resumo
+3. QUANDO Fernando responder:
+   - "1" ou "email" → gerar_email(canal="email") com contato selecionado
+   - "2" ou "whatsapp" ou "zap" → gerar_email(canal="whatsapp") — msg curta informal
+   - "3" ou "ambos" ou "os dois" → gerar_email(canal="ambos") — gera email + whatsapp juntos
+   - "4" ou "template" → gerar_email(modo="template")
+   - "5" ou "outro contato" → mostrar lista de contatos novamente
+   - "6" ou "pula" → proxima escola
+   - "7" ou "para" → encerrar com resumo
+   - Apos gerar → MOSTRE O TEXTO COMPLETO e pergunte: "Texto ok? Quer aprovar, editar, ou pular?"
+   - ESPERE Fernando confirmar ANTES de aprovar (REGRA ABSOLUTA)
+   - Se canal="ambos", mostre AMBOS os textos (email + whatsapp) antes de aprovar
 
 4. AO ENCERRAR, mostre resumo: "Sessao encerrada. X emails gerados, Y aprovados, Z na fila."
 
