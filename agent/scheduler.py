@@ -39,6 +39,8 @@ class IALexScheduler:
         schedule.every().friday.at("17:30").do(self._weekly_report)
         schedule.every(15).minutes.do(self._check_replies)
         schedule.every(15).minutes.do(self._hubspot_pull)
+        # Auto-resposta a replies — a cada 15 min
+        schedule.every(15).minutes.do(self._process_auto_replies)
         # Envio de mensagens agendadas — a cada 5 min
         schedule.every(5).minutes.do(self._send_scheduled_messages)
         # Detector de sinais de compra (intent alerts) — a cada 30 min
@@ -404,6 +406,27 @@ class IALexScheduler:
 
         except Exception as e:
             logger.debug(f"Post-meeting followup: {e}")
+
+    def _process_auto_replies(self):
+        """Processa replies de escolas e gera auto-respostas na fila."""
+        try:
+            from tools.reply_handler import reply_handler
+            result = reply_handler.process_new_replies(limit=5)
+            generated = result.get("generated", 0)
+            if generated > 0:
+                details = result.get("details", [])
+                lines = [f"📩 *{generated} auto-resposta(s) gerada(s)*\n"]
+                for d in details[:5]:
+                    emoji = d.get("intent_emoji", "📧")
+                    lines.append(
+                        f"{emoji} *{d.get('escola', '?')}* — {d.get('intent_label', '?')}\n"
+                        f"   _\"{d.get('reply_preview', '')[:80]}\"_"
+                    )
+                lines.append(f"\n📋 Revise na fila de aprovacao antes de enviar.")
+                self._send_to_owner("\n".join(lines))
+                logger.info(f"Auto-replies: {generated} geradas")
+        except Exception as e:
+            logger.debug(f"Auto-replies skip: {e}")
 
     def _send_scheduled_messages(self):
         """Verifica e envia mensagens agendadas cujo horario ja passou.

@@ -199,6 +199,20 @@ TOOLS = [
         }
     },
     {
+        "name": "processar_respostas",
+        "description": "Processa respostas de escolas e gera auto-respostas inteligentes na fila de "
+                       "aprovacao. Analisa o conteudo (positivo? negativo? quer agendar? pediu info?) "
+                       "e gera resposta adequada. Use quando Fernando disser: 'processa as respostas', "
+                       "'tem resposta nova?', 'gera respostas para os replies', 'o que as escolas "
+                       "responderam?'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limite": {"type": "integer", "description": "Max respostas a processar (default 5)"}
+            }
+        }
+    },
+    {
         "name": "ver_agenda",
         "description": "Lista proximas reunioes do Outlook Calendar associadas a escolas do banco. "
                        "Use quando Fernando disser: 'me mostra minha agenda', 'tenho reuniao hoje?', "
@@ -1412,6 +1426,47 @@ def _handle_tracking_emails(params: Dict) -> str:
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro no tracking: {str(e)[:200]}"})
+
+
+def _handle_processar_respostas(params: Dict) -> str:
+    """Processa replies de escolas e gera auto-respostas."""
+    try:
+        from tools.reply_handler import reply_handler
+        limite = int(params.get("limite", 5))
+        result = reply_handler.process_new_replies(limit=limite)
+
+        generated = result.get("generated", 0)
+        ignored = result.get("ignored", 0)
+        details = result.get("details", [])
+
+        if generated == 0 and ignored == 0:
+            return json.dumps({
+                "mensagem": "Nenhuma resposta nova para processar. Quando escolas responderem, as auto-respostas serao geradas automaticamente.",
+                "processados": 0,
+            })
+
+        resumo = []
+        for d in details:
+            resumo.append({
+                "escola": d.get("escola", "?"),
+                "contato": d.get("contato", "?"),
+                "intencao": f"{d.get('intent_emoji', '')} {d.get('intent_label', '?')}",
+                "reply_preview": d.get("reply_preview", "")[:100],
+                "resposta_gerada": d.get("resposta_body", "")[:150],
+                "queue_id": d.get("new_queue_id"),
+            })
+
+        return json.dumps({
+            "geradas": generated,
+            "ignoradas": ignored,
+            "respostas": resumo,
+            "mensagem": (
+                f"{generated} auto-resposta(s) gerada(s) na fila de aprovacao. "
+                f"Revise antes de enviar."
+            ),
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
 def _handle_ver_agenda(params: Dict) -> str:
@@ -3853,6 +3908,7 @@ TOOL_HANDLERS = {
     "aprovar_mensagem": _handle_aprovar_mensagem,
     "rejeitar_mensagem": _handle_rejeitar_mensagem,
     "editar_e_aprovar": _handle_editar_e_aprovar,
+    "processar_respostas": _handle_processar_respostas,
     "ver_agenda": _handle_ver_agenda,
     "registrar_resultado_reuniao": _handle_registrar_resultado_reuniao,
     "enviar_email_teste": _handle_enviar_email_teste,
@@ -4241,6 +4297,24 @@ WhatsApp NAO suporta HTML. Quando mostrar preview de email no WhatsApp:
 - "troca X por Y" → ver_email_completo, replace → MOSTRAR → PERGUNTAR → ESPERAR
 - Fernando diz "sim"/"aprova"/"manda" → AI SIM chamar aprovar_mensagem ou editar_e_aprovar
 - "rejeita" → rejeitar_mensagem
+
+== AUTO-RESPOSTA A REPLIES (COPILOTO DE INBOX) ==
+Quando uma escola responde ao email, o sistema AUTOMATICAMENTE (a cada 15 min):
+1. Analisa o conteudo da resposta (positiva? negativa? quer agendar? pediu info?)
+2. Classifica a intencao (6 tipos)
+3. Gera resposta adequada via GPT
+4. Coloca na fila de aprovacao (Fernando revisa antes de enviar)
+5. Notifica Fernando no WhatsApp com analise + preview
+
+Intencoes: positivo_agendar (📅), positivo_info (📋), positivo_generico (👍),
+negativo (🚫), ausente/auto-resposta (ignorado), pergunta (❓).
+
+*Quando usar processar_respostas:*
+- "Tem resposta nova?" / "O que as escolas responderam?"
+- "Processa os replies" / "Gera respostas"
+
+O sistema roda automaticamente, mas Fernando pode forcar manualmente.
+Auto-respostas a "fora do escritorio" sao ignoradas automaticamente.
 
 == OUTLOOK CALENDAR (REUNIOES) ==
 IAlex esta integrado ao Outlook Calendar de Fernando. O sistema:
