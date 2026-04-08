@@ -2446,13 +2446,69 @@ def _handle_gerar_email(params: Dict) -> str:
     except Exception as _e:
         logger.debug(f"RAG email examples skip: {_e}")
 
+    # === Persona adaptativa ===
+    persona_section = ""
+    try:
+        from integrations.pipeline_config import pipeline_config
+        cfg = pipeline_config.get_config()
+        if cfg.get("persona_mode") == "adaptativo":
+            # Buscar memorias da escola para contexto de persona
+            memory_ctx = ""
+            try:
+                from integrations.memory import memory as _mem
+                mems = _mem.get_for("company", escola["id"], limit=5)
+                if mems:
+                    memory_ctx = "\nMemorias/sinais desta escola:\n" + _mem.format_for_context(mems)
+            except Exception:
+                pass
+            # Buscar interacoes passadas (click? reply?)
+            interaction_ctx = ""
+            try:
+                ints = db.client.table("approval_queue").select(
+                    "opened_at,clicked_at,replied_at"
+                ).eq("company_id", escola["id"]).eq("status", "sent").limit(5).execute().data or []
+                if any(i.get("replied_at") for i in ints):
+                    interaction_ctx = "\nEsta escola JA RESPONDEU a um email anterior (sinal forte de interesse)."
+                elif any(i.get("clicked_at") for i in ints):
+                    interaction_ctx = "\nEsta escola JA CLICOU em link de email anterior (interesse demonstrado)."
+                elif any(i.get("opened_at") for i in ints):
+                    interaction_ctx = "\nEsta escola JA ABRIU emails anteriores."
+            except Exception:
+                pass
+
+            persona_section = f"""
+== PERSONA ADAPTATIVA (ATIVO) ==
+Classifique esta escola em UMA das 4 personas e adapte TOM, ARGUMENTOS e CTA:
+
+1. INOVADORA — escola tech, bilingue, integral, Waldorf, nome moderno, site ativo
+   Tom: entusiasmado, visionario. Fale de tecnologia, personalizacao, futuro.
+   CTA: "Vamos inovar juntos? Posso mostrar em 15 min."
+
+2. CONSERVADORA — escola tradicional, religiosa (Marista, La Salle, Adventista), muitos anos
+   Tom: respeitoso, referencial. Fale de tradicao + modernidade, seguranca, casos similares.
+   CTA: "Posso apresentar sem compromisso, no horario que preferir."
+
+3. PRAGMATICA — escola publica grande, foco em ENEM/vestibular, ensino medio
+   Tom: direto, orientado a resultado. Fale de BNCC, notas, desempenho concreto.
+   CTA: "Quer ver os resultados que escolas como a sua alcancaram?"
+
+4. ENTUSIASTA — escola que ja interagiu positivamente (clicou, respondeu, memoria positiva)
+   Tom: caloroso, parceiro. Fale de proximos passos, piloto, case de sucesso.
+   CTA: "Quando podemos comecar?"
+{memory_ctx}{interaction_ctx}
+
+INDIQUE a persona escolhida no campo "reasoning" da resposta.
+"""
+    except Exception:
+        pass
+
     # Gerar email usando OpenAI
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
     model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
     prompt = f"""Gere um email de prospecção B2B para a escola abaixo.
 Tom: {tom}. Foco: {foco}.
 Produto: IAprendo - plataforma de IA educacional alinhada à BNCC.
-{examples_section}
+{persona_section}{examples_section}
 Escola: {escola.get('name')}
 Cidade: {escola.get('city')}/{escola.get('state')}
 Categoria: {escola.get('admin_category')}
@@ -2468,7 +2524,7 @@ Regras:
 - Assinatura: Fernando Nienaber, IAprendo
 - IMPORTANTE: NAO copie texto literal dos exemplos, apenas inspire-se no estilo
 
-Responda em JSON: {{"assunto": "...", "corpo": "..."}}"""
+Responda em JSON: {{"assunto": "...", "corpo": "...", "reasoning": "persona escolhida + justificativa"}}"""
 
     resp = client.chat.completions.create(
         model=model,

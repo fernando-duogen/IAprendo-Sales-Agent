@@ -25,6 +25,8 @@ Voce esta escrevendo pessoalmente para um(a) diretor(a) ou coordenador(a) pedago
 ## Resultado da Qualificacao
 {qualification_data}
 
+{persona_instructions}
+
 ## Regras OBRIGATORIAS
 
 1. NUNCA use "Inteligencia Artificial" ou "IA" -- o nome IAprendo ja diz tudo. Foque em tecnologia, resultados pedagogicos e BNCC.

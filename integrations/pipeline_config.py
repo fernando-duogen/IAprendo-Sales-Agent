@@ -83,6 +83,8 @@ class PipelineConfig:
             "followup_time": "09:30",
             "followup_limit": 20,
             "followup_types": ["hot_click", "curious_open", "silent_open", "revival"],
+            # Persona de comunicacao
+            "persona_mode": "padrao",  # "padrao" (tom fixo) ou "adaptativo" (IA adapta por escola)
         }
 
     # =========================================================================
@@ -171,6 +173,10 @@ class PipelineConfig:
         if not fu_types:
             fu_types = list(valid_fu_types)
         out["followup_types"] = fu_types
+
+        # === Persona mode ===
+        pm = str(out.get("persona_mode", "padrao")).lower()
+        out["persona_mode"] = pm if pm in ("padrao", "adaptativo") else "padrao"
 
         return out
 

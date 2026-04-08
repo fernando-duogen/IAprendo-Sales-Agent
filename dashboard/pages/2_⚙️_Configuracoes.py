@@ -517,6 +517,69 @@ with col_fu_run:
             st.error(f"Erro: {e}")
 
 # =============================================================================
+# Secao 7 - Persona de comunicacao
+# =============================================================================
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+section_header("Persona de comunicacao", "face")
+
+st.caption(
+    "Controle como o IAlex adapta o tom dos emails para cada escola. "
+    "No modo Padrao, todos os emails usam o mesmo tom. No modo Adaptativo, "
+    "a IA classifica cada escola (inovadora, conservadora, pragmatica, entusiasta) "
+    "e adapta tom, argumentos e CTA."
+)
+
+current_persona = cfg.get("persona_mode", "padrao")
+
+persona_col1, persona_col2 = st.columns(2)
+with persona_col1:
+    is_padrao = current_persona == "padrao"
+    st.markdown(
+        f'<div class="data-card" style="border-left:4px solid '
+        f'{"#4CAF50" if is_padrao else "#E0E0E0"};padding:12px 16px">'
+        f'<strong style="font-size:15px">🟢 Padrao</strong>'
+        f'<div style="font-size:13px;color:#757575;margin-top:4px">'
+        f'Tom fixo (amigavel, humano, direto). Todos os emails usam o mesmo estilo. '
+        f'Comportamento atual.</div></div>',
+        unsafe_allow_html=True,
+    )
+with persona_col2:
+    is_adapt = current_persona == "adaptativo"
+    st.markdown(
+        f'<div class="data-card" style="border-left:4px solid '
+        f'{"#7B1FA2" if is_adapt else "#E0E0E0"};padding:12px 16px">'
+        f'<strong style="font-size:15px">🔮 Adaptativo</strong>'
+        f'<div style="font-size:13px;color:#757575;margin-top:4px">'
+        f'IA classifica cada escola e adapta tom: '
+        f'inovadora (entusiasmado), conservadora (respeitoso), '
+        f'pragmatica (direto), entusiasta (caloroso).</div></div>',
+        unsafe_allow_html=True,
+    )
+
+persona_choice = st.radio(
+    "Modo de comunicacao",
+    options=["padrao", "adaptativo"],
+    index=0 if current_persona == "padrao" else 1,
+    format_func=lambda x: "🟢 Padrão (tom fixo)" if x == "padrao" else "🔮 Adaptativo (IA adapta por escola)",
+    horizontal=True,
+    key="persona_radio",
+    label_visibility="collapsed",
+)
+
+if persona_choice != current_persona:
+    if st.button("💾 Salvar modo de comunicacao", type="primary", use_container_width=True, key="btn_save_persona"):
+        new_cfg = pipeline_config.get_config()
+        new_cfg["persona_mode"] = persona_choice
+        if pipeline_config.save_config(new_cfg):
+            st.success(
+                f"✅ Modo de comunicacao alterado para "
+                f"{'Padrao' if persona_choice == 'padrao' else 'Adaptativo'}."
+            )
+            st.rerun()
+        else:
+            st.error("Falha ao salvar.")
+
+# =============================================================================
 # Rodape - Dica
 # =============================================================================
 st.markdown('<hr class="divider">', unsafe_allow_html=True)

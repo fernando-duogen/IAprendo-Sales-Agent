@@ -35,6 +35,8 @@ Assunto: {original_subject}
 ## Exemplos de follow-ups que funcionaram no passado
 {rag_examples}
 
+{persona_instructions}
+
 ## Tipo de follow-up e instrucoes de estilo
 
 *Este e um follow-up do tipo: {follow_up_type} — {follow_up_label}*

@@ -519,6 +519,25 @@ def generate_follow_up(
     # === Tracking context ===
     tracking_context_text = _build_tracking_context(tracking_signal or {})
 
+    # === Persona adaptativa ===
+    persona_section = ""
+    try:
+        from integrations.pipeline_config import pipeline_config
+        cfg = pipeline_config.get_config()
+        if cfg.get("persona_mode") == "adaptativo":
+            persona_section = (
+                "\n== PERSONA ADAPTATIVA ==\n"
+                "Adapte o tom deste follow-up baseado no perfil da escola:\n"
+                "- Escola tech/bilingue/moderna → tom entusiasmado, fale de inovacao\n"
+                "- Escola tradicional/religiosa → tom respeitoso, fale de seguranca e tradicao\n"
+                "- Escola publica/foco resultado → tom direto, fale de BNCC e numeros\n"
+                "- Escola que ja interagiu (clicou/abriu) → tom caloroso, fale de proximos passos\n"
+                f"Escola: {school_name} | Tipo: {company.get('admin_category', '?')} | "
+                f"Porte: {company.get('school_size', '?')}\n"
+            )
+    except Exception:
+        pass
+
     # === RAG: exemplos de follow-ups bem-sucedidos ===
     rag_text = ""
     try:
@@ -589,6 +608,7 @@ def generate_follow_up(
         .replace("{rag_examples}", rag_text)
         .replace("{follow_up_type}", follow_up_type)
         .replace("{follow_up_label}", fu_label)
+        .replace("{persona_instructions}", persona_section)
         .replace("{style_instructions}", style_instruction_text)
         .replace("{meeting_link}", meeting_link)
     )
