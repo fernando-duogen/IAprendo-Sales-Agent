@@ -46,6 +46,11 @@ class IALexScheduler:
         # Retreino semanal do modelo preditivo (domingo 03:00)
         schedule.every().sunday.at("03:00").do(self._retrain_predictive_model)
 
+        # Outlook Calendar — poll + briefings + pós-reunião
+        schedule.every(15).minutes.do(self._poll_outlook_calendar)
+        schedule.every(5).minutes.do(self._check_pre_meeting_briefings)
+        schedule.every(15).minutes.do(self._check_post_meeting_followup)
+
         # Pipeline automatico dinamico (carregado da config do banco)
         self._register_automated_pipeline()
 
@@ -141,6 +146,264 @@ class IALexScheduler:
                     pass
 
         threading.Thread(target=_with_timeout, daemon=True).start()
+
+    # ============================================================
+    # OUTLOOK CALENDAR (poll + briefing + pós-reunião)
+    # ============================================================
+
+    def _poll_outlook_calendar(self):
+        """Poll Outlook Calendar a cada 15 min — detectar reuniões com escolas."""
+        try:
+            from integrations.outlook_client import outlook_client
+            if not outlook_client.is_available():
+                return
+
+            events = outlook_client.get_upcoming_events(hours=72)
+            if not events:
+                return
+
+            from database.supabase_client import db as _db
+
+            for event in events:
+                subject = event.get("subject", "")
+                event_id = event.get("id", "")
+                start_dt = outlook_client.parse_event_time(event)
+                if not start_dt or not subject:
+                    continue
+
+                # Checar se já processamos este evento (por subject+start como chave)
+                start_iso = start_dt.isoformat()
+                try:
+                    existing = _db.client.table("meetings").select("id").eq(
+                        "notes", f"outlook_event:{event_id}"
+                    ).limit(1).execute()
+                    if existing.data:
+                        continue  # Já registrado
+                except Exception:
+                    pass
+
+                # Tentar match com escola do banco
+                school = outlook_client.match_event_to_school(event)
+                if not school:
+                    continue  # Não é reunião com escola
+
+                company_id = school["id"]
+                school_name = school.get("name", "?")
+
+                # Registrar meeting no banco
+                try:
+                    end_dt = outlook_client.parse_event_end(event)
+                    _db.client.table("meetings").insert({
+                        "company_id": company_id,
+                        "meeting_type": "online",
+                        "status": "scheduled",
+                        "scheduled_at": start_iso,
+                        "notes": f"outlook_event:{event_id}",
+                    }).execute()
+
+                    # Registrar interaction
+                    _db.client.table("interactions").insert({
+                        "company_id": company_id,
+                        "type": "meeting_scheduled",
+                        "channel": "outlook",
+                    }).execute()
+
+                    logger.info(f"Outlook: reuniao detectada com {school_name}", extra={
+                        "event_subject": subject, "start": start_iso,
+                    })
+
+                    # Notificar Fernando
+                    self._send_to_owner(
+                        f"📅 *Reuniao detectada no Outlook!*\n\n"
+                        f"🏫 *{school_name}*\n"
+                        f"📋 {subject}\n"
+                        f"🕐 {start_dt.strftime('%d/%m/%Y %H:%M')}\n\n"
+                        f"_Enviarei um briefing 30 min antes._"
+                    )
+                except Exception as e:
+                    logger.debug(f"Outlook poll insert: {e}")
+
+        except Exception as e:
+            logger.debug(f"Outlook poll: {e}")
+
+    def _check_pre_meeting_briefings(self):
+        """Envia briefing no WhatsApp 30 min antes de reuniões agendadas."""
+        try:
+            from database.supabase_client import db as _db
+            now = datetime.now(timezone.utc)
+            window_start = now
+            window_end = now + timedelta(minutes=35)
+
+            # Buscar meetings scheduled nos próximos 30-35 min
+            meetings = _db.client.table("meetings").select(
+                "id,company_id,scheduled_at,status,notes"
+            ).eq("status", "scheduled").gte(
+                "scheduled_at", window_start.isoformat()
+            ).lte(
+                "scheduled_at", window_end.isoformat()
+            ).execute().data or []
+
+            for meeting in meetings:
+                company_id = meeting.get("company_id")
+                if not company_id:
+                    continue
+
+                # Checar se já enviamos briefing (evitar duplicata)
+                notes = meeting.get("notes", "") or ""
+                if "briefing_sent" in notes:
+                    continue
+
+                # Buscar dados da escola
+                try:
+                    school = _db.get_company_detail(company_id)
+                except Exception:
+                    school = {}
+                if not school:
+                    continue
+
+                school_name = school.get("name", "?")
+                city = school.get("city", "")
+                score = school.get("qualification_score", "?")
+                porte = school.get("school_size", "?")
+                tipo = school.get("admin_category", "?")
+
+                # Contatos
+                contatos_text = ""
+                try:
+                    contacts = _db.client.table("contacts").select(
+                        "full_name,role,email"
+                    ).eq("company_id", company_id).limit(5).execute().data or []
+                    if contacts:
+                        contatos_text = "\n".join(
+                            f"• {c.get('full_name', '?')} — {c.get('role', '?')} ({c.get('email', '')})"
+                            for c in contacts
+                        )
+                except Exception:
+                    pass
+
+                # Histórico de emails
+                historico_text = ""
+                try:
+                    emails = _db.client.table("approval_queue").select(
+                        "subject,status,sent_at,opened_at,clicked_at,replied_at,follow_up_number"
+                    ).eq("company_id", company_id).eq("status", "sent").order(
+                        "sent_at", desc=False
+                    ).limit(5).execute().data or []
+                    if emails:
+                        lines = []
+                        for e in emails:
+                            fu = e.get("follow_up_number", 0) or 0
+                            fu_tag = f" (FU#{fu})" if fu > 0 else ""
+                            tracking = []
+                            if e.get("replied_at"):
+                                tracking.append("respondeu")
+                            elif e.get("clicked_at"):
+                                tracking.append("clicou")
+                            elif e.get("opened_at"):
+                                tracking.append("abriu")
+                            else:
+                                tracking.append("enviado")
+                            sent_date = (e.get("sent_at") or "")[:10]
+                            lines.append(f"• {sent_date}{fu_tag}: {e.get('subject', '')[:40]} — {', '.join(tracking)}")
+                        historico_text = "\n".join(lines)
+                except Exception:
+                    pass
+
+                # Memórias
+                memorias_text = ""
+                try:
+                    from integrations.memory import memory
+                    mems = memory.get_for("company", company_id, limit=5)
+                    if mems:
+                        memorias_text = memory.format_for_context(mems)
+                except Exception:
+                    pass
+
+                # Montar briefing
+                sched_time = (meeting.get("scheduled_at") or "")[:16]
+                briefing = (
+                    f"📅 *Reuniao em 30 minutos!*\n\n"
+                    f"🏫 *{school_name}*\n"
+                    f"📍 {city} | 🎯 Score: {score} | 📊 {porte}\n"
+                    f"📋 {tipo}\n"
+                )
+                if contatos_text:
+                    briefing += f"\n👤 *Contatos:*\n{contatos_text}\n"
+                if historico_text:
+                    briefing += f"\n📧 *Historico de emails:*\n{historico_text}\n"
+                if memorias_text:
+                    briefing += f"\n💡 *Insights/memorias:*\n{memorias_text}\n"
+                briefing += f"\n⚡ *Boa reuniao!*"
+
+                self._send_to_owner(briefing)
+
+                # Marcar briefing como enviado
+                try:
+                    new_notes = f"{notes}|briefing_sent"
+                    _db.client.table("meetings").update({"notes": new_notes}).eq(
+                        "id", meeting["id"]
+                    ).execute()
+                except Exception:
+                    pass
+
+                logger.info(f"Briefing pre-reuniao enviado: {school_name}")
+
+        except Exception as e:
+            logger.debug(f"Pre-meeting briefing: {e}")
+
+    def _check_post_meeting_followup(self):
+        """Pede resumo no WhatsApp após reuniões que já terminaram."""
+        try:
+            from database.supabase_client import db as _db
+            now = datetime.now(timezone.utc)
+
+            # Buscar meetings scheduled que já passaram (> 1h atrás, para dar margem)
+            cutoff = (now - timedelta(hours=1)).isoformat()
+            meetings = _db.client.table("meetings").select(
+                "id,company_id,scheduled_at,status,notes"
+            ).eq("status", "scheduled").lt(
+                "scheduled_at", cutoff
+            ).limit(5).execute().data or []
+
+            for meeting in meetings:
+                notes = meeting.get("notes", "") or ""
+                if "post_followup_sent" in notes:
+                    continue
+
+                company_id = meeting.get("company_id")
+                school_name = "?"
+                if company_id:
+                    try:
+                        c = _db.client.table("companies").select("name").eq(
+                            "id", company_id
+                        ).single().execute()
+                        school_name = (c.data or {}).get("name", "?")
+                    except Exception:
+                        pass
+
+                self._send_to_owner(
+                    f"✅ *Reuniao com {school_name} encerrou!*\n\n"
+                    f"Como foi? Me conte em poucas palavras:\n"
+                    f"1️⃣ Interessado (quer piloto/proposta)\n"
+                    f"2️⃣ Precisa pensar (follow-up em X dias)\n"
+                    f"3️⃣ Nao interessado\n"
+                    f"4️⃣ Fechou negocio!\n\n"
+                    f"_Ou descreva livremente o resultado._"
+                )
+
+                # Marcar como post_followup_sent
+                try:
+                    new_notes = f"{notes}|post_followup_sent"
+                    _db.client.table("meetings").update({"notes": new_notes}).eq(
+                        "id", meeting["id"]
+                    ).execute()
+                except Exception:
+                    pass
+
+                logger.info(f"Post-meeting followup enviado: {school_name}")
+
+        except Exception as e:
+            logger.debug(f"Post-meeting followup: {e}")
 
     def _send_scheduled_messages(self):
         """Verifica e envia mensagens agendadas cujo horario ja passou.

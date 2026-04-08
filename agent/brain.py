@@ -199,6 +199,35 @@ TOOLS = [
         }
     },
     {
+        "name": "ver_agenda",
+        "description": "Lista proximas reunioes do Outlook Calendar associadas a escolas do banco. "
+                       "Use quando Fernando disser: 'me mostra minha agenda', 'tenho reuniao hoje?', "
+                       "'quais reunioes tenho essa semana?', 'agenda de hoje'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "horas": {"type": "integer", "description": "Buscar eventos das proximas N horas (default 72)"}
+            }
+        }
+    },
+    {
+        "name": "registrar_resultado_reuniao",
+        "description": "Registra o resultado de uma reuniao com escola. Atualiza status da reuniao no banco "
+                       "e salva notas/memorias. Use quando Fernando disser o resultado: 'a reuniao foi boa', "
+                       "'interessado', 'nao quer', 'fechou', ou responder ao pedido de resumo pos-reuniao.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {"type": "string", "description": "Nome da escola da reuniao"},
+                "resultado": {"type": "string", "enum": ["interessado", "follow_up", "nao_interessado", "fechado"],
+                              "description": "Resultado da reuniao"},
+                "notas": {"type": "string", "description": "Notas/resumo livre da reuniao"},
+                "follow_up_dias": {"type": "integer", "description": "Se resultado=follow_up, em quantos dias retomar (default 7)"}
+            },
+            "required": ["escola_nome", "resultado"]
+        }
+    },
+    {
         "name": "enviar_email_teste",
         "description": "Envia um EMAIL DE TESTE para um endereco especificado — para Fernando testar como "
                        "o email aparece na caixa de entrada (assinatura, links, formatacao). "
@@ -1383,6 +1412,144 @@ def _handle_tracking_emails(params: Dict) -> str:
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro no tracking: {str(e)[:200]}"})
+
+
+def _handle_ver_agenda(params: Dict) -> str:
+    """Lista próximas reuniões do Outlook associadas a escolas."""
+    try:
+        from integrations.outlook_client import outlook_client
+        if not outlook_client.is_available():
+            # Fallback: buscar meetings do banco
+            meetings = db.client.table("meetings").select(
+                "id,company_id,scheduled_at,status,meeting_type,companies(name,city)"
+            ).eq("status", "scheduled").order("scheduled_at").limit(10).execute().data or []
+            if not meetings:
+                return json.dumps({"mensagem": "Nenhuma reuniao agendada encontrada."})
+            result = []
+            for m in meetings:
+                comp = m.get("companies") or {}
+                result.append({
+                    "escola": comp.get("name", "?"),
+                    "cidade": comp.get("city", ""),
+                    "data_hora": (m.get("scheduled_at") or "")[:16],
+                    "tipo": m.get("meeting_type", "?"),
+                    "status": m.get("status", "?"),
+                })
+            return json.dumps({"total": len(result), "reunioes": result}, ensure_ascii=False, default=str)
+
+        horas = int(params.get("horas", 72))
+        events = outlook_client.get_upcoming_events(hours=horas)
+        result = []
+        for event in events:
+            school = outlook_client.match_event_to_school(event)
+            start_dt = outlook_client.parse_event_time(event)
+            result.append({
+                "titulo": event.get("subject", "?"),
+                "data_hora": start_dt.strftime("%d/%m/%Y %H:%M") if start_dt else "?",
+                "escola_associada": school.get("name") if school else None,
+                "escola_id": school.get("id") if school else None,
+            })
+        return json.dumps({
+            "total": len(result),
+            "eventos": result,
+            "periodo": f"proximas {horas}h",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_registrar_resultado_reuniao(params: Dict) -> str:
+    """Registra resultado de reunião e atualiza CRM."""
+    try:
+        escola_nome = params.get("escola_nome", "")
+        resultado = params.get("resultado", "follow_up")
+        notas = params.get("notas", "")
+        follow_up_dias = int(params.get("follow_up_dias", 7))
+
+        if not escola_nome:
+            return json.dumps({"erro": "Informe o nome da escola."})
+
+        # Buscar escola
+        r = db.client.table("companies").select("id,name").ilike(
+            "name", f"%{escola_nome}%"
+        ).limit(1).execute()
+        if not r.data:
+            return json.dumps({"erro": f"Escola '{escola_nome}' nao encontrada."})
+        company = r.data[0]
+        company_id = company["id"]
+
+        # Buscar meeting mais recente desta escola
+        meeting = db.client.table("meetings").select("id,status").eq(
+            "company_id", company_id
+        ).order("scheduled_at", desc=True).limit(1).execute()
+
+        status_map = {
+            "interessado": "completed",
+            "follow_up": "completed",
+            "nao_interessado": "completed",
+            "fechado": "completed",
+        }
+
+        if meeting.data:
+            # Atualizar meeting existente
+            db.client.table("meetings").update({
+                "status": status_map.get(resultado, "completed"),
+                "outcome": resultado,
+                "notes": notas[:2000] if notas else None,
+            }).eq("id", meeting.data[0]["id"]).execute()
+
+        # Registrar interaction
+        db.client.table("interactions").insert({
+            "company_id": company_id,
+            "type": "meeting_completed",
+            "channel": "outlook",
+        }).execute()
+
+        # Salvar na memória
+        try:
+            from integrations.memory import memory
+            content = f"Reuniao {resultado}: {notas[:300]}" if notas else f"Reuniao: resultado {resultado}"
+            memory.remember(
+                content=content,
+                scope="company",
+                scope_id=company_id,
+                category="insight" if resultado in ("interessado", "fechado") else "fact",
+                importance=8 if resultado in ("interessado", "fechado") else 6,
+                source="ialex",
+            )
+        except Exception:
+            pass
+
+        # Se follow_up, agendar lembrete
+        msg = f"Resultado registrado: {resultado} para {company['name']}."
+        if resultado == "follow_up":
+            msg += f" Lembrete de follow-up em {follow_up_dias} dias."
+            try:
+                from integrations.memory import memory
+                from datetime import datetime, timedelta
+                expires = (datetime.now() + timedelta(days=follow_up_dias)).isoformat()
+                memory.remember(
+                    content=f"Retomar contato com {company['name']} (pos-reuniao, resultado: follow_up)",
+                    scope="company",
+                    scope_id=company_id,
+                    category="reminder",
+                    importance=9,
+                    source="ialex",
+                    expires_at=expires,
+                )
+            except Exception:
+                pass
+        elif resultado == "fechado":
+            msg += " Parabens pelo fechamento!"
+
+        return json.dumps({
+            "sucesso": True,
+            "escola": company["name"],
+            "resultado": resultado,
+            "mensagem": msg,
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
 def _handle_enviar_email_teste(params: Dict) -> str:
@@ -3686,6 +3853,8 @@ TOOL_HANDLERS = {
     "aprovar_mensagem": _handle_aprovar_mensagem,
     "rejeitar_mensagem": _handle_rejeitar_mensagem,
     "editar_e_aprovar": _handle_editar_e_aprovar,
+    "ver_agenda": _handle_ver_agenda,
+    "registrar_resultado_reuniao": _handle_registrar_resultado_reuniao,
     "enviar_email_teste": _handle_enviar_email_teste,
     "iniciar_prospeccao": _handle_iniciar_prospeccao,
     "ver_email_completo": _handle_ver_email_completo,
@@ -4072,6 +4241,27 @@ WhatsApp NAO suporta HTML. Quando mostrar preview de email no WhatsApp:
 - "troca X por Y" → ver_email_completo, replace → MOSTRAR → PERGUNTAR → ESPERAR
 - Fernando diz "sim"/"aprova"/"manda" → AI SIM chamar aprovar_mensagem ou editar_e_aprovar
 - "rejeita" → rejeitar_mensagem
+
+== OUTLOOK CALENDAR (REUNIOES) ==
+IAlex esta integrado ao Outlook Calendar de Fernando. O sistema:
+- A cada 15 min, detecta reunioes novas com escolas automaticamente
+- 30 min antes de cada reuniao, envia BRIEFING completo no WhatsApp
+- Apos a reuniao, pede RESUMO do resultado
+
+*Quando usar ver_agenda:*
+- "me mostra minha agenda" / "tenho reuniao hoje?" / "quais reunioes essa semana?"
+
+*Quando usar registrar_resultado_reuniao:*
+- Fernando diz "a reuniao com o Marista foi boa, querem piloto" → resultado=interessado, notas=texto
+- Fernando responde ao pedido pos-reuniao (1=interessado, 2=follow_up, 3=nao_interessado, 4=fechou)
+- Se resultado=follow_up, pergunte em quantos dias retomar (default 7)
+
+*Fluxo automatico (Fernando nao precisa pedir):*
+1. Fernando agenda reuniao no Outlook com nome da escola no titulo
+2. IAlex detecta e notifica: "Reuniao detectada com [escola]!"
+3. 30 min antes: briefing completo (score, contatos, historico, memorias)
+4. Apos: "Como foi? 1=interessado 2=follow_up 3=nao 4=fechou"
+5. Fernando responde → CRM atualizado
 
 == INTELIGENCIA DE ESCOLAS (ENRIQUECIMENTO WEB) ==
 As escolas JA ESTAO na base MEC (212k). O valor do IAlex e buscar INFORMACOES EXTRAS

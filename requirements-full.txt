@@ -105,3 +105,4 @@ jupyter>=1.0.0                      # Notebooks (exploração)
 #   source venv/bin/activate  # Linux/Mac
 #   pip install -r requirements.txt
 # ============================================================================
+msal>=1.28.0
