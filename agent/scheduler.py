@@ -43,6 +43,8 @@ class IALexScheduler:
         schedule.every(15).minutes.do(self._process_auto_replies)
         # Envio de mensagens agendadas — a cada 5 min
         schedule.every(5).minutes.do(self._send_scheduled_messages)
+        # Lead scoring dinamico — a cada 30 min
+        schedule.every(30).minutes.do(self._update_dynamic_scores)
         # Detector de sinais de compra (intent alerts) — a cada 30 min
         schedule.every(30).minutes.do(self._check_buying_signals)
         # Retreino semanal do modelo preditivo (domingo 03:00)
@@ -406,6 +408,17 @@ class IALexScheduler:
 
         except Exception as e:
             logger.debug(f"Post-meeting followup: {e}")
+
+    def _update_dynamic_scores(self):
+        """Recalcula scores dinamicos de todas as escolas com interacoes."""
+        try:
+            from tools.dynamic_score import dynamic_scorer
+            result = dynamic_scorer.update_all_scores()
+            updated = result.get("updated", 0)
+            if updated > 0:
+                logger.info(f"Scores dinamicos: {updated} escola(s) atualizada(s)")
+        except Exception as e:
+            logger.debug(f"Dynamic scores skip: {e}")
 
     def _process_auto_replies(self):
         """Processa replies de escolas e gera auto-respostas na fila."""
