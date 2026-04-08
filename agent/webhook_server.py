@@ -123,9 +123,9 @@ def _build_field_mode_briefing(lat: float, lng: float) -> str:
             s["_dist"] = 99999
 
     schools.sort(key=lambda x: x["_dist"])
-    nearby = [s for s in schools[:10] if s["_dist"] <= 2.0]  # apenas ate 2km
+    nearby = [s for s in schools[:10] if s["_dist"] <= 1.0]  # apenas ate 1km
     if not nearby:
-        return ""  # nenhuma escola proxima — nao enviar briefing
+        return ""  # nenhuma escola proxima — nao ativar modo campo
 
     closest = nearby[0]
     company_id = closest["id"]
@@ -353,7 +353,7 @@ def webhook():
             # Determinar tipo de mensagem
             msg_type = msg.get("messageType", "text")
 
-            # === LOCATION MESSAGE — MODO CAMPO + OPCOES ===
+            # === LOCATION MESSAGE ===
             if msg_type == "location" and msg.get("location"):
                 loc = msg["location"]
                 lat = loc.get("latitude")
@@ -361,36 +361,23 @@ def webhook():
                 loc_name = loc.get("name", "")
                 logger.info("Localizacao recebida", extra={"lat": lat, "lng": lng})
 
-                # Tentar briefing modo campo (escola proxima no banco)
-                campo_reply = ""
+                # Tentar buscar escola proxima (< 1km) para contexto
+                campo_context = ""
                 try:
-                    campo_reply = _build_field_mode_briefing(lat, lng)
-                except Exception as e:
-                    logger.debug(f"Modo campo skip: {e}")
+                    campo_context = _build_field_mode_briefing(lat, lng)
+                except Exception:
+                    pass
 
-                # Montar mensagem completa: briefing (se houver) + opcoes
                 loc_desc = f"{loc_name}, " if loc_name else ""
-                text = (
-                    f"[LOCALIZACAO RECEBIDA] {loc_desc}coordenadas {lat}, {lng}. "
-                    f"Fernando compartilhou sua localizacao."
-                )
 
-                briefing_sent = False
-                if campo_reply:
-                    try:
-                        bridge = get_bridge()
-                        result = bridge.send_message(sender, campo_reply)
-                        if result.get("success") or result.get("key"):
-                            briefing_sent = True
-                            logger.info("Modo campo: briefing enviado")
-                    except Exception as e:
-                        logger.error(f"Modo campo send erro: {e}")
-
-                if briefing_sent:
-                    text += (
-                        " Ja enviei o briefing da escola mais proxima acima. "
-                        "Agora pergunte se Fernando quer algo mais com essa escola ou "
-                        "se quer buscar outras escolas proximas."
+                if campo_context:
+                    # Tem escola proxima — passar briefing como contexto pro brain
+                    # O brain inclui na resposta (uma mensagem so, confiavel)
+                    text = (
+                        f"[LOCALIZACAO RECEBIDA] {loc_desc}coordenadas {lat}, {lng}. "
+                        f"Fernando esta proximo de uma escola do banco (< 1km). "
+                        f"INCLUA este briefing na sua resposta e pergunte o que ele quer fazer:\n\n"
+                        f"{campo_context}"
                     )
                 else:
                     # Sem escola proxima no banco — perguntar o que quer
