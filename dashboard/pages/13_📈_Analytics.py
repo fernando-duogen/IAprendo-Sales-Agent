@@ -53,6 +53,22 @@ st.markdown('<hr class="divider">', unsafe_allow_html=True)
 # =============================================================================
 # DADOS
 # =============================================================================
+@st.cache_data(ttl=3600)
+def get_usd_brl_rate() -> float:
+    """Busca taxa USD/BRL atual via API gratuita. Cache 1h."""
+    import requests
+    try:
+        r = requests.get("https://economia.awesomeapi.com.br/last/USD-BRL", timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            rate = float(data.get("USDBRL", {}).get("bid", 5.50))
+            return rate
+    except Exception:
+        pass
+    return 5.50  # fallback
+
+USD_BRL = get_usd_brl_rate()
+
 @st.cache_data(ttl=300)
 def load_analytics_data():
     """Carrega todos os dados necessarios para analytics."""
@@ -127,9 +143,11 @@ total_reunioes = len([m for m in meetings if m.get("status") in ("scheduled", "c
 taxa_abertura = f"{total_abertos * 100 // total_enviados}%" if total_enviados else "—"
 taxa_resposta = f"{total_respondidos * 100 // total_enviados}%" if total_enviados else "—"
 
-# Custo total (estimativa: 1 credit OpenAI ≈ R$ 0.10)
+# Custo total (1 credit ≈ USD 0.02, convertido pela taxa real do dia)
 total_credits = sum(a.get("credits_used", 0) or 0 for a in api_usage)
-custo_estimado = f"R$ {total_credits * 0.10:.2f}"
+custo_usd = total_credits * 0.02
+custo_brl = custo_usd * USD_BRL
+custo_estimado = f"R$ {custo_brl:.2f}"
 
 k1, k2, k3, k4, k5, k6 = st.columns(6)
 with k1:
@@ -166,30 +184,24 @@ status_labels = {
     "closed": "Fechadas",
 }
 
-# Calcular funil acumulativo (cada etapa inclui as posteriores)
+# Calcular funil acumulativo
 status_counts = Counter(c.get("status", "raw") for c in companies)
 replied_count = len([m for m in sent_msgs if m.get("replied_at")])
-meeting_count = len([m for m in meetings if m.get("status") == "completed"])
+meeting_count = len([m for m in meetings if m.get("status") in ("completed", "scheduled")])
 closed_count = len([m for m in meetings if m.get("outcome") == "fechado"])
 
-funnel_values = [
-    sum(status_counts.get(s, 0) for s in status_order[:i+1]) if i < 4
-    else [replied_count, meeting_count, closed_count][i-4]
-    for i, s in enumerate(status_order)
-]
-# Funil decrescente: cada etapa <= anterior
-running = len(companies)
+# Funil: cada etapa = escolas que chegaram ATE aqui (acumulado decrescente)
+# raw = total | qualified = qualified + enriched + contacted | etc
+progression = ["raw", "qualified", "enriched", "contacted"]
 funnel_corrected = []
-for i, s in enumerate(status_order):
-    if i < 4:
-        val = sum(status_counts.get(ss, 0) for ss in status_order[i:])
-        funnel_corrected.append(max(val, 0))
-    elif i == 4:
-        funnel_corrected.append(replied_count)
-    elif i == 5:
-        funnel_corrected.append(meeting_count)
-    else:
-        funnel_corrected.append(closed_count)
+for i, s in enumerate(progression):
+    # Escolas que estao neste status OU posterior
+    val = sum(status_counts.get(ss, 0) for ss in progression[i:])
+    funnel_corrected.append(max(val, 0))
+# Replied, meeting, closed vem das tabelas de tracking
+funnel_corrected.append(replied_count)
+funnel_corrected.append(meeting_count)
+funnel_corrected.append(closed_count)
 
 fig_funnel = go.Figure(go.Funnel(
     y=[status_labels.get(s, s) for s in status_order],
@@ -380,15 +392,20 @@ st.markdown('<hr class="divider">', unsafe_allow_html=True)
 # =============================================================================
 section_header("Custo e ROI", "payments")
 
-api_costs = defaultdict(float)
+api_credits = defaultdict(int)
 for a in api_usage:
-    api_costs[a.get("api_name", "?")] += (a.get("credits_used") or 0) * 0.10  # R$ 0.10/credit
+    api_credits[a.get("api_name", "?")] += (a.get("credits_used") or 0)
 
-if api_costs:
-    rows = [{"API": api, "Credits (R$)": f"R$ {cost:.2f}"} for api, cost in
-            sorted(api_costs.items(), key=lambda x: x[1], reverse=True)]
-    total_cost = sum(api_costs.values())
-    rows.append({"API": "TOTAL", "Credits (R$)": f"R$ {total_cost:.2f}"})
+if api_credits:
+    rows = []
+    for api, credits in sorted(api_credits.items(), key=lambda x: x[1], reverse=True):
+        cost_usd = credits * 0.02
+        cost_brl = cost_usd * USD_BRL
+        rows.append({"API": api, "Credits": credits, "USD": f"$ {cost_usd:.2f}", "BRL": f"R$ {cost_brl:.2f}"})
+    total_cost_usd = sum(c * 0.02 for c in api_credits.values())
+    total_cost = total_cost_usd * USD_BRL
+    rows.append({"API": "TOTAL", "Credits": sum(api_credits.values()), "USD": f"$ {total_cost_usd:.2f}", "BRL": f"R$ {total_cost:.2f}"})
+    st.caption(f"_Taxa USD/BRL: {USD_BRL:.2f} (atualizada automaticamente)_")
 
     r1, r2 = st.columns([1, 1])
     with r1:
@@ -397,6 +414,7 @@ if api_costs:
         qualified_count = len([c for c in companies if c.get("status") not in ("raw",)])
         cost_per_lead = f"R$ {total_cost / qualified_count:.2f}" if qualified_count else "—"
         cost_per_reply = f"R$ {total_cost / total_respondidos:.2f}" if total_respondidos else "—"
+        cost_per_sent = f"R$ {total_cost / total_enviados:.2f}" if total_enviados else "—"
 
         metric_card("Custo/lead qualificado", cost_per_lead, icon="person_search", color=COLORS["info"])
         metric_card("Custo/resposta", cost_per_reply, icon="reply_all", color=COLORS["success"])

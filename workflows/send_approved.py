@@ -157,6 +157,19 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
                     "status": "sent",
                     "sent_at": now,
                 }).eq("id", queue_id).execute()
+                # Atualizar status da escola para 'contacted' (se ainda nao estiver)
+                if company_id:
+                    try:
+                        comp = db.client.table("companies").select("status").eq(
+                            "id", company_id
+                        ).single().execute()
+                        if comp.data and comp.data.get("status") in ("raw", "qualified", "enriched"):
+                            db.client.table("companies").update({
+                                "status": "contacted",
+                                "last_contacted_at": now,
+                            }).eq("id", company_id).execute()
+                    except Exception:
+                        pass
                 # Registrar interacao
                 interaction_type = f"{channel}_sent" if channel != "email" else "email_sent"
                 db.insert_interaction({
