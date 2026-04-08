@@ -353,34 +353,51 @@ def webhook():
             # Determinar tipo de mensagem
             msg_type = msg.get("messageType", "text")
 
-            # === LOCATION MESSAGE — MODO CAMPO (resposta instantanea) ===
+            # === LOCATION MESSAGE — MODO CAMPO + OPCOES ===
             if msg_type == "location" and msg.get("location"):
                 loc = msg["location"]
                 lat = loc.get("latitude")
                 lng = loc.get("longitude")
-                logger.info("Localizacao recebida (modo campo)", extra={"lat": lat, "lng": lng})
+                loc_name = loc.get("name", "")
+                logger.info("Localizacao recebida", extra={"lat": lat, "lng": lng})
 
-                # Modo campo: buscar escola mais proxima DIRETO no banco (sem GPT)
-                # e montar briefing instantaneo
+                # Tentar briefing modo campo (escola proxima no banco)
+                campo_reply = ""
                 try:
                     campo_reply = _build_field_mode_briefing(lat, lng)
-                    if campo_reply:
-                        bridge = get_bridge()
-                        bridge.send_message(sender, campo_reply)
-                        logger.info("Modo campo: briefing enviado")
-                        return
                 except Exception as e:
-                    logger.error(f"Modo campo erro: {e}")
+                    logger.debug(f"Modo campo skip: {e}")
 
-                # Fallback: passar para o brain normalmente
-                loc_name = loc.get("name", "")
+                # Montar mensagem completa: briefing (se houver) + opcoes
                 loc_desc = f"{loc_name}, " if loc_name else ""
                 text = (
                     f"[LOCALIZACAO RECEBIDA] {loc_desc}coordenadas {lat}, {lng}. "
-                    f"Fernando compartilhou sua localizacao. Pergunte o que ele quer fazer: "
-                    f"buscar escolas proximas (e em qual raio), buscar no banco ou na base "
-                    f"completa do MEC, filtrar por tipo (privada/publica), ou outra coisa."
+                    f"Fernando compartilhou sua localizacao."
                 )
+
+                if campo_reply:
+                    # Enviar briefing instantaneo primeiro (sem GPT, rapido)
+                    try:
+                        bridge = get_bridge()
+                        bridge.send_message(sender, campo_reply)
+                        logger.info("Modo campo: briefing enviado")
+                    except Exception as e:
+                        logger.error(f"Modo campo send erro: {e}")
+
+                    # Depois, passar para o brain com contexto para opcoes adicionais
+                    text += (
+                        " Ja enviei o briefing da escola mais proxima. "
+                        "Agora pergunte se Fernando quer algo mais: "
+                        "buscar escolas proximas em outro raio, buscar na base MEC, "
+                        "filtrar por tipo, ou outra acao."
+                    )
+                else:
+                    # Sem escola proxima no banco — perguntar o que quer
+                    text += (
+                        " Pergunte o que ele quer fazer: "
+                        "buscar escolas proximas (e em qual raio), buscar no banco ou na base "
+                        "completa do MEC, filtrar por tipo (privada/publica), ou outra coisa."
+                    )
 
             # === AUDIO MESSAGE ===
             elif msg_type == "audio" and msg.get("audio"):
