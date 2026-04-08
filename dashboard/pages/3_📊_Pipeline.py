@@ -196,14 +196,22 @@ with tab_manual:
         )
         selected_rows = edited_df[edited_df["Selecionar"] == True]
         if len(selected_rows) > 0:
-            if st.button(f"Adicionar {len(selected_rows)} selecionadas", type="primary",
-                         icon=":material/add_circle:"):
-                new_ids = [df_manual.iloc[i]["id"] for i in selected_rows.index]
-                current = set(st.session_state["pipeline_selected_ids"])
-                current.update(new_ids)
-                st.session_state["pipeline_selected_ids"] = list(current)
-                st.toast(f"{len(new_ids)} escolas adicionadas!")
-                st.rerun()
+            btn_cols = st.columns([2, 1])
+            with btn_cols[0]:
+                if st.button(f"Adicionar {len(selected_rows)} selecionadas", type="primary",
+                             icon=":material/add_circle:", use_container_width=True):
+                    new_ids = [df_manual.iloc[i]["id"] for i in selected_rows.index]
+                    current = set(st.session_state["pipeline_selected_ids"])
+                    current.update(new_ids)
+                    st.session_state["pipeline_selected_ids"] = list(current)
+                    st.toast(f"{len(new_ids)} escolas adicionadas!")
+                    st.rerun()
+            with btn_cols[1]:
+                if len(selected_rows) == 1:
+                    sel_id = df_manual.iloc[selected_rows.index[0]]["id"]
+                    if st.button("Ver detalhes →", use_container_width=True, key="pipeline_detail"):
+                        st.session_state["escola_detail_id"] = sel_id
+                        st.switch_page("pages/5_🏫_Escolas.py")
     else:
         alert_banner("Nenhuma escola importada.", "info")
 

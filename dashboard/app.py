@@ -152,20 +152,32 @@ try:
     k1, k2, k3, k4, k5, k6 = st.columns(6)
     with k1:
         metric_card("Escolas", total, icon="school", color=COLORS["primary"])
+        if st.button("Ver →", key="kpi_escolas", use_container_width=True):
+            st.switch_page("pages/5_🏫_Escolas.py")
     with k2:
         metric_card("Pendentes", pending, icon="pending_actions", color=COLORS["warning"],
                      delta="acao" if pending > 0 else "")
+        if st.button("Ver →", key="kpi_pendentes", use_container_width=True):
+            st.switch_page("pages/8_✉️_Aprovacao.py")
     with k3:
         metric_card("Enviados", sent, icon="send", color=COLORS["secondary"])
+        if st.button("Ver →", key="kpi_enviados", use_container_width=True):
+            st.switch_page("pages/8_✉️_Aprovacao.py")
     with k4:
         open_pct = f"{opened * 100 // sent}%" if sent else "0%"
         metric_card("Abertos", opened, icon="mark_email_read", color=COLORS["info"], delta=open_pct)
+        if st.button("Ver →", key="kpi_abertos", use_container_width=True):
+            st.switch_page("pages/9_🔄_Follow-ups.py")
     with k5:
         reply_pct = f"{replied * 100 // sent}%" if sent else "0%"
         metric_card("Respondidos", replied, icon="reply", color=COLORS["success"], delta=reply_pct)
+        if st.button("Ver →", key="kpi_respondidos", use_container_width=True):
+            st.switch_page("pages/4_🎯_CRM.py")
     with k6:
         metric_card("Follow-ups", due_count, icon="autorenew", color=COLORS["accent"],
                      delta="pendentes" if due_count > 0 else "")
+        if st.button("Ver →", key="kpi_followups", use_container_width=True):
+            st.switch_page("pages/9_🔄_Follow-ups.py")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 

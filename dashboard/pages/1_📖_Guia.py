@@ -335,9 +335,24 @@ O IAlex e seu assistente 24/7. Exemplos do que pode fazer:
 _Dica: fale naturalmente, como com um colega. Nao precisa de comandos exatos._"""),
     ]
 
+    step_pages = {
+        "PASSO 1": "pages/11_📥_Importar.py",
+        "PASSO 2": "pages/3_📊_Pipeline.py",
+        "PASSO 3": "pages/8_✉️_Aprovacao.py",
+        "PASSO 4": "pages/4_🎯_CRM.py",
+        "PASSO 5": "pages/2_⚙️_Configuracoes.py",
+        "PASSO 6": "pages/2_⚙️_Configuracoes.py",
+    }
+
     for title, icon, color, expanded, content in steps:
         with st.expander(title, expanded=expanded):
             st.markdown(content)
+            # Botao que leva a pagina correspondente
+            step_key = title.split(" —")[0].strip()
+            page = step_pages.get(step_key)
+            if page:
+                if st.button(f"Ir para esta pagina →", key=f"step_{step_key}", use_container_width=True):
+                    st.switch_page(page)
 
 # =============================================================================
 # TAB 4 — IAlex (WhatsApp)
@@ -502,29 +517,34 @@ with tab7:
     section_header("Paginas do menu lateral", "menu")
 
     menu_items = [
-        ("🏠 Painel", "KPIs, acoes rapidas, busca global, atividade recente"),
-        ("📖 Guia & Manual", "Este manual completo"),
-        ("⚙️ Configuracoes", "Autonomia, pipeline, follow-ups, persona, multichannel"),
-        ("📊 Pipeline", "Executar etapas: qualificar, enriquecer, contatos, emails"),
-        ("🎯 CRM", "Pipeline visual Kanban de vendas"),
-        ("🏫 Escolas", "Gerenciar escolas: editar, excluir, historico"),
-        ("🗺️ Mapa", "Visualizacao geografica + explorar CSV completo"),
-        ("👥 Contatos", "Lista e hierarquia de decisores por escola"),
-        ("✉️ Aprovacao", "Revisar, editar e aprovar emails (3 abas: Pendentes, Aprovadas, Enviadas)"),
-        ("🔄 Follow-ups", "Metricas, timeline, deducao de emails"),
-        ("📝 Templates", "Assinatura de email + templates de mensagem + templates de follow-up"),
-        ("📥 Importar", "Filtrar e importar escolas do CSV do MEC"),
-        ("🔍 Inteligencia", "Enriquecer escolas com dados web (rankings, premios)"),
+        ("🏠 Painel", "KPIs, acoes rapidas, busca global, atividade recente", "app.py"),
+        ("⚙️ Configuracoes", "Autonomia, pipeline, follow-ups, persona, multichannel", "pages/2_⚙️_Configuracoes.py"),
+        ("📊 Pipeline", "Executar etapas: qualificar, enriquecer, contatos, emails", "pages/3_📊_Pipeline.py"),
+        ("🎯 CRM", "Pipeline visual Kanban de vendas", "pages/4_🎯_CRM.py"),
+        ("🏫 Escolas", "Gerenciar escolas: editar, excluir, historico", "pages/5_🏫_Escolas.py"),
+        ("🗺️ Mapa", "Visualizacao geografica + explorar CSV completo", "pages/6_🗺️_Mapa.py"),
+        ("👥 Contatos", "Lista e hierarquia de decisores por escola", "pages/7_👥_Contatos.py"),
+        ("✉️ Aprovacao", "Revisar, editar e aprovar emails (Pendentes, Aprovadas, Enviadas)", "pages/8_✉️_Aprovacao.py"),
+        ("🔄 Follow-ups", "Metricas, timeline, deducao de emails", "pages/9_🔄_Follow-ups.py"),
+        ("📝 Templates", "Assinatura de email + templates de mensagem e follow-up", "pages/10_📝_Templates.py"),
+        ("📥 Importar", "Filtrar e importar escolas do CSV do MEC", "pages/11_📥_Importar.py"),
+        ("🔍 Inteligencia", "Enriquecer escolas com dados web (rankings, premios)", "pages/12_🔍_Discovery.py"),
     ]
 
-    for nome, desc in menu_items:
-        st.markdown(
-            f'<div class="data-card" style="padding:8px 14px">'
-            f'<strong style="font-size:14px">{nome}</strong>'
-            f'<div style="font-size:12px;color:#757575">{desc}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    for nome, desc, page_path in menu_items:
+        col_card, col_btn = st.columns([4, 1])
+        with col_card:
+            st.markdown(
+                f'<div class="data-card" style="padding:10px 14px">'
+                f'<strong style="font-size:14px">{nome}</strong>'
+                f'<div style="font-size:12px;color:#757575">{desc}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with col_btn:
+            st.markdown('<div style="margin-top:8px"></div>', unsafe_allow_html=True)
+            if st.button("Abrir →", key=f"goto_{page_path}", use_container_width=True):
+                st.switch_page(page_path)
 
 # =============================================================================
 # TAB 8 — Ciclo Semanal
