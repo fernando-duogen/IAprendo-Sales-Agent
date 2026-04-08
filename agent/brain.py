@@ -199,6 +199,23 @@ TOOLS = [
         }
     },
     {
+        "name": "enviar_email_teste",
+        "description": "Envia um EMAIL DE TESTE para um endereco especificado — para Fernando testar como "
+                       "o email aparece na caixa de entrada (assinatura, links, formatacao). "
+                       "Dois modos: (1) teste generico (corpo padrao), (2) teste de um email especifico "
+                       "da fila (envia copia exata do que sera enviado, incluindo assinatura). "
+                       "Use quando Fernando disser: 'manda um teste pra mim', 'quero testar o email', "
+                       "'envia teste', 'testa a assinatura', 'como fica o email na caixa de entrada?'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "email_destino": {"type": "string", "description": "Email para onde enviar o teste (default: YOUR_EMAIL do .env)"},
+                "queue_id": {"type": "string", "description": "Se informado, envia copia exata deste email da fila (com assinatura). Se nao, envia corpo generico de teste."},
+                "posicao": {"type": "integer", "description": "Posicao na fila pendente (1=primeiro). Alternativa ao queue_id."}
+            }
+        }
+    },
+    {
         "name": "gerar_email",
         "description": "Gera um email de prospecção para uma escola. Dois modos:\n"
                        "- modo='ia' (default): IA gera email personalizado do zero\n"
@@ -1408,6 +1425,73 @@ def _handle_tracking_emails(params: Dict) -> str:
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro no tracking: {str(e)[:200]}"})
+
+
+def _handle_enviar_email_teste(params: Dict) -> str:
+    """Envia email de teste para Fernando verificar assinatura, links e formatacao."""
+    try:
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        email_destino = params.get("email_destino") or os.getenv("YOUR_EMAIL", "")
+        if not email_destino or "@" not in email_destino:
+            return json.dumps({"erro": "Informe o email de destino ou configure YOUR_EMAIL no .env"})
+
+        # Se queue_id ou posicao: enviar copia exata de um email da fila
+        qid = _resolve_queue_id(params)
+        if qid:
+            r = db.client.table("approval_queue").select(
+                "id,subject,body,companies(name)"
+            ).eq("id", qid).single().execute()
+            if not r.data:
+                return json.dumps({"erro": f"Mensagem {qid} nao encontrada na fila."})
+            item = r.data
+            subject = f"[TESTE] {item.get('subject', 'Sem assunto')}"
+            body = item.get("body", "")
+            escola = (item.get("companies") or {}).get("name", "?")
+            modo = f"copia do email para {escola}"
+        else:
+            subject = "[TESTE] Preview de email IAprendo"
+            body = (
+                "Oi! Este e um email de teste do IAlex.\n\n"
+                "Verifique:\n"
+                "- A assinatura esta aparecendo corretamente?\n"
+                "- A imagem carregou?\n"
+                "- O link de agendamento funciona?\n\n"
+                f"Link de teste: {os.getenv('HUBSPOT_MEETING_LINK', 'https://meetings.hubspot.com/fernando612')}\n\n"
+                "Se tudo estiver ok, a configuracao esta correta!\n\n"
+                "Fernando Nienaber\nIAprendo"
+            )
+            modo = "email generico de teste"
+
+        from tools.brevo_sender import BrevoSender
+        sender = BrevoSender()
+        result = sender.send_email(
+            to_email=email_destino,
+            to_name="Teste",
+            subject=subject,
+            body=body,
+        )
+        if result.get("success"):
+            return json.dumps({
+                "sucesso": True,
+                "email_destino": email_destino,
+                "modo": modo,
+                "assunto": subject,
+                "mensagem": (
+                    f"Email de teste enviado para {email_destino}! "
+                    f"Verifique sua caixa de entrada (e spam). "
+                    f"O email inclui assinatura + links conforme configurado."
+                ),
+            }, ensure_ascii=False)
+        else:
+            return json.dumps({
+                "erro": f"Falha no envio: {result.get('error', 'erro desconhecido')}",
+                "email_destino": email_destino,
+            })
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
 def _handle_iniciar_prospeccao(params: Dict) -> str:
@@ -3641,6 +3725,7 @@ TOOL_HANDLERS = {
     "aprovar_mensagem": _handle_aprovar_mensagem,
     "rejeitar_mensagem": _handle_rejeitar_mensagem,
     "editar_e_aprovar": _handle_editar_e_aprovar,
+    "enviar_email_teste": _handle_enviar_email_teste,
     "iniciar_prospeccao": _handle_iniciar_prospeccao,
     "ver_email_completo": _handle_ver_email_completo,
     "reescrever_email": _handle_reescrever_email,
