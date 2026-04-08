@@ -411,7 +411,9 @@ TOOLS = [
                 "tipo": {"type": "string", "description": "Filtrar: 'Publica' ou 'Privada' (opcional)"},
                 "niveis_ensino": {"type": "string", "description": "Filtrar por nivel: 'Fundamental', 'Medio' (opcional)"},
                 "limite": {"type": "integer", "description": "Max resultados (default 10, max 20)"},
-                "fonte": {"type": "string", "description": "Fonte: 'db' (apenas banco), 'mec' (apenas CSV), 'ambos' (default)"}
+                "fonte": {"type": "string", "description": "Fonte: 'db' (apenas banco), 'mec' (apenas CSV), 'ambos' (default)"},
+                "com_whatsapp": {"type": "boolean", "description": "Se true, retorna APENAS escolas que tem contato com WhatsApp cadastrado (phone_whatsapp). Use quando Fernando pedir 'escola com whatsapp', 'que tenha zap', etc."},
+                "com_email": {"type": "boolean", "description": "Se true, retorna APENAS escolas que tem contato com email cadastrado."}
             },
             "required": ["latitude", "longitude"]
         }
@@ -1260,6 +1262,8 @@ def _handle_escolas_proximas(params: Dict) -> str:
     raio_km = min(params.get("raio_km", 2), 50)
     limite = min(params.get("limite", 10), 20)
     fonte = params.get("fonte", "ambos")
+    com_whatsapp = params.get("com_whatsapp", False)
+    com_email = params.get("com_email", False)
 
     # Bounding box para pré-filtro rápido
     delta_lat = raio_km / 111.0
@@ -1353,6 +1357,46 @@ def _handle_escolas_proximas(params: Dict) -> str:
                             "in_db": False,
                             "fonte": "base_mec",
                         })
+
+    # Filtrar por WhatsApp ou email se solicitado
+    if com_whatsapp or com_email:
+        ids_com_contato = set()
+        try:
+            for r in resultados:
+                if not r.get("in_db"):
+                    continue  # Escolas do MEC nao tem contatos no banco
+                # Buscar contatos da escola
+                company_match = db.client.table("companies").select("id").ilike(
+                    "name", f"%{r.get('nome', '')[:30]}%"
+                ).limit(1).execute().data
+                if not company_match:
+                    continue
+                cid = company_match[0]["id"]
+                q = db.client.table("contacts").select("phone_whatsapp,email").eq("company_id", cid).execute()
+                for ct in (q.data or []):
+                    if com_whatsapp and ct.get("phone_whatsapp"):
+                        ids_com_contato.add(r.get("nome"))
+                        r["whatsapp"] = ct["phone_whatsapp"]
+                        break
+                    if com_email and ct.get("email"):
+                        ids_com_contato.add(r.get("nome"))
+                        r["email_contato"] = ct["email"]
+                        break
+        except Exception as e:
+            logger.debug(f"Filtro contato: {e}")
+
+        if ids_com_contato:
+            resultados = [r for r in resultados if r.get("nome") in ids_com_contato]
+        else:
+            # Nenhuma escola com o filtro solicitado
+            filtro_label = "WhatsApp" if com_whatsapp else "email"
+            return json.dumps({
+                "ponto_central": {"latitude": lat_center, "longitude": lng_center},
+                "raio_km": raio_km,
+                "total_encontradas": 0,
+                "escolas": [],
+                "aviso": f"Nenhuma escola proxima com {filtro_label} cadastrado. Use 'buscar_whatsapp_escolas' para encontrar numeros.",
+            }, ensure_ascii=False, default=str)
 
     resultados.sort(key=lambda x: x["distancia_km"])
     resultados = resultados[:limite]
@@ -4090,6 +4134,9 @@ Voce tem acesso a:
 - Filtros avancados (porte, tipo, nivel, rural/urbana) → *buscar_escola_brasil*
 - Por proximidade/localizacao → *escolas_proximas* (SEMPRE informe se buscou no banco, MEC ou ambos)
   IMPORTANTE: ao mostrar resultados de escolas_proximas, SEMPRE diga a fonte: "do nosso banco" ou "da base MEC"
+  Se Fernando pedir "com whatsapp" / "que tenha zap" / "com celular" → use com_whatsapp=true
+  Se Fernando pedir "com email" / "que tenha email" → use com_email=true
+  Telefone FIXO (8 digitos) NAO e WhatsApp. WhatsApp = celular (9 digitos) salvo em contacts.phone_whatsapp
 - Importar para o CRM → *importar_escola*
 - Importar varias de uma vez → *operacao_lote* (acao: importar)
 
