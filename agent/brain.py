@@ -4835,6 +4835,27 @@ class Brain:
                     tool_choice="auto",
                 )
 
+                # Registrar uso de tokens
+                try:
+                    if hasattr(response, 'usage') and response.usage:
+                        pricing = {"gpt-4.1-mini": {"in": 0.40, "out": 1.60}, "gpt-4.1": {"in": 2.00, "out": 8.00}}
+                        p = pricing.get(self.model, {"in": 0.40, "out": 1.60})
+                        cost = (response.usage.prompt_tokens * p["in"] + response.usage.completion_tokens * p["out"]) / 1_000_000
+                        db.insert_api_usage({
+                            'api_name': 'openai',
+                            'endpoint': self.model,
+                            'credits_used': 1,
+                            'success': True,
+                            'prompt_tokens': response.usage.prompt_tokens,
+                            'completion_tokens': response.usage.completion_tokens,
+                            'total_tokens': response.usage.total_tokens,
+                            'model': self.model,
+                            'cost_usd': round(cost, 6),
+                            'context': {'source': 'brain_process_message'},
+                        })
+                except Exception:
+                    pass
+
                 choice = response.choices[0]
 
                 if choice.finish_reason == "tool_calls" and choice.message.tool_calls:

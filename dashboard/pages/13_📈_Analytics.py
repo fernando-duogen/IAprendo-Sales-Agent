@@ -102,10 +102,11 @@ def load_analytics_data():
     except Exception:
         data["meetings"] = []
 
-    # API usage
+    # API usage (com tokens se disponivel)
     try:
         apis = db.client.table("api_usage").select(
-            "api_name,credits_used,created_at"
+            "api_name,credits_used,created_at,prompt_tokens,completion_tokens,"
+            "total_tokens,model,cost_usd"
         ).execute().data or []
         data["api_usage"] = apis
     except Exception:
@@ -143,11 +144,10 @@ total_reunioes = len([m for m in meetings if m.get("status") in ("scheduled", "c
 taxa_abertura = f"{total_abertos * 100 // total_enviados}%" if total_enviados else "—"
 taxa_resposta = f"{total_respondidos * 100 // total_enviados}%" if total_enviados else "—"
 
-# Custo total (1 credit ≈ USD 0.02, convertido pela taxa real do dia)
-total_credits = sum(a.get("credits_used", 0) or 0 for a in api_usage)
-custo_usd = total_credits * 0.02
-custo_brl = custo_usd * USD_BRL
-custo_estimado = f"R$ {custo_brl:.2f}"
+# Custo total (usa cost_usd real quando disponivel, senao estima)
+total_cost_usd_kpi = sum(float(a.get("cost_usd") or 0) or 0.02 for a in api_usage)
+custo_brl_kpi = total_cost_usd_kpi * USD_BRL
+custo_estimado = f"R$ {custo_brl_kpi:.2f}"
 
 k1, k2, k3, k4, k5, k6 = st.columns(6)
 with k1:
@@ -392,20 +392,44 @@ st.markdown('<hr class="divider">', unsafe_allow_html=True)
 # =============================================================================
 section_header("Custo e ROI", "payments")
 
-api_credits = defaultdict(int)
+api_stats = defaultdict(lambda: {"credits": 0, "cost_usd": 0.0, "tokens_in": 0, "tokens_out": 0})
 for a in api_usage:
-    api_credits[a.get("api_name", "?")] += (a.get("credits_used") or 0)
+    api_name = a.get("api_name", "?")
+    api_stats[api_name]["credits"] += (a.get("credits_used") or 0)
+    # Custo real por tokens (se disponivel)
+    if a.get("cost_usd"):
+        api_stats[api_name]["cost_usd"] += float(a["cost_usd"])
+    else:
+        api_stats[api_name]["cost_usd"] += 0.02  # fallback: USD 0.02/credit
+    api_stats[api_name]["tokens_in"] += (a.get("prompt_tokens") or 0)
+    api_stats[api_name]["tokens_out"] += (a.get("completion_tokens") or 0)
 
-if api_credits:
+if api_stats:
     rows = []
-    for api, credits in sorted(api_credits.items(), key=lambda x: x[1], reverse=True):
-        cost_usd = credits * 0.02
-        cost_brl = cost_usd * USD_BRL
-        rows.append({"API": api, "Credits": credits, "USD": f"$ {cost_usd:.2f}", "BRL": f"R$ {cost_brl:.2f}"})
-    total_cost_usd = sum(c * 0.02 for c in api_credits.values())
+    for api, stats in sorted(api_stats.items(), key=lambda x: x[1]["cost_usd"], reverse=True):
+        cost_brl = stats["cost_usd"] * USD_BRL
+        tokens_info = ""
+        if stats["tokens_in"] > 0:
+            tokens_info = f'{stats["tokens_in"]:,}in / {stats["tokens_out"]:,}out'
+        rows.append({
+            "API": api,
+            "Chamadas": stats["credits"],
+            "Tokens": tokens_info or "—",
+            "USD": f'$ {stats["cost_usd"]:.4f}',
+            "BRL": f'R$ {cost_brl:.2f}',
+        })
+    total_cost_usd = sum(s["cost_usd"] for s in api_stats.values())
     total_cost = total_cost_usd * USD_BRL
-    rows.append({"API": "TOTAL", "Credits": sum(api_credits.values()), "USD": f"$ {total_cost_usd:.2f}", "BRL": f"R$ {total_cost:.2f}"})
-    st.caption(f"_Taxa USD/BRL: {USD_BRL:.2f} (atualizada automaticamente)_")
+    total_tokens_in = sum(s["tokens_in"] for s in api_stats.values())
+    total_tokens_out = sum(s["tokens_out"] for s in api_stats.values())
+    rows.append({
+        "API": "TOTAL",
+        "Chamadas": sum(s["credits"] for s in api_stats.values()),
+        "Tokens": f"{total_tokens_in:,}in / {total_tokens_out:,}out" if total_tokens_in else "—",
+        "USD": f"$ {total_cost_usd:.4f}",
+        "BRL": f"R$ {total_cost:.2f}",
+    })
+    st.caption(f"_Taxa USD/BRL: {USD_BRL:.2f} | Custo calculado por tokens reais quando disponivel_")
 
     r1, r2 = st.columns([1, 1])
     with r1:

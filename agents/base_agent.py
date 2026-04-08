@@ -169,14 +169,29 @@ class BaseAgent(ABC):
                     response_time_ms=elapsed_ms
                 )
 
-                db.insert_api_usage({
+                # Capturar tokens do response
+                usage_data = {
                     'api_name': self._llm_backend,
                     'endpoint': model_id,
                     'credits_used': 1,
                     'success': True,
                     'response_time_ms': elapsed_ms,
-                    'context': {'agent': self.agent_name}
-                })
+                    'context': {'agent': self.agent_name},
+                }
+                try:
+                    if self._llm_backend == "openai" and hasattr(resp, 'usage') and resp.usage:
+                        usage_data['prompt_tokens'] = resp.usage.prompt_tokens
+                        usage_data['completion_tokens'] = resp.usage.completion_tokens
+                        usage_data['total_tokens'] = resp.usage.total_tokens
+                        usage_data['model'] = model_id
+                        # Custo por modelo (USD por 1M tokens)
+                        pricing = {"gpt-4.1-mini": {"in": 0.40, "out": 1.60}, "gpt-4.1": {"in": 2.00, "out": 8.00}}
+                        p = pricing.get(model_id, {"in": 0.40, "out": 1.60})
+                        cost = (resp.usage.prompt_tokens * p["in"] + resp.usage.completion_tokens * p["out"]) / 1_000_000
+                        usage_data['cost_usd'] = round(cost, 6)
+                except Exception:
+                    pass
+                db.insert_api_usage(usage_data)
 
                 return response_text
 
