@@ -43,6 +43,39 @@ DEFAULT_BEST_DAYS: List[int] = [1, 2, 3]
 
 # Minimo de data points para considerar dados historicos confiaveis
 MIN_DATA_POINTS: int = 10
+MIN_COMPANY_DATA_POINTS: int = 3  # para analise individual da escola
+
+# Feriados nacionais BR 2026 (mes, dia)
+FERIADOS_BR: List[tuple] = [
+    (1, 1),    # Ano Novo
+    (2, 16),   # Carnaval (segunda)
+    (2, 17),   # Carnaval (terca)
+    (4, 3),    # Sexta-feira Santa
+    (4, 21),   # Tiradentes
+    (5, 1),    # Dia do Trabalho
+    (6, 4),    # Corpus Christi
+    (9, 7),    # Independencia
+    (10, 12),  # N.S. Aparecida
+    (11, 2),   # Finados
+    (11, 15),  # Proclamacao Republica
+    (12, 25),  # Natal
+]
+
+# Fase do ano letivo — peso de receptividade (0.0 a 1.0)
+FASE_LETIVA: Dict[int, float] = {
+    1: 0.3,   # Janeiro: ferias — evitar
+    2: 0.5,   # Fevereiro: volta as aulas, escola ocupada
+    3: 0.9,   # Marco: alta — orcamentos, planejamento
+    4: 0.9,   # Abril: alta — rotina estabelecida
+    5: 0.8,   # Maio: boa receptividade
+    6: 0.7,   # Junho: pre-ferias, ainda receptivos
+    7: 0.2,   # Julho: ferias — evitar
+    8: 0.8,   # Agosto: volta 2o semestre
+    9: 0.8,   # Setembro: boa receptividade
+    10: 0.7,  # Outubro: medio
+    11: 0.5,  # Novembro: fim de ano, correria
+    12: 0.2,  # Dezembro: recesso — evitar
+}
 
 # Quantidade de melhores horarios/dias a retornar
 TOP_N_HOURS: int = 5
@@ -283,6 +316,121 @@ class SmartScheduler:
             extra=analysis,
         )
         return analysis
+
+
+    # ================================================================
+    # METODOS NOVOS — Calendario inteligente
+    # ================================================================
+
+    def _is_feriado(self, dt: datetime) -> bool:
+        """Verifica se uma data e feriado nacional."""
+        return (dt.month, dt.day) in FERIADOS_BR
+
+    def _is_dia_util(self, dt: datetime) -> bool:
+        """Verifica se e dia util (seg-sex, nao feriado)."""
+        return dt.weekday() < 5 and not self._is_feriado(dt)
+
+    def _fase_letiva_peso(self, dt: datetime) -> float:
+        """Retorna peso de receptividade do mes (0.0-1.0)."""
+        return FASE_LETIVA.get(dt.month, 0.5)
+
+    def _fetch_company_open_data(self, company_id: str) -> List[datetime]:
+        """Busca timestamps de abertura especificos de uma escola."""
+        try:
+            r = db.client.table("approval_queue").select(
+                "opened_at"
+            ).eq("company_id", company_id).not_.is_(
+                "opened_at", "null"
+            ).execute()
+            opens = []
+            for row in (r.data or []):
+                try:
+                    dt = datetime.fromisoformat(row["opened_at"].replace("Z", "+00:00"))
+                    opens.append(dt)
+                except Exception:
+                    pass
+            return opens
+        except Exception:
+            return []
+
+    def suggest_send_time_for_company(
+        self, company_id: Optional[str] = None
+    ) -> datetime:
+        """Sugere melhor horario de envio considerando:
+        1. Padrao individual da escola (se tem tracking)
+        2. Padrao geral (todos os emails)
+        3. Feriados nacionais
+        4. Fase do ano letivo
+        5. Dias uteis
+
+        Args:
+            company_id: UUID da escola (opcional — se None, usa padrao geral)
+
+        Returns:
+            datetime com timezone -03:00 do proximo slot otimo
+        """
+        from datetime import timezone as _tz
+
+        # 1. Tentar padrao individual da escola
+        optimal_hours = DEFAULT_OPTIMAL_HOURS
+        best_days = DEFAULT_BEST_DAYS
+
+        if company_id:
+            company_opens = self._fetch_company_open_data(company_id)
+            if len(company_opens) >= MIN_COMPANY_DATA_POINTS:
+                hour_counter = Counter(dt.hour for dt in company_opens)
+                optimal_hours = sorted([h for h, _ in hour_counter.most_common(TOP_N_HOURS)])
+                day_counter = Counter(dt.weekday() for dt in company_opens)
+                best_days = sorted([d for d, _ in day_counter.most_common(TOP_N_DAYS)])
+                logger.info(f"Usando padrao individual da escola ({len(company_opens)} opens)")
+            else:
+                # Fallback: padrao geral
+                optimal_hours = self.get_optimal_hours()
+                best_days = self.get_best_days()
+        else:
+            optimal_hours = self.get_optimal_hours()
+            best_days = self.get_best_days()
+
+        # 2. Encontrar proximo slot que seja dia util + nao feriado + fase letiva ok
+        brt = _tz(timedelta(hours=-3))
+        now = datetime.now(brt)
+        candidate = now.replace(minute=0, second=0, microsecond=0)
+
+        for day_offset in range(60):  # buscar ate 60 dias no futuro
+            check_date = candidate + timedelta(days=day_offset)
+
+            # Pular feriados e finais de semana
+            if not self._is_dia_util(check_date):
+                continue
+
+            # Pular dias da semana que nao sao otimos (se tiver dados)
+            if check_date.weekday() not in best_days:
+                continue
+
+            # Verificar fase letiva — se peso < 0.3, pular (ferias/recesso)
+            peso = self._fase_letiva_peso(check_date)
+            if peso < 0.3:
+                continue
+
+            for hour in optimal_hours:
+                potential = check_date.replace(hour=hour, tzinfo=brt)
+                if potential > now:
+                    logger.info(
+                        f"Slot otimo para escola: {potential.strftime('%d/%m %H:%M')}",
+                        extra={
+                            "company_id": company_id,
+                            "hour": hour,
+                            "day": check_date.weekday(),
+                            "fase_peso": peso,
+                        },
+                    )
+                    return potential
+
+        # Fallback: amanha 8h (BRT)
+        fallback = (now + timedelta(days=1)).replace(
+            hour=8, minute=0, second=0, microsecond=0, tzinfo=brt,
+        )
+        return fallback
 
 
 # ============================================================================

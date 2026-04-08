@@ -172,6 +172,75 @@ except Exception as e:
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
 # =============================================================================
+# TEMPLATES DE FOLLOW-UP (por tipo comportamental)
+# =============================================================================
+section_header("Templates de Follow-up", "autorenew")
+
+st.markdown(
+    '<div style="font-size:13px;color:#757575;margin-bottom:12px">'
+    'Configure templates especificos para cada tipo de follow-up comportamental. '
+    'Se um template existir, sera usado em vez da IA. Se nao, a IA gera do zero.'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+FU_TYPES_INFO = [
+    ("follow_up_hot_click", "🔥 Hot Click", "Lead clicou em link — tom comercial direto"),
+    ("follow_up_curious_open", "👀 Curious Open", "Abriu 2+ vezes sem responder — valor adicional"),
+    ("follow_up_silent_open", "📬 Silent Open", "Abriu 1x e sumiu — lembrete gentil"),
+    ("follow_up_revival", "🧊 Revival", "Nao abriu nada — angulo totalmente novo"),
+]
+
+try:
+    from database.supabase_client import db as _db_tpl
+
+    for fu_type, fu_label, fu_desc in FU_TYPES_INFO:
+        # Buscar template existente para este tipo
+        existing_tpl = None
+        try:
+            r = _db_tpl.client.table("message_templates").select("*").eq(
+                "target_type", fu_type
+            ).eq("is_active", True).limit(1).execute()
+            existing_tpl = (r.data or [None])[0]
+        except Exception:
+            pass
+
+        with st.expander(f"{fu_label} — {fu_desc}", expanded=False):
+            if existing_tpl:
+                st.success(f"Template ativo: {existing_tpl.get('name', '?')}")
+                st.text_area(
+                    "Assunto",
+                    value=existing_tpl.get("subject_template", ""),
+                    disabled=True,
+                    height=40,
+                    key=f"fu_tpl_subj_{fu_type}",
+                )
+                st.text_area(
+                    "Corpo",
+                    value=existing_tpl.get("body_template", ""),
+                    disabled=True,
+                    height=150,
+                    key=f"fu_tpl_body_{fu_type}",
+                )
+                st.caption("Para editar, use a secao de Templates abaixo.")
+            else:
+                st.info(
+                    f"Sem template configurado — IA gera automaticamente. "
+                    f"Para criar, use a secao de Templates abaixo e defina target_type = '{fu_type}'."
+                )
+
+    st.caption(
+        "💡 Para criar template de follow-up: crie um template normal na secao abaixo. "
+        "Apos aplicar a migration 007 (target_type), edite o campo target_type no banco "
+        "para o tipo desejado (ex: 'follow_up_hot_click')."
+    )
+
+except Exception as e:
+    st.warning(f"Templates de follow-up indisponiveis: {e}")
+
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+# =============================================================================
 # TEMPLATES DE MENSAGEM (conteudo original da pagina)
 # =============================================================================
 

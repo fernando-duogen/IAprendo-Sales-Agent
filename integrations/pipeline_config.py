@@ -85,6 +85,8 @@ class PipelineConfig:
             "followup_types": ["hot_click", "curious_open", "silent_open", "revival"],
             # Persona de comunicacao
             "persona_mode": "padrao",  # "padrao" (tom fixo) ou "adaptativo" (IA adapta por escola)
+            # Follow-up write mode
+            "followup_write_mode": "auto",  # "ia" | "template" | "auto" (auto=template se existir, senao IA)
         }
 
     # =========================================================================
@@ -177,6 +179,10 @@ class PipelineConfig:
         # === Persona mode ===
         pm = str(out.get("persona_mode", "padrao")).lower()
         out["persona_mode"] = pm if pm in ("padrao", "adaptativo") else "padrao"
+
+        # === Follow-up write mode ===
+        fwm = str(out.get("followup_write_mode", "auto")).lower()
+        out["followup_write_mode"] = fwm if fwm in ("ia", "template", "auto") else "auto"
 
         return out
 

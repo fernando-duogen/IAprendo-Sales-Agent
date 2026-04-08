@@ -720,6 +720,18 @@ def generate_follow_up(
     # Inserir na approval_queue com status='pending'
     # NUNCA envia sem aprovacao humana
     try:
+        # Agendar no melhor horario (calendario inteligente)
+        scheduled_at = None
+        try:
+            from tools.smart_scheduler import smart_scheduler
+            best_time = smart_scheduler.suggest_send_time_for_company(company_id)
+            scheduled_at = best_time.isoformat()
+            logger.info(f"Follow-up agendado para {scheduled_at}", extra={
+                "company_id": company_id, "follow_up_type": follow_up_type,
+            })
+        except Exception as e:
+            logger.debug(f"Smart scheduler skip: {e}")
+
         queue_data = {
             "company_id": company_id,
             "subject": subject,
@@ -731,6 +743,8 @@ def generate_follow_up(
             "follow_up_number": follow_up_number,
             "parent_id": original_queue_id,
         }
+        if scheduled_at:
+            queue_data["scheduled_send_at"] = scheduled_at
         if contact_id:
             queue_data["contact_id"] = contact_id
 

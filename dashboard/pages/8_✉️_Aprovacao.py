@@ -661,14 +661,28 @@ with col_msg:
 # ===========================================================================
 from datetime import datetime, time as dtime, timedelta, timezone
 
+# Verificar se ja tem scheduled_send_at sugerido pelo smart_scheduler
+existing_sched = item.get("scheduled_send_at")
+if existing_sched:
+    try:
+        sched_preview = datetime.fromisoformat(existing_sched.replace("Z", "+00:00"))
+        st.markdown(
+            f'<div style="font-size:13px;color:#FF6D00;margin-bottom:8px">'
+            f'⏰ <strong>Envio sugerido:</strong> {sched_preview.strftime("%d/%m/%Y as %H:%M")} '
+            f'(calendario inteligente — baseado em tracking + fase letiva + feriados)</div>',
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        pass
+
 schedule_send = st.toggle(
-    "⏰ Agendar horario de envio",
+    "⏰ Alterar horario de envio",
     value=False,
     key=f"schedule_toggle_{queue_id}",
-    help="Se ativado, o email so sera enviado no dia/hora definidos. Se desativado, envia imediatamente ao aprovar.",
+    help="Altere o horario sugerido ou defina um novo. Se desativado, usa o horario sugerido acima (ou envia imediatamente se nao houver).",
 )
 
-scheduled_send_at_iso = None  # None = enviar imediatamente
+scheduled_send_at_iso = existing_sched  # Manter sugestao por default
 
 if schedule_send:
     col_date, col_time = st.columns(2)

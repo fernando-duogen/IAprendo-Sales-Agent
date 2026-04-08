@@ -2540,6 +2540,15 @@ Responda em JSON: {{"assunto": "...", "corpo": "...", "reasoning": "persona esco
     except Exception:
         email_data = {"assunto": "IAprendo - IA Educacional", "corpo": resp.choices[0].message.content}
 
+    # Agendar no melhor horario (calendario inteligente)
+    smart_scheduled_at = None
+    try:
+        from tools.smart_scheduler import smart_scheduler
+        best_time = smart_scheduler.suggest_send_time_for_company(escola["id"])
+        smart_scheduled_at = best_time.isoformat()
+    except Exception:
+        pass
+
     # Salvar na fila de aprovação
     queue_entry = {
         "company_id": escola["id"],
@@ -2548,6 +2557,8 @@ Responda em JSON: {{"assunto": "...", "corpo": "...", "reasoning": "persona esco
         "channel": "email",
         "status": "pending",
     }
+    if smart_scheduled_at:
+        queue_entry["scheduled_send_at"] = smart_scheduled_at
     if contato_email:
         # Buscar contact_id
         c = db.client.table("contacts").select("id").eq("email", contato_email).limit(1).execute()
