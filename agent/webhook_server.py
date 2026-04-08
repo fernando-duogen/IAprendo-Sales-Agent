@@ -89,6 +89,153 @@ def _is_from_owner(sender: str) -> bool:
     return False
 
 
+def _build_field_mode_briefing(lat: float, lng: float) -> str:
+    """Modo campo: busca escola mais proxima no banco e monta briefing
+    instantaneo com diretor, score, ultimo contato e pitch de 30 segundos.
+    Retorna string formatada para WhatsApp ou '' se nada encontrado."""
+    import math
+    from database.supabase_client import db
+
+    def _haversine(lat1, lon1, lat2, lon2):
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2 +
+             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+             math.sin(dlon / 2) ** 2)
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    try:
+        schools = db.client.table("companies").select(
+            "id,name,city,state,admin_category,school_size,qualification_score,"
+            "qualification_reasoning,education_levels,phone,latitude,longitude,status"
+        ).not_.is_("latitude", "null").not_.is_("longitude", "null").execute().data or []
+    except Exception:
+        return ""
+
+    if not schools:
+        return ""
+
+    for s in schools:
+        try:
+            s["_dist"] = _haversine(lat, lng, float(s["latitude"]), float(s["longitude"]))
+        except Exception:
+            s["_dist"] = 99999
+
+    schools.sort(key=lambda x: x["_dist"])
+    nearby = [s for s in schools[:10] if s["_dist"] <= 2.0]
+    if not nearby:
+        nearby = schools[:3]
+
+    closest = nearby[0]
+    company_id = closest["id"]
+    dist_m = int(closest["_dist"] * 1000)
+
+    # Contatos (diretor primeiro)
+    contacts = []
+    try:
+        contacts = db.client.table("contacts").select(
+            "full_name,role,email,decision_maker_type,phone"
+        ).eq("company_id", company_id).order("outreach_priority").limit(5).execute().data or []
+    except Exception:
+        pass
+
+    diretor = None
+    for c in contacts:
+        if c.get("decision_maker_type") == "diretor":
+            diretor = c
+            break
+    if not diretor and contacts:
+        diretor = contacts[0]
+
+    # Ultimo contato
+    ultimo_contato = "Nenhum email enviado"
+    try:
+        last = db.client.table("approval_queue").select(
+            "sent_at,opened_at,clicked_at,replied_at"
+        ).eq("company_id", company_id).eq("status", "sent").order(
+            "sent_at", desc=True
+        ).limit(1).execute().data or []
+        if last:
+            e = last[0]
+            sent_date = (e.get("sent_at") or "")[:10]
+            t = "respondeu" if e.get("replied_at") else ("clicou" if e.get("clicked_at") else ("abriu" if e.get("opened_at") else "enviado"))
+            ultimo_contato = f"{sent_date} — {t}"
+    except Exception:
+        pass
+
+    # Insights
+    insights = []
+    try:
+        from integrations.memory import memory
+        mems = memory.get_for("company", company_id, limit=3)
+        insights = [m.get("content", "")[:80] for m in mems if m.get("content")]
+    except Exception:
+        pass
+
+    # Montar briefing
+    school_name = closest.get("name", "?")
+    score = closest.get("qualification_score") or "?"
+    porte = closest.get("school_size") or "?"
+    tipo = closest.get("admin_category") or "?"
+    phone = closest.get("phone") or ""
+
+    lines = [
+        f"📍 *MODO CAMPO — Escola a {dist_m}m*",
+        "",
+        f"🏫 *{school_name}*",
+        f"📍 {closest.get('city', '')} | 🎯 Score: {score} | 📊 {porte}",
+        f"📋 {tipo}",
+    ]
+    if phone:
+        lines.append(f"📞 {phone}")
+
+    lines.append("")
+    if diretor:
+        lines.append(f"👤 *{diretor.get('full_name', '?')}* — {diretor.get('role', '?')}")
+        if diretor.get("email"):
+            lines.append(f"📧 {diretor['email']}")
+    else:
+        lines.append("👤 _Diretor(a) nao identificado(a)_")
+
+    lines.append("")
+    lines.append(f"📧 *Ultimo contato:* {ultimo_contato}")
+
+    if insights:
+        lines.append("")
+        lines.append("💡 *Insights:*")
+        for ins in insights[:3]:
+            lines.append(f"• {ins}")
+
+    # Pitch
+    pitch_foco = "ROI e diferencial" if "privada" in tipo.lower() else "BNCC e impacto"
+    lines.append("")
+    lines.append(f"🎯 *Pitch 30s:* _foque em {pitch_foco}_")
+    dir_nome = diretor.get("full_name", "").split()[0] if diretor else "Diretor(a)"
+    lines.append(
+        f'_"Oi {dir_nome}, sou Fernando da IAprendo. '
+        f'Temos uma plataforma 100% BNCC que melhora desempenho em 30%. '
+        f'Posso mostrar em 2 minutos?"_'
+    )
+
+    # Outras proximas
+    if len(nearby) > 1:
+        lines.append("")
+        lines.append(f"📍 *+{len(nearby)-1} escola(s) proxima(s):*")
+        for s in nearby[1:5]:
+            d = int(s["_dist"] * 1000)
+            lines.append(f"• {s.get('name', '?')} ({d}m)")
+
+    lines.append("")
+    lines.append("1️⃣ Gerar email")
+    lines.append("2️⃣ Registrar visita")
+    lines.append("3️⃣ Ver detalhes")
+    lines.append("4️⃣ Mais escolas no raio")
+    lines.append("📋 _\"menu\" para mais_")
+
+    return "\n".join(lines)
+
+
 def _send_with_buttons(bridge, sender: str, text: str, buttons: list):
     """Tenta enviar com botoes nativos. Se falhar, envia texto com opcoes numeradas."""
     result = bridge.send_buttons(sender, text, buttons)
@@ -206,11 +353,26 @@ def webhook():
             # Determinar tipo de mensagem
             msg_type = msg.get("messageType", "text")
 
-            # === LOCATION MESSAGE ===
+            # === LOCATION MESSAGE — MODO CAMPO (resposta instantanea) ===
             if msg_type == "location" and msg.get("location"):
                 loc = msg["location"]
                 lat = loc.get("latitude")
                 lng = loc.get("longitude")
+                logger.info("Localizacao recebida (modo campo)", extra={"lat": lat, "lng": lng})
+
+                # Modo campo: buscar escola mais proxima DIRETO no banco (sem GPT)
+                # e montar briefing instantaneo
+                try:
+                    campo_reply = _build_field_mode_briefing(lat, lng)
+                    if campo_reply:
+                        bridge = get_bridge()
+                        bridge.send_message(sender, campo_reply)
+                        logger.info("Modo campo: briefing enviado")
+                        return
+                except Exception as e:
+                    logger.error(f"Modo campo erro: {e}")
+
+                # Fallback: passar para o brain normalmente
                 loc_name = loc.get("name", "")
                 loc_desc = f"{loc_name}, " if loc_name else ""
                 text = (
@@ -219,7 +381,6 @@ def webhook():
                     f"buscar escolas proximas (e em qual raio), buscar no banco ou na base "
                     f"completa do MEC, filtrar por tipo (privada/publica), ou outra coisa."
                 )
-                logger.info("Localizacao recebida", extra={"lat": lat, "lng": lng})
 
             # === AUDIO MESSAGE ===
             elif msg_type == "audio" and msg.get("audio"):
