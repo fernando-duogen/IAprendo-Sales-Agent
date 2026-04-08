@@ -600,6 +600,19 @@ def metric_card(label: str, value, color: str = COLORS["primary"], delta: str = 
     )
 
 
+def metric_card_clickable(label: str, value, color: str = COLORS["primary"],
+                          delta: str = "", icon: str = "", key: str = "") -> bool:
+    """Metric card que funciona como botao clicavel (st.button com visual de card).
+    Retorna True quando clicado. Uso: if metric_card_clickable(...): st.switch_page(...)
+    """
+    icon_emoji = {"school": "🏫", "pending_actions": "⏳", "send": "📤",
+                  "mark_email_read": "📧", "reply": "💬", "autorenew": "🔄",
+                  "event": "📅", "payments": "💰"}.get(icon, "📊")
+    delta_str = f" ({delta})" if delta else ""
+    btn_label = f"{icon_emoji} {label}: {value}{delta_str}"
+    return st.button(btn_label, key=key, use_container_width=True, type="secondary")
+
+
 def status_badge(status: str, text: Optional[str] = None):
     """Renderiza badge de status colorido."""
     label = text or status.replace("_", " ").title()

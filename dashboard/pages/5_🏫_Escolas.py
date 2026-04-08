@@ -198,6 +198,72 @@ if st.session_state.escola_detail_id:
                         st.session_state.escola_msg = ("success", "Contato excluido.")
                         st.rerun()
 
+        # Formulario para adicionar contato manualmente
+        with st.expander("➕ Adicionar contato manualmente"):
+            CARGO_OPTIONS = [
+                "Diretor(a)", "Vice-Diretor(a)", "Coordenador(a) Pedagógico(a)",
+                "Secretário(a)", "Administrativo", "Professor(a)", "Outro",
+            ]
+            TIPO_DECISOR_OPTIONS = {
+                "Diretor(a)": "diretor",
+                "Vice-Diretor(a)": "vice_diretor",
+                "Coordenador(a) Pedagógico(a)": "coordenador_pedagogico",
+                "Secretário(a)": "secretaria",
+                "Administrativo": "administrativo",
+                "Professor(a)": "outro",
+                "Outro": "outro",
+            }
+            PRIORIDADE_MAP = {
+                "diretor": 1, "vice_diretor": 2, "coordenador_pedagogico": 3,
+                "secretaria": 4, "administrativo": 5, "outro": 6,
+            }
+
+            with st.form("add_contact_form"):
+                ac_col1, ac_col2 = st.columns(2)
+                with ac_col1:
+                    new_name = st.text_input("Nome completo *", placeholder="Ex: João da Silva")
+                    new_email = st.text_input("Email", placeholder="Ex: joao@escola.com.br")
+                    new_phone = st.text_input("Telefone", placeholder="Ex: (51) 99999-9999")
+                with ac_col2:
+                    new_cargo = st.selectbox("Cargo", options=CARGO_OPTIONS, index=0)
+                    new_whatsapp = st.text_input("WhatsApp", placeholder="Ex: (51) 99999-9999")
+                    new_linkedin = st.text_input("LinkedIn URL", placeholder="https://linkedin.com/in/...")
+
+                if st.form_submit_button("💾 Adicionar contato", type="primary", use_container_width=True):
+                    if not new_name or len(new_name.strip()) < 3:
+                        st.error("Nome e obrigatorio (minimo 3 caracteres).")
+                    elif not new_email and not new_phone and not new_whatsapp:
+                        st.error("Informe pelo menos um dado de contato (email, telefone ou WhatsApp).")
+                    else:
+                        tipo_decisor = TIPO_DECISOR_OPTIONS.get(new_cargo, "outro")
+                        prioridade = PRIORIDADE_MAP.get(tipo_decisor, 6)
+                        contact_data = {
+                            "company_id": company_id,
+                            "full_name": new_name.strip(),
+                            "role": new_cargo,
+                            "decision_maker_type": tipo_decisor,
+                            "outreach_priority": prioridade,
+                            "source": "manual",
+                        }
+                        if new_email and "@" in new_email:
+                            contact_data["email"] = new_email.strip()
+                        if new_phone:
+                            contact_data["phone"] = new_phone.strip()
+                        if new_whatsapp:
+                            contact_data["phone_whatsapp"] = new_whatsapp.strip()
+                        if new_linkedin:
+                            contact_data["linkedin_url"] = new_linkedin.strip()
+
+                        try:
+                            result = db.client.table("contacts").insert(contact_data).execute()
+                            if result.data:
+                                st.session_state.escola_msg = ("success", f"Contato {new_name} adicionado!")
+                                st.rerun()
+                            else:
+                                st.error("Falha ao adicionar.")
+                        except Exception as e:
+                            st.error(f"Erro: {e}")
+
         # Botao Perplexity
         st.divider()
         if st.button("Buscar contatos no Perplexity", icon=":material/search:", help="Abre o Perplexity no navegador e busca a equipe de gestao desta escola"):
