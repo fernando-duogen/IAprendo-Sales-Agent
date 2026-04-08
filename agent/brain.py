@@ -1676,20 +1676,34 @@ def _handle_reescrever_email(params: Dict) -> str:
         novo_assunto = data.get("assunto") or subject_atual
         novo_corpo = data.get("corpo") or body_atual
 
+        # SALVAR o texto reescrito diretamente no banco (sem mudar status).
+        # Isso garante que quando Fernando aprovar, o texto correto sera enviado.
+        # Antes: o texto ficava só na resposta JSON e o GPT podia "esquecer".
+        try:
+            update_data = {"body": novo_corpo, "subject": novo_assunto}
+            if not item.get("original_body"):
+                # Preservar o original antes da primeira edicao
+                update_data["original_body"] = body_atual
+                update_data["original_subject"] = subject_atual
+            update_data["edited"] = True
+            db.client.table("approval_queue").update(update_data).eq("id", qid).execute()
+            logger.info("Texto reescrito salvo no banco", extra={"queue_id": qid})
+        except Exception as e:
+            logger.error(f"Erro ao salvar texto reescrito: {e}")
+
         return json.dumps({
             "queue_id": qid,
             "escola": escola_nome,
             "assunto_novo": novo_assunto,
             "corpo_novo": novo_corpo,
             "instrucoes_aplicadas": instrucoes,
+            "texto_salvo": True,
             "mensagem": (
-                "Email reescrito conforme suas instrucoes. "
-                "Revise acima. Para APROVAR com esse texto, diga 'aprova' ou 'sim'. "
-                "Para ajustar mais, descreva o que mudar."
+                "Email reescrito e SALVO. O texto acima ja esta gravado na fila. "
+                "Para APROVAR e enviar, diga 'aprova'. "
+                "Para ajustar mais, descreva o que mudar. "
+                "Se aprovar, ESTE texto (reescrito) sera enviado, nao o original."
             ),
-            "_acao_pendente": "confirmar_reescrita",
-            "_novo_assunto": novo_assunto,
-            "_novo_corpo": novo_corpo,
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro ao reescrever: {str(e)[:200]}"})
@@ -3980,16 +3994,27 @@ PASSO 3: ESPERAR Fernando responder "sim", "aprova", "ok", "manda" no chat
 PASSO 4: SO ENTAO chamar a tool de aprovacao
 
 CENARIOS onde voce DEVE seguir os 4 passos acima (SEM EXCECAO):
-- Fernando COLA um texto editado → MOSTRE o texto + PERGUNTE se aprova → ESPERE
-- Fernando pede pra REESCREVER → reescrever_email → MOSTRE resultado → PERGUNTE → ESPERE
-- Fernando pede pra TROCAR X por Y → faca replace → MOSTRE resultado → PERGUNTE → ESPERE
+- Fernando COLA um texto editado → chame editar_e_aprovar com novo_corpo=texto colado MAS SEM APROVAR (passe o texto pro banco primeiro) → MOSTRE o texto salvo → PERGUNTE se aprova → ESPERE
+- Fernando pede pra REESCREVER → reescrever_email (JA SALVA no banco) → MOSTRE resultado → PERGUNTE → ESPERE
+- Fernando pede pra TROCAR X por Y → use editar_e_aprovar so pra SALVAR (sem aprovar) ou reescrever_email → MOSTRE → PERGUNTE → ESPERE
 - Fernando pede pra GERAR email → gerar_email → MOSTRE o email gerado → PERGUNTE → ESPERE
 - Fernando pede pra usar TEMPLATE → gerar email modo template → MOSTRE → PERGUNTE → ESPERE
 - Sessao de PROSPECCAO → gera email → MOSTRE → PERGUNTE → ESPERE
 
 NUNCA "otimize" pulando a confirmacao. NUNCA assuma que Fernando quer aprovar so porque ele pediu editar. Editar e aprovar sao ACOES SEPARADAS.
 
-Se voce aprovar sem confirmar, Fernando pode enviar um email errado para uma escola. Isso pode destruir o relacionamento comercial.
+ATENCAO CRITICA — TEXTO REESCRITO:
+Quando Fernando edita ou reescreve um email, a tool reescrever_email JA SALVA o novo texto no banco automaticamente. Quando Fernando depois disser "aprova", voce so precisa chamar aprovar_mensagem(queue_id=X) — o texto correto (editado) JA ESTA no banco. NAO precisa passar novo_corpo de novo. NAO chame editar_e_aprovar sem novo_corpo (isso aprovaria o texto ORIGINAL, nao o editado).
+
+Se voce aprovar sem confirmar, ou aprovar o texto errado, Fernando vai enviar um email errado para uma escola. Isso DESTROI o relacionamento comercial. E INACEITAVEL.
+
+*HYPERLINKS NO WHATSAPP:*
+WhatsApp NAO suporta HTML. Quando mostrar preview de email no WhatsApp:
+- Se o email usa link de agendamento (meeting_link), MOSTRE a URL completa:
+  "Agendar conversa com Fernando (https://meetings.hubspot.com/fernando612)"
+- Assim Fernando ve se o link esta correto antes de aprovar
+- No email REAL enviado via Brevo, o link aparece como hyperlink clicavel
+- Se Fernando perguntar "tem link?", confirme mostrando a URL completa
 
 *APOS Fernando confirmar e voce aprovar:*
 - Informe: "Email aprovado! Sera enviado nos proximos minutos pelo scheduler."
