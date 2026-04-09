@@ -57,7 +57,23 @@ class Geocoder:
         state = company.get("state", "RS")
         school_name = company.get("name", "")
 
-        # Tentativa 1: Nominatim com endereco do banco
+        # Tentativa 0: Google Geocoding (primary — mais preciso)
+        try:
+            from integrations.google_places import google_places
+            if google_places.is_available():
+                query = f"{school_name}, {address}, {city}, {state}" if address else f"{school_name}, {city}, {state}"
+                result = google_places.geocode(query)
+                if result and result.get("latitude"):
+                    return {
+                        "found": True,
+                        "latitude": result["latitude"],
+                        "longitude": result["longitude"],
+                        "method": "google_geocoding",
+                    }
+        except Exception:
+            pass
+
+        # Tentativa 1: Nominatim (fallback gratuito)
         if address:
             coords = self.geocode(address, city, state)
             time.sleep(1)  # Nominatim: max 1 req/seg

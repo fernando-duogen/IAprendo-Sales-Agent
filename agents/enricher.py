@@ -44,19 +44,52 @@ class EnricherAgent(BaseAgent):
         return results
 
     def enrich_company(self, company: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Enriquece uma empresa com fallbacks em cascata."""
+        """Enriquece uma empresa com Google Places (primary) + DuckDuckGo (fallback)."""
         company_id = company.get("id")
         school_name = company.get("name", "Desconhecida")
+        city = company.get("city", "")
+        state = company.get("state", "")
         logger.info("Enriquecendo empresa", extra={"company_id": company_id, "school_name": school_name})
         updates: Dict[str, Any] = {}
-        if not company.get("website"):
+
+        # === GOOGLE PLACES (primary) ===
+        google_data = None
+        try:
+            from integrations.google_places import google_places
+            if google_places.is_available():
+                google_data = google_places.search_school_single(school_name, city, state)
+                if google_data:
+                    logger.info("Google Places: dados encontrados", extra={
+                        "school": school_name, "telefone": google_data.get("telefone"),
+                        "site": google_data.get("site"),
+                    })
+                    # Preencher campos faltantes
+                    if not company.get("website") and google_data.get("site"):
+                        updates["website"] = google_data["site"]
+                    if not company.get("phone") and google_data.get("telefone"):
+                        updates["phone"] = google_data["telefone"]
+                    if not company.get("latitude") and google_data.get("latitude"):
+                        updates["latitude"] = google_data["latitude"]
+                        updates["longitude"] = google_data["longitude"]
+                    if not company.get("address") and google_data.get("endereco"):
+                        updates["address"] = google_data["endereco"]
+        except Exception as e:
+            logger.debug(f"Google Places skip: {e}")
+
+        # === DUCKDUCKGO (fallback — só se Google não retornou site) ===
+        if not updates.get("website") and not company.get("website"):
             website = self._find_website(company)
             if website:
                 updates["website"] = website
+
         if updates:
             self._update_company(company_id, {**updates, "status": "enriched"})
             company.update(updates)
-            logger.info("Empresa enriquecida", extra={"company_id": company_id, "updates": list(updates.keys())})
+            logger.info("Empresa enriquecida", extra={
+                "company_id": company_id,
+                "updates": list(updates.keys()),
+                "fonte": "google_places" if google_data else "duckduckgo",
+            })
         else:
             self._update_company(company_id, {"status": "enriched"})
         return company

@@ -96,6 +96,7 @@ class WhatsAppFinder:
         state: str = "",
     ) -> Dict[str, Any]:
         """Busca WhatsApp Business de uma escola.
+        Google Places (primary) → DuckDuckGo (fallback).
 
         Args:
             school_name: nome da escola
@@ -107,18 +108,40 @@ class WhatsAppFinder:
         """
         location = f"{city} {state}".strip()
 
-        # Query 1: busca direta por WhatsApp
+        # === Google Places (primary — telefone estruturado) ===
+        google_number = None
+        try:
+            from integrations.google_places import google_places
+            if google_places.is_available():
+                result = google_places.search_school_single(school_name, city, state)
+                if result and result.get("telefone"):
+                    clean = self._clean_number(result["telefone"])
+                    if clean:
+                        google_number = clean
+                        logger.info(f"WhatsApp via Google Places: {clean}", extra={"school": school_name})
+        except Exception:
+            pass
+
+        if google_number:
+            return {
+                "found": True,
+                "number": google_number,
+                "all_numbers": [google_number],
+                "source": "google_places",
+                "confidence": "alta",
+                "has_whatsapp_keyword": False,
+            }
+
+        # === DuckDuckGo (fallback) ===
         query1 = f"{school_name} {location} whatsapp"
         html1 = self._search_duckduckgo(query1)
         time.sleep(1)
 
-        # Query 2: busca por contato/telefone
         query2 = f"{school_name} {location} contato telefone celular"
         html2 = self._search_duckduckgo(query2)
 
         combined = html1 + " " + html2
 
-        # Extrair numeros de celular
         numbers = self._extract_whatsapp_numbers(combined)
 
         if not numbers:
