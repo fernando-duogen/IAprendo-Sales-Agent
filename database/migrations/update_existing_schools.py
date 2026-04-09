@@ -102,13 +102,26 @@ SIM_NAO_FIELDS = {
 
 
 def _convert_value(db_col: str, value):
-    """Converte valor do CSV para formato do banco."""
+    """Converte valor do CSV para formato do banco (Supabase exige tipos Python nativos)."""
+    import numpy as np
+
     if pd.isna(value) or value == "" or value is None:
         return None
     if db_col in SIM_NAO_FIELDS:
         return str(value).strip().lower() == "sim"
-    if isinstance(value, float) and value == int(value):
+    # numpy int -> Python int
+    if isinstance(value, (np.integer,)):
         return int(value)
+    # numpy float -> Python float/int
+    if isinstance(value, (np.floating,)):
+        f = float(value)
+        return int(f) if f == int(f) else round(f, 2)
+    # Python float sem casas decimais -> int
+    if isinstance(value, float):
+        return int(value) if value == int(value) else round(value, 2)
+    # numpy bool -> Python bool
+    if isinstance(value, (np.bool_,)):
+        return bool(value)
     return value
 
 
@@ -159,12 +172,17 @@ def main():
                 if val is not None:
                     update_data[db_col] = val
 
-        # Colunas básicas (atualizar se estavam vazias)
+        # Colunas basicas (atualizar se estavam vazias) — usa _convert_value
+        # para normalizar numpy -> tipos Python nativos (JSON-safe)
         for csv_col, db_col in BASIC_UPDATE_MAP.items():
             if csv_col in row.index:
-                val = row[csv_col]
-                if pd.notna(val) and val != "":
-                    update_data[db_col] = val
+                val = _convert_value(db_col, row[csv_col])
+                if val is not None:
+                    # name/address/city/state/phone devem ser string
+                    if db_col in ("name", "address", "city", "state", "phone", "school_size", "admin_dependency"):
+                        update_data[db_col] = str(val)
+                    else:
+                        update_data[db_col] = val
 
         # Admin category (mapear DEPENDENCIA -> admin_category)
         dep = row.get("DEPENDENCIA", "")
