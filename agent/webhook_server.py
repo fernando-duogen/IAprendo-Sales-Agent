@@ -48,9 +48,11 @@ def get_bridge():
 
 # Numeros autorizados — separados por virgula no .env
 # Ex: IALEX_AUTHORIZED_NUMBERS=5551996422564,5551981081786
+# Ex: IALEX_AUTHORIZED_LIDS=59824700190908,12345678901234
 OWNER_NUMBER = os.getenv("IALEX_OWNER_NUMBER", "")
-OWNER_LID = os.getenv("IALEX_OWNER_LID", "59824700190908")
+OWNER_LID = os.getenv("IALEX_OWNER_LID", "")
 AUTHORIZED_NUMBERS = os.getenv("IALEX_AUTHORIZED_NUMBERS", "")
+AUTHORIZED_LIDS = os.getenv("IALEX_AUTHORIZED_LIDS", "")
 
 # Controle de mensagens processadas (evitar duplicatas)
 _processed_ids = set()
@@ -70,22 +72,44 @@ def _get_authorized_numbers() -> list:
     return numbers
 
 
+def _get_authorized_lids() -> list:
+    """Retorna lista de LIDs (WhatsApp Linked ID) autorizados."""
+    lids = []
+    if OWNER_LID:
+        lids.append(OWNER_LID.strip())
+    if AUTHORIZED_LIDS:
+        for lid in AUTHORIZED_LIDS.split(","):
+            lid_clean = lid.strip()
+            if lid_clean:
+                lids.append(lid_clean)
+    return lids
+
+
 def _is_from_owner(sender: str) -> bool:
-    """Verifica se a mensagem e de um numero autorizado.
-    Aceita numero de telefone (5551...) ou LID.
+    """Verifica se a mensagem e de um numero/LID autorizado.
+    Whatsapp moderno envia LIDs opacos (ex: 59824700190908@lid) em vez de
+    numero direto. Aceita tanto numeros quanto LIDs explicitamente na lista.
     """
-    authorized = _get_authorized_numbers()
-    if not authorized and not OWNER_LID:
+    authorized_numbers = _get_authorized_numbers()
+    authorized_lids = _get_authorized_lids()
+
+    # Se nada esta configurado, permite tudo (modo dev — nao recomendado)
+    if not authorized_numbers and not authorized_lids:
+        logger.warning("Nenhum numero/LID autorizado configurado — aceitando todos")
         return True
+
     clean_sender = sender.replace("@s.whatsapp.net", "").replace("@lid", "")
-    # Checar LID
-    if OWNER_LID and clean_sender == OWNER_LID:
+
+    # Checar LIDs autorizados (match exato)
+    if clean_sender in authorized_lids:
         return True
-    # Checar numeros autorizados
+
+    # Checar numeros autorizados (match nos ultimos 10 digitos)
     digits_sender = "".join(c for c in clean_sender if c.isdigit())
-    for auth_num in authorized:
+    for auth_num in authorized_numbers:
         if digits_sender.endswith(auth_num):
             return True
+
     return False
 
 
@@ -347,7 +371,22 @@ def webhook():
 
             # Verificar se e do dono
             if not _is_from_owner(sender):
-                logger.warning("Mensagem de numero nao autorizado", extra={"sender": sender})
+                # Log detalhado para facilitar adicao de LIDs novos autorizados
+                is_lid = "@lid" in sender_jid
+                logger.warning(
+                    "Mensagem REJEITADA — numero/LID nao autorizado",
+                    extra={
+                        "sender_jid": sender_jid,
+                        "sender_clean": sender,
+                        "is_lid": is_lid,
+                        "push_name": msg.get("pushName", ""),
+                        "hint": (
+                            f"Para autorizar, adicione este LID ao .env: IALEX_AUTHORIZED_LIDS={sender}"
+                            if is_lid else
+                            f"Para autorizar, adicione este numero ao .env: IALEX_AUTHORIZED_NUMBERS=...,{sender}"
+                        ),
+                    }
+                )
                 return jsonify({"status": "ok"}), 200
 
             # Determinar tipo de mensagem
