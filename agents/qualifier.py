@@ -64,18 +64,133 @@ class QualifierAgent(BaseAgent):
         return parsed
 
     def _format_school_data(self, company: Dict[str, Any]) -> str:
-        fields = [
-            ("Nome","name"),("Cidade","city"),("UF","state"),("Endereco","address"),
-            ("Categoria Administrativa","admin_category"),("Dependencia Administrativa","admin_dependency"),
-            ("Etapas de Ensino","education_levels"),("Porte","school_size"),
-            ("Telefone","phone"),("Website","website"),("Codigo INEP","inep_code"),]
-        lines = []
-        for label, key in fields:
+        """Formata dados da escola (inclui colunas ricas da base MEC 2025)."""
+        # Dados basicos
+        basicos = [
+            ("Nome", "name"), ("Cidade", "city"), ("UF", "state"),
+            ("Regiao", "regiao"), ("Bairro", "bairro"), ("Endereco", "address"),
+            ("Categoria Administrativa", "admin_category"),
+            ("Dependencia", "admin_dependency"),
+            ("Categoria Privada", "categoria_privada"),
+            ("Localizacao", "localizacao"),
+            ("Perfil de Ensino", "perfil_ensino"),
+            ("Porte", "school_size"),
+            ("Telefone", "phone"), ("Website", "website"),
+            ("Codigo INEP", "inep_code"),
+        ]
+        lines = ["## DADOS BASICOS"]
+        for label, key in basicos:
             value = company.get(key)
-            if value:
-                lines.append(f"- **{label}**: {value}")
-            else:
-                lines.append(f"- **{label}**: Nao informado")
+            lines.append(f"- **{label}**: {value if value else 'Nao informado'}")
+
+        # Matriculas (escala)
+        total_mat = company.get("total_matriculas")
+        if total_mat:
+            lines.append("")
+            lines.append("## ESCALA (MATRICULAS)")
+            lines.append(f"- **Total matriculas**: {total_mat}")
+            for label, key in [
+                ("Infantil", "matriculas_infantil"),
+                ("Fundamental (total)", "matriculas_fundamental"),
+                ("Fund. Anos Iniciais", "matriculas_fund_ai"),
+                ("Fund. Anos Finais", "matriculas_fund_af"),
+                ("Ensino Medio", "matriculas_medio"),
+                ("Integral", "matriculas_integral"),
+                ("EJA", "matriculas_eja"),
+            ]:
+                v = company.get(key)
+                if v:
+                    lines.append(f"  - {label}: {v}")
+            perc_integral = company.get("perc_integral")
+            if perc_integral:
+                lines.append(f"- **% Integral**: {perc_integral}%")
+
+            # Por serie (Fund AF)
+            series_fund = [("6 ano", "mat_6_ano"), ("7 ano", "mat_7_ano"),
+                           ("8 ano", "mat_8_ano"), ("9 ano", "mat_9_ano")]
+            fund_af = [f"{label}={company.get(key)}" for label, key in series_fund if company.get(key)]
+            if fund_af:
+                lines.append(f"- **Por ano (Fund AF)**: {', '.join(fund_af)}")
+
+            # Por serie (Medio)
+            series_medio = [("1o", "mat_medio_1"), ("2o", "mat_medio_2"), ("3o", "mat_medio_3")]
+            medio = [f"{label}={company.get(key)}" for label, key in series_medio if company.get(key)]
+            if medio:
+                lines.append(f"- **Por ano (Medio)**: {', '.join(medio)}")
+
+        # Equipe
+        equipe_fields = [
+            ("Docentes", "total_docentes"),
+            ("Gestores", "total_gestores"),
+            ("Coordenadores", "qt_coordenadores"),
+            ("Administrativos", "qt_administrativos"),
+            ("Turmas", "total_turmas"),
+            ("Alunos/Docente", "alunos_por_docente"),
+        ]
+        equipe_vals = [(l, company.get(k)) for l, k in equipe_fields if company.get(k)]
+        if equipe_vals:
+            lines.append("")
+            lines.append("## EQUIPE")
+            for label, val in equipe_vals:
+                lines.append(f"- **{label}**: {val}")
+
+        # Tecnologia
+        nivel_tech = company.get("nivel_tecnologico")
+        tech_bool = [
+            ("Internet", "tem_internet"),
+            ("Internet p/ alunos", "internet_alunos"),
+            ("Internet p/ aprendizagem", "internet_aprendizagem"),
+            ("Banda Larga", "banda_larga"),
+            ("Lab Informatica", "lab_informatica"),
+        ]
+        tech_int = [
+            ("Desktops p/ aluno", "qt_desktop_aluno"),
+            ("Notebooks p/ aluno", "qt_notebook_aluno"),
+            ("Tablets p/ aluno", "qt_tablet_aluno"),
+        ]
+        tech_has_data = nivel_tech or any(company.get(k) is not None for _, k in tech_bool + tech_int)
+        if tech_has_data:
+            lines.append("")
+            lines.append("## TECNOLOGIA")
+            if nivel_tech:
+                lines.append(f"- **Nivel Tecnologico**: {nivel_tech}")
+            for label, key in tech_bool:
+                v = company.get(key)
+                if v is not None:
+                    lines.append(f"- **{label}**: {'Sim' if v else 'Nao'}")
+            for label, key in tech_int:
+                v = company.get(key)
+                if v:
+                    lines.append(f"- **{label}**: {v}")
+
+        # Infraestrutura
+        infra = [
+            ("Biblioteca", "tem_biblioteca"),
+            ("Quadra de Esportes", "tem_quadra"),
+            ("Lab de Ciencias", "tem_lab_ciencias"),
+            ("Alimentacao", "tem_alimentacao"),
+        ]
+        infra_vals = [(l, company.get(k)) for l, k in infra if company.get(k) is not None]
+        if infra_vals:
+            lines.append("")
+            lines.append("## INFRAESTRUTURA")
+            for label, val in infra_vals:
+                lines.append(f"- **{label}**: {'Sim' if val else 'Nao'}")
+
+        # Etapas oferecidas
+        etapas = [
+            ("Fund. Anos Finais", "oferece_fund_af"),
+            ("Ensino Medio", "oferece_medio"),
+            ("EJA", "oferece_eja"),
+            ("Profissionalizante", "oferece_profissionalizante"),
+        ]
+        etapas_vals = [(l, company.get(k)) for l, k in etapas if company.get(k) is not None]
+        if etapas_vals:
+            lines.append("")
+            lines.append("## ETAPAS OFERECIDAS")
+            for label, val in etapas_vals:
+                lines.append(f"- **{label}**: {'Sim' if val else 'Nao'}")
+
         return NEWLINE.join(lines)
 
     def _parse_response(self, response_text: str, company_id: str) -> Optional[Dict[str, Any]]:

@@ -80,31 +80,31 @@ class Settings:
     # ========================================================================
     # CSV - Mapeamento de Colunas (14 variáveis)
     # ========================================================================
-    CSV_PATH: str = os.getenv("CSV_PATH", "data/raw/escolas_brasil.csv")
-    CSV_ENCODING: str = os.getenv("CSV_ENCODING", "utf-8")
+    # Nova base MEC 2025 (escolas_brasil_crm.csv — 180k escolas, 77 colunas)
+    CSV_PATH: str = os.getenv("CSV_PATH", "data/raw/escolas_brasil_crm.csv")
+    CSV_ENCODING: str = os.getenv("CSV_ENCODING", "utf-8-sig")
 
-    # Nomes das colunas (customizável para diferentes CSVs)
-    CSV_COL_NAME: str = os.getenv("CSV_COL_NAME", "Escola")
-    CSV_COL_INEP: str = os.getenv("CSV_COL_INEP", "Código INEP")
-    CSV_COL_CITY: str = os.getenv("CSV_COL_CITY", "Município")
+    # Mapeamento de colunas — Nova base MEC 2025
+    CSV_COL_NAME: str = os.getenv("CSV_COL_NAME", "NOME_ESCOLA")
+    CSV_COL_INEP: str = os.getenv("CSV_COL_INEP", "CODIGO_INEP")
+    CSV_COL_CITY: str = os.getenv("CSV_COL_CITY", "MUNICIPIO")
     CSV_COL_STATE: str = os.getenv("CSV_COL_STATE", "UF")
-    CSV_COL_ADDRESS: str = os.getenv("CSV_COL_ADDRESS", "Endereço")
-    CSV_COL_PHONE: str = os.getenv("CSV_COL_PHONE", "Telefone")
-    CSV_COL_RESTRICTION: str = os.getenv(
-        "CSV_COL_RESTRICTION", "Restrição de Atendimento"
-    )
-    CSV_COL_LEVELS: str = os.getenv(
-        "CSV_COL_LEVELS", "Etapas e Modalidade de Ensino Oferecidas"
-    )
-    CSV_COL_ADMIN_CATEGORY: str = os.getenv(
-        "CSV_COL_ADMIN_CATEGORY", "Categoria Administrativa"
-    )
-    CSV_COL_ADMIN_DEPENDENCY: str = os.getenv(
-        "CSV_COL_ADMIN_DEPENDENCY", "Dependência Administrativa"
-    )
-    CSV_COL_LATITUDE: str = os.getenv("CSV_COL_LATITUDE", "Latitude")
-    CSV_COL_LONGITUDE: str = os.getenv("CSV_COL_LONGITUDE", "Longitude")
-    CSV_COL_SIZE: str = os.getenv("CSV_COL_SIZE", "Porte da Escola")
+    CSV_COL_ADDRESS: str = os.getenv("CSV_COL_ADDRESS", "ENDERECO")
+    CSV_COL_PHONE: str = os.getenv("CSV_COL_PHONE", "TELEFONE")
+    CSV_COL_RESTRICTION: str = os.getenv("CSV_COL_RESTRICTION", "")  # Nova base ja filtrada (so ativas)
+    CSV_COL_LEVELS: str = os.getenv("CSV_COL_LEVELS", "PERFIL_ENSINO")
+    CSV_COL_ADMIN_CATEGORY: str = os.getenv("CSV_COL_ADMIN_CATEGORY", "DEPENDENCIA")
+    CSV_COL_ADMIN_DEPENDENCY: str = os.getenv("CSV_COL_ADMIN_DEPENDENCY", "DEPENDENCIA")
+    CSV_COL_LATITUDE: str = os.getenv("CSV_COL_LATITUDE", "LATITUDE")
+    CSV_COL_LONGITUDE: str = os.getenv("CSV_COL_LONGITUDE", "LONGITUDE")
+    CSV_COL_SIZE: str = os.getenv("CSV_COL_SIZE", "PORTE_ESCOLA")
+
+    # Colunas extras da nova base (para busca avançada)
+    CSV_COL_REGIAO: str = "REGIAO"
+    CSV_COL_NIVEL_TECH: str = "NIVEL_TECNOLOGICO"
+    CSV_COL_TOTAL_MATRICULAS: str = "TOTAL_MATRICULAS"
+    CSV_COL_PERFIL_ENSINO: str = "PERFIL_ENSINO"
+    CSV_COL_LOCALIZACAO: str = "LOCALIZACAO"
 
     # ========================================================================
     # ICP - Perfil de Cliente Ideal (6 variáveis)

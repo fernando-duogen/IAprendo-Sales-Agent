@@ -233,7 +233,8 @@ def load_csv(sample_size: Optional[int] = None) -> pd.DataFrame:
 
         # Validar colunas obrigatórias
         col_map = settings.get_csv_column_mapping()
-        required_cols = ['name', 'inep_code', 'city', 'state', 'restriction', 'education_levels']
+        # restriction nao existe na nova base MEC 2025 (ja vem filtrada, so escolas ativas)
+        required_cols = ['name', 'inep_code', 'city', 'state', 'education_levels']
 
         for col_key in required_cols:
             col_name = col_map.get(col_key)
@@ -317,16 +318,19 @@ def apply_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
         'filter_4_approved': 0
     }
 
-    # FILTRO 1: Restrição de Atendimento
-    logger.debug("Aplicando Filtro 1: Restrição de Atendimento")
-
-    df = df[
-        df[col_map['restriction']].str.contains(
-            "FUNCIONAMENTO E SEM RESTRIÇÃO",
-            case=False,
-            na=False
-        )
-    ]
+    # FILTRO 1: Restrição de Atendimento (opcional — nova base 2025 ja vem filtrada)
+    restriction_col = col_map.get('restriction', '')
+    if restriction_col and restriction_col in df.columns:
+        logger.debug("Aplicando Filtro 1: Restrição de Atendimento")
+        df = df[
+            df[restriction_col].str.contains(
+                "FUNCIONAMENTO E SEM RESTRIÇÃO",
+                case=False,
+                na=False
+            )
+        ]
+    else:
+        logger.debug("Filtro 1 ignorado (coluna restriction nao existe — base 2025 ja filtrada)")
 
     stats['filter_1_restriction'] = len(df)
 
@@ -370,16 +374,22 @@ def apply_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
     # FILTRO 3: Níveis de Ensino (Fundamental OU Médio)
     logger.debug("Aplicando Filtro 3: Níveis de Ensino")
 
+    import unicodedata
+
+    def _strip_accents(s: str) -> str:
+        """Remove acentos para comparacao robusta (Medio <-> Medio)."""
+        return unicodedata.normalize("NFKD", s).encode("ASCII", "ignore").decode("ASCII")
+
     def has_target_level(education_levels_str: Any) -> bool:
-        """Verifica se contém fundamental ou médio."""
+        """Verifica se contem fundamental ou medio (accent-insensitive)."""
         if pd.isna(education_levels_str):
             return False
 
-        text = str(education_levels_str).lower()
+        text = _strip_accents(str(education_levels_str)).lower()
 
-        # Buscar por qualquer nível alvo
+        # Buscar por qualquer nivel alvo (tambem sem acento)
         for level in settings.TARGET_EDUCATION_LEVELS:
-            if level.lower() in text:
+            if _strip_accents(level).lower() in text:
                 return True
 
         return False
@@ -400,15 +410,15 @@ def apply_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
     logger.debug("Aplicando Filtro 4: Tipo de Escola")
 
     def matches_school_type(admin_dependency_str: Any) -> bool:
-        """Verifica se corresponde ao tipo alvo."""
+        """Verifica se corresponde ao tipo alvo (accent-insensitive)."""
         if pd.isna(admin_dependency_str):
             return False
 
-        text = str(admin_dependency_str).lower()
+        text = _strip_accents(str(admin_dependency_str)).lower()
 
-        # Buscar por qualquer tipo alvo
+        # Buscar por qualquer tipo alvo (tambem sem acento)
         for school_type in settings.TARGET_SCHOOL_TYPES:
-            if school_type.lower() in text:
+            if _strip_accents(school_type).lower() in text:
                 return True
 
         return False
@@ -594,6 +604,92 @@ def row_to_company_dict(row: pd.Series, col_map: Dict[str, str]) -> Dict[str, An
         'source': 'csv_import'
     }
 
+    # Colunas extras da nova base MEC 2025 (se existirem no CSV)
+    def get_raw(col_name: str):
+        if col_name not in row.index:
+            return None
+        v = row.get(col_name)
+        return None if pd.isna(v) or (isinstance(v, str) and v.strip() == '') else v
+
+    def get_int(col_name: str):
+        v = get_raw(col_name)
+        if v is None:
+            return None
+        try:
+            return int(float(v))
+        except (ValueError, TypeError):
+            return None
+
+    def get_bool(col_name: str):
+        v = get_raw(col_name)
+        if v is None:
+            return None
+        return str(v).strip().lower() == "sim"
+
+    # Classificação expandida
+    extras = {}
+    for csv_col, db_col in [
+        ("REGIAO", "regiao"), ("BAIRRO", "bairro"), ("CEP", "cep"),
+        ("CNPJ_ESCOLA", "cnpj_escola"), ("CNPJ_MANTENEDORA", "cnpj_mantenedora"),
+        ("CATEGORIA_PRIVADA", "categoria_privada"), ("LOCALIZACAO", "localizacao"),
+        ("REGULAMENTACAO", "regulamentacao"), ("PERFIL_ENSINO", "perfil_ensino"),
+        ("NIVEL_TECNOLOGICO", "nivel_tecnologico"),
+    ]:
+        v = get_raw(csv_col)
+        if v is not None:
+            extras[db_col] = str(v)
+
+    # Matrículas
+    for csv_col, db_col in [
+        ("TOTAL_MATRICULAS", "total_matriculas"),
+        ("MATRICULAS_INFANTIL", "matriculas_infantil"),
+        ("MATRICULAS_FUNDAMENTAL", "matriculas_fundamental"),
+        ("MATRICULAS_FUND_AI", "matriculas_fund_ai"),
+        ("MATRICULAS_FUND_AF", "matriculas_fund_af"),
+        ("MATRICULAS_MEDIO", "matriculas_medio"),
+        ("MATRICULAS_INTEGRAL", "matriculas_integral"),
+        ("MATRICULAS_EJA", "matriculas_eja"),
+        ("MAT_1_ANO", "mat_1_ano"), ("MAT_2_ANO", "mat_2_ano"),
+        ("MAT_3_ANO", "mat_3_ano"), ("MAT_4_ANO", "mat_4_ano"),
+        ("MAT_5_ANO", "mat_5_ano"), ("MAT_6_ANO", "mat_6_ano"),
+        ("MAT_7_ANO", "mat_7_ano"), ("MAT_8_ANO", "mat_8_ano"),
+        ("MAT_9_ANO", "mat_9_ano"),
+        ("MAT_MEDIO_1_ANO", "mat_medio_1"), ("MAT_MEDIO_2_ANO", "mat_medio_2"),
+        ("MAT_MEDIO_3_ANO", "mat_medio_3"),
+        ("TOTAL_DOCENTES", "total_docentes"), ("TOTAL_GESTORES", "total_gestores"),
+        ("QT_COORDENADORES", "qt_coordenadores"), ("QT_ADMINISTRATIVOS", "qt_administrativos"),
+        ("TOTAL_TURMAS", "total_turmas"),
+        ("QT_DESKTOP_ALUNO", "qt_desktop_aluno"), ("QT_NOTEBOOK_ALUNO", "qt_notebook_aluno"),
+        ("QT_TABLET_ALUNO", "qt_tablet_aluno"),
+    ]:
+        v = get_int(csv_col)
+        if v is not None:
+            extras[db_col] = v
+
+    # Decimais
+    for csv_col, db_col in [("PERC_INTEGRAL", "perc_integral"), ("ALUNOS_POR_DOCENTE", "alunos_por_docente")]:
+        v = get_raw(csv_col)
+        if v is not None:
+            try:
+                extras[db_col] = round(float(v), 2)
+            except (ValueError, TypeError):
+                pass
+
+    # Booleans
+    for csv_col, db_col in [
+        ("TEM_INTERNET", "tem_internet"), ("INTERNET_ALUNOS", "internet_alunos"),
+        ("INTERNET_APRENDIZAGEM", "internet_aprendizagem"), ("BANDA_LARGA", "banda_larga"),
+        ("LAB_INFORMATICA", "lab_informatica"), ("TEM_ALIMENTACAO", "tem_alimentacao"),
+        ("TEM_BIBLIOTECA", "tem_biblioteca"), ("TEM_QUADRA_ESPORTES", "tem_quadra"),
+        ("TEM_LAB_CIENCIAS", "tem_lab_ciencias"),
+        ("OFERECE_FUND_ANOS_FINAIS", "oferece_fund_af"), ("OFERECE_ENSINO_MEDIO", "oferece_medio"),
+        ("OFERECE_EJA", "oferece_eja"), ("OFERECE_PROFISSIONALIZANTE", "oferece_profissionalizante"),
+    ]:
+        v = get_bool(csv_col)
+        if v is not None:
+            extras[db_col] = v
+
+    company_data.update(extras)
     return company_data
 
 

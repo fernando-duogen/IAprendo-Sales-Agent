@@ -256,18 +256,67 @@ class WriterAgent(BaseAgent):
     # =========================================================================
 
     def _format_school_section(self, company: Dict[str, Any]) -> str:
-        fields = [
-            ("Nome","name"),("Cidade","city"),("UF","state"),("Endereco","address"),
-            ("Categoria Administrativa","admin_category"),("Dependencia Administrativa","admin_dependency"),
-            ("Etapas de Ensino","education_levels"),("Porte","school_size"),
-            ("Website","website"),("Score de Qualificacao","qualification_score"),
-            ("Raciocinio de Qualificacao","qualification_reasoning"),]
-        lines = []
-        for label, key in fields:
-            value = company.get(key)
-            if value is not None:
-                lines.append(f"- **{label}**: {value}")
-        return chr(10).join(lines) if lines else "Dados nao disponiveis"
+        """Formata dados da escola para o prompt (inclui dados MEC 2025)."""
+        nl = chr(10)
+        lines: List[str] = []
+
+        # Identificacao
+        for label, key in [
+            ("Nome", "name"), ("Cidade", "city"), ("UF", "state"),
+            ("Regiao", "regiao"), ("Bairro", "bairro"),
+            ("Perfil de Ensino", "perfil_ensino"),
+            ("Categoria", "admin_category"),
+            ("Dependencia", "admin_dependency"),
+            ("Categoria Privada", "categoria_privada"),
+            ("Porte", "school_size"),
+            ("Website", "website"),
+            ("Score Qualificacao", "qualification_score"),
+            ("Raciocinio Qualificacao", "qualification_reasoning"),
+        ]:
+            v = company.get(key)
+            if v is not None and v != "":
+                lines.append(f"- **{label}**: {v}")
+
+        # Escala (matriculas) — dados concretos para personalizar
+        total_mat = company.get("total_matriculas")
+        if total_mat:
+            lines.append(f"- **Total de alunos**: {total_mat}")
+            for label, key in [
+                ("Fund. Anos Finais (6-9)", "matriculas_fund_af"),
+                ("Ensino Medio", "matriculas_medio"),
+                ("Integral", "matriculas_integral"),
+            ]:
+                v = company.get(key)
+                if v:
+                    lines.append(f"  - {label}: {v}")
+
+        # Equipe — ajuda a escolher linguagem e identificar decisores
+        for label, key in [
+            ("Docentes", "total_docentes"),
+            ("Coordenadores pedagogicos", "qt_coordenadores"),
+            ("Turmas", "total_turmas"),
+        ]:
+            v = company.get(key)
+            if v:
+                lines.append(f"- **{label}**: {v}")
+
+        # Tecnologia — fundamental para argumentacao
+        nivel_tech = company.get("nivel_tecnologico")
+        if nivel_tech:
+            lines.append(f"- **Nivel Tecnologico**: {nivel_tech}")
+        tech_flags = []
+        for label, key in [
+            ("Banda larga", "banda_larga"),
+            ("Lab. de informatica", "lab_informatica"),
+            ("Internet p/ aprendizagem", "internet_aprendizagem"),
+        ]:
+            v = company.get(key)
+            if v is True:
+                tech_flags.append(label)
+        if tech_flags:
+            lines.append(f"- **Tecnologia disponivel**: {', '.join(tech_flags)}")
+
+        return nl.join(lines) if lines else "Dados nao disponiveis"
 
     def _format_contact_section(self, contact: Optional[Dict[str, Any]],
                                 all_contacts: Optional[List[Dict[str, Any]]] = None) -> str:

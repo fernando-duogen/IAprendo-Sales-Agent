@@ -2578,6 +2578,29 @@ def _handle_detalhes_escola(params: Dict) -> str:
     # Buscar itens na fila
     fila = db.client.table("approval_queue").select("id,subject,status,channel,created_at").eq("company_id", escola["id"]).order("created_at", desc=True).limit(5).execute()
 
+    # Campos ricos do Censo MEC 2025 (incluidos so se preenchidos)
+    censo: Dict[str, Any] = {}
+    for key in [
+        "regiao", "bairro", "cep", "cnpj_escola", "cnpj_mantenedora",
+        "categoria_privada", "localizacao", "perfil_ensino",
+        "nivel_tecnologico",
+        "total_matriculas", "matriculas_infantil", "matriculas_fundamental",
+        "matriculas_fund_ai", "matriculas_fund_af", "matriculas_medio",
+        "matriculas_integral", "perc_integral", "matriculas_eja",
+        "mat_6_ano", "mat_7_ano", "mat_8_ano", "mat_9_ano",
+        "mat_medio_1", "mat_medio_2", "mat_medio_3",
+        "total_docentes", "total_gestores", "qt_coordenadores",
+        "qt_administrativos", "total_turmas", "alunos_por_docente",
+        "tem_internet", "internet_alunos", "internet_aprendizagem",
+        "banda_larga", "lab_informatica",
+        "qt_desktop_aluno", "qt_notebook_aluno", "qt_tablet_aluno",
+        "tem_alimentacao", "tem_biblioteca", "tem_quadra", "tem_lab_ciencias",
+        "oferece_fund_af", "oferece_medio", "oferece_eja", "oferece_profissionalizante",
+    ]:
+        v = escola.get(key)
+        if v is not None and v != "":
+            censo[key] = v
+
     return json.dumps({
         "escola": {
             "id": escola["id"],
@@ -2600,6 +2623,7 @@ def _handle_detalhes_escola(params: Dict) -> str:
             "email_pattern": escola.get("email_pattern"),
             "email_domain": escola.get("email_domain"),
             "hubspot_id": escola.get("hubspot_company_id"),
+            "censo_mec_2025": censo,  # Dados ricos: matriculas, equipe, tech, infra
         },
         "contatos": [{"nome": c.get("full_name"), "cargo": c.get("role"), "email": c.get("email"), "telefone": c.get("phone"), "linkedin": c.get("linkedin_url"), "fonte": c.get("source")} for c in contatos.data],
         "interacoes_recentes": [{"tipo": i.get("type"), "assunto": i.get("subject"), "data": i.get("created_at")} for i in interacoes.data],
@@ -4119,8 +4143,20 @@ Voce e o *IAlex*, o especialista #1 em escolas do Brasil e assistente de vendas 
 
 Voce tem acesso a:
 - *Banco de dados CRM*: escolas ja importadas, qualificadas, com contatos e pipeline de vendas
-- *Base completa do MEC*: 212.386 escolas de TODO o Brasil (nome, endereco, telefone, porte, niveis de ensino, tipo, coordenadas)
+- *Base completa do Censo MEC 2025*: 180.540 escolas de TODO o Brasil com dados RICOS — nome, endereco, CNPJ, 77 campos por escola incluindo:
+  * *Matriculas totais e por ano* (6-9 Fund AF, 1o-3o Medio, Integral, EJA)
+  * *Equipe* (docentes, gestores, coordenadores pedagogicos, turmas)
+  * *Nivel Tecnologico* (Alto/Medio/Baixo) + infra de internet, banda larga, lab de informatica
+  * *Infraestrutura* (biblioteca, quadra, lab ciencias, alimentacao)
+  * *Etapas oferecidas* (Fund AF, Medio, EJA, Profissionalizante)
+  * *Perfil administrativo detalhado* (Privada Particular/Comunitaria, Publica, categoria)
 - *Busca por proximidade*: encontrar escolas perto de qualquer coordenada em qualquer raio
+
+IMPORTANTE — quando Fernando perguntar sobre UMA escola especifica (via *detalhes_escola*), voce recebe um campo *censo_mec_2025* com TODOS os dados ricos. USE esses numeros nas respostas. Exemplos:
+- "Essa escola tem 850 alunos, 42 docentes, 35 turmas — nivel tecnologico Alto"
+- "Tem lab de informatica, banda larga e biblioteca — infra ideal para IAprendo"
+- "Sao 409 alunos em Fund. Anos Finais + 195 no Medio — total 604 alunos-alvo do IAprendo"
+- "Escola pequena (apenas 4 matriculas, 1 docente) — provavelmente nao e prioridade"
 
 == SEU PAPEL ==
 1. *ESPECIALISTA EM ESCOLAS*: Encontrar qualquer escola do Brasil por nome, cidade, estado, porte, tipo, niveis de ensino, proximidade ou qualquer combinacao
