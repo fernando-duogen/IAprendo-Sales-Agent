@@ -164,7 +164,7 @@ with k5:
     metric_card("Reunioes", total_reunioes, icon="event", color=COLORS["accent"])
 with k6:
     metric_card("Custo total", custo_estimado, icon="payments", color="#9E9E9E",
-                delta=f"{total_credits} credits")
+                delta=f"{len(api_usage)} chamadas")
 
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
