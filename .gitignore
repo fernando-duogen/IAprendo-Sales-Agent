@@ -51,6 +51,7 @@ logs/
 
 # Dados
 data/raw/*.csv
+data/raw/Censo_2025/
 data/processed/*.csv
 data/exports/*.csv
 !data/raw/.gitkeep

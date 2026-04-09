@@ -80,8 +80,10 @@ class Settings:
     # ========================================================================
     # CSV - Mapeamento de Colunas (14 variáveis)
     # ========================================================================
-    # Nova base MEC 2025 (escolas_brasil_crm.csv — 180k escolas, 77 colunas)
-    CSV_PATH: str = os.getenv("CSV_PATH", "data/raw/escolas_brasil_crm.csv")
+    # Base mesclada: Censo 2025 (180k) + Catalogo INEP exclusivas (4.7k)
+    # = 185.279 escolas ativas. Escolas do Censo tem dados ricos (77 colunas);
+    # escolas do Catalogo tem dados basicos (endereco, tel, etapas, porte).
+    CSV_PATH: str = os.getenv("CSV_PATH", "data/raw/escolas_brasil_merged.csv")
     CSV_ENCODING: str = os.getenv("CSV_ENCODING", "utf-8-sig")
 
     # Mapeamento de colunas — Nova base MEC 2025

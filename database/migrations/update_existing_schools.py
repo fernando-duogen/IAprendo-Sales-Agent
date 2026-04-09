@@ -1,8 +1,18 @@
 """
-Atualiza as escolas existentes no banco com dados da nova base MEC 2025.
-NAO apaga nada — apenas preenche as colunas novas.
+Atualiza as escolas existentes no banco com dados da base MESCLADA
+(Censo 2025 + Catalogo INEP). NAO apaga nada — apenas preenche colunas novas.
 
-Pré-requisito: migration 010 (APLICAR-010-NOVA-BASE-2025.sql) já aplicada.
+A base mesclada cobre:
+- 180.540 escolas do Censo 2025 (dados ricos: matriculas, equipe, tech)
+- 4.739 escolas do Catalogo INEP que nao foram ao Censo (dados basicos)
+
+Escolas do Censo ganham fonte_dados='censo_2025' e todos os campos ricos.
+Escolas do Catalogo ganham fonte_dados='catalogo_inep' com campos basicos.
+
+Pre-requisitos:
+- migration 010 (APLICAR-010-NOVA-BASE-2025.sql) aplicada
+- migration 011 (APLICAR-011-FONTE-DADOS.sql) aplicada
+- merge_catalogo_inep.py ja rodado (gera escolas_brasil_merged.csv)
 
 Usage:
     python database/migrations/update_existing_schools.py
@@ -18,10 +28,17 @@ load_dotenv()
 from database.supabase_client import db
 from utils.logger import logger
 
+# Usa base mesclada (Censo 2025 + Catalogo INEP exclusivas)
 CSV_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "raw", "escolas_brasil_crm.csv"
+    "data", "raw", "escolas_brasil_merged.csv"
 )
+# Fallback para Censo puro se merged ainda nao existir
+if not os.path.exists(CSV_PATH):
+    CSV_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "data", "raw", "escolas_brasil_crm.csv"
+    )
 
 # Mapeamento CSV → banco
 COLUMN_MAP = {
@@ -197,6 +214,11 @@ def main():
         if perfil and pd.notna(perfil):
             update_data["education_levels"] = str(perfil)
 
+        # Fonte dados (censo_2025 ou catalogo_inep)
+        fonte = row.get("FONTE_DADOS", "")
+        if fonte and pd.notna(fonte):
+            update_data["fonte_dados"] = str(fonte)
+
         if update_data:
             try:
                 db.client.table("companies").update(update_data).eq("id", school_id).execute()
@@ -211,6 +233,17 @@ def main():
     print(f"  Atualizadas: {updated}")
     print(f"  Nao encontradas: {not_found}")
     print(f"  Erros: {errors}")
+
+    # Resumo por fonte
+    try:
+        r_censo = db.client.table("companies").select("id", count="exact").eq("fonte_dados", "censo_2025").execute()
+        r_cat = db.client.table("companies").select("id", count="exact").eq("fonte_dados", "catalogo_inep").execute()
+        print(f"\n  Por fonte:")
+        print(f"    censo_2025: {r_censo.count}")
+        print(f"    catalogo_inep: {r_cat.count}")
+    except Exception:
+        pass
+
     print(f"\nContatos, emails, memorias e scores NAO foram alterados.")
 
 

@@ -260,6 +260,13 @@ class WriterAgent(BaseAgent):
         nl = chr(10)
         lines: List[str] = []
 
+        # Aviso se for escola do Catalogo (sem dados ricos)
+        fonte = company.get("fonte_dados", "")
+        if fonte == "catalogo_inep":
+            lines.append("**AVISO**: escola do Catalogo INEP — nao participou do Censo 2025.")
+            lines.append("NAO invente numeros (matriculas, docentes, etc.) — use argumentacao generica.")
+            lines.append("")
+
         # Identificacao
         for label, key in [
             ("Nome", "name"), ("Cidade", "city"), ("UF", "state"),

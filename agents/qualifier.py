@@ -65,6 +65,16 @@ class QualifierAgent(BaseAgent):
 
     def _format_school_data(self, company: Dict[str, Any]) -> str:
         """Formata dados da escola (inclui colunas ricas da base MEC 2025)."""
+        # Cabecalho com fonte dos dados
+        fonte = company.get("fonte_dados", "")
+        lines = []
+        if fonte == "catalogo_inep":
+            lines.append("## AVISO: ESCOLA DO CATALOGO INEP")
+            lines.append("Esta escola esta ativa mas NAO participou do Censo 2025.")
+            lines.append("Dados de matriculas, equipe, nivel tecnologico e infraestrutura NAO estao disponiveis.")
+            lines.append("Use APENAS os dados basicos abaixo para qualificar. Score considere o porte declarado e tipo.")
+            lines.append("")
+
         # Dados basicos
         basicos = [
             ("Nome", "name"), ("Cidade", "city"), ("UF", "state"),
@@ -78,7 +88,7 @@ class QualifierAgent(BaseAgent):
             ("Telefone", "phone"), ("Website", "website"),
             ("Codigo INEP", "inep_code"),
         ]
-        lines = ["## DADOS BASICOS"]
+        lines.append("## DADOS BASICOS")
         for label, key in basicos:
             value = company.get(key)
             lines.append(f"- **{label}**: {value if value else 'Nao informado'}")

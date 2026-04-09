@@ -611,6 +611,11 @@ def row_to_company_dict(row: pd.Series, col_map: Dict[str, str]) -> Dict[str, An
         v = row.get(col_name)
         return None if pd.isna(v) or (isinstance(v, str) and v.strip() == '') else v
 
+    # Fonte dos dados (base mesclada: censo_2025 ou catalogo_inep)
+    fonte = get_raw('FONTE_DADOS')
+    if fonte:
+        company_data['fonte_dados'] = str(fonte)
+
     def get_int(col_name: str):
         v = get_raw(col_name)
         if v is None:
