@@ -117,13 +117,43 @@ SIM_NAO_FIELDS = {
     "oferece_profissionalizante",
 }
 
+# Campos numericos — qualquer string nao numerica vira None
+NUMERIC_FIELDS = {
+    "latitude", "longitude", "perc_integral", "alunos_por_docente",
+    "total_matriculas", "matriculas_infantil", "matriculas_fundamental",
+    "matriculas_fund_ai", "matriculas_fund_af", "matriculas_medio",
+    "matriculas_integral", "matriculas_eja",
+    "mat_1_ano", "mat_2_ano", "mat_3_ano", "mat_4_ano", "mat_5_ano",
+    "mat_6_ano", "mat_7_ano", "mat_8_ano", "mat_9_ano",
+    "mat_medio_1", "mat_medio_2", "mat_medio_3",
+    "total_docentes", "total_gestores", "qt_coordenadores",
+    "qt_administrativos", "total_turmas",
+    "qt_desktop_aluno", "qt_notebook_aluno", "qt_tablet_aluno",
+}
+
 
 def _convert_value(db_col: str, value):
     """Converte valor do CSV para formato do banco (Supabase exige tipos Python nativos)."""
     import numpy as np
 
-    if pd.isna(value) or value == "" or value is None:
+    if pd.isna(value) or value is None:
         return None
+    # String vazia ou so espacos (catalogo INEP as vezes tem "     " em lat/lon)
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        # Campos numericos: tenta converter, senao None
+        if db_col in NUMERIC_FIELDS:
+            try:
+                f = float(s)
+                return int(f) if f == int(f) else round(f, 6)
+            except (ValueError, TypeError):
+                return None
+        # Campos booleanos Sim/Nao
+        if db_col in SIM_NAO_FIELDS:
+            return s.lower() == "sim"
+        return s
     if db_col in SIM_NAO_FIELDS:
         return str(value).strip().lower() == "sim"
     # numpy int -> Python int
