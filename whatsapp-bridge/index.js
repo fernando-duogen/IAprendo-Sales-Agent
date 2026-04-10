@@ -198,6 +198,24 @@ app.post('/send', async (req, res) => {
     }
 });
 
+// Verifica se um numero existe no WhatsApp (antes de enviar)
+// POST /check-number { number: "5551999999999" } -> { exists: true, jid: "..." }
+app.post('/check-number', async (req, res) => {
+    const { number } = req.body;
+    if (!sock || !connected) return res.json({ error: 'Not connected' });
+    try {
+        const jid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        const results = await sock.onWhatsApp(jid);
+        if (results && results.length > 0 && results[0].exists) {
+            res.json({ exists: true, jid: results[0].jid });
+        } else {
+            res.json({ exists: false });
+        }
+    } catch (e) {
+        res.json({ exists: null, error: e.message });
+    }
+});
+
 // Enviar mensagem com botoes de resposta rapida (max 3 botoes)
 app.post('/send-buttons', async (req, res) => {
     const { number, text, buttons, footer } = req.body;

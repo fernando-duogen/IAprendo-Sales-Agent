@@ -98,6 +98,30 @@ class WhatsAppBridge:
     # Messaging
     # ------------------------------------------------------------------
 
+    def check_number(self, number: str) -> Dict[str, Any]:
+        """Valida se um numero esta registrado no WhatsApp.
+
+        Args:
+            number: Numero (ex: '5551999999999') ou JID completo.
+
+        Returns:
+            {"exists": True, "jid": "..."} se o numero existe
+            {"exists": False} se nao existe
+            {"exists": None, "error": "..."} em caso de erro/timeout
+        """
+        url = f"{self.bridge_url}/check-number"
+        if "@" in number:
+            formatted = number
+        else:
+            formatted = self.format_number(number)
+        try:
+            resp = requests.post(url, json={"number": formatted}, timeout=10)
+            data: Dict[str, Any] = resp.json()
+            return data
+        except requests.RequestException as exc:
+            logger.debug(f"check_number erro para {formatted}: {exc}")
+            return {"exists": None, "error": str(exc)}
+
     def send_message(self, number: str, text: str) -> Dict[str, Any]:
         """Envia mensagem de texto via WhatsApp (Baileys bridge).
 

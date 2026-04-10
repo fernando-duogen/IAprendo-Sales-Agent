@@ -4046,19 +4046,24 @@ Nao copie texto literal dos exemplos acima, apenas inspire-se no tom humano.
 Responda em JSON valido:
 {{"assunto": "...", "corpo": "...", "reasoning": "justifique em 1 frase POR QUE escolheu esse angulo/tom, e cite explicitamente qual dado concreto usou"}}"""
 
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    # Descobrir canal ANTES de gerar (evita gerar email se so quer whatsapp)
+    canal = params.get("canal", "email").lower()
+    email_data = None
 
-    try:
-        import re
-        raw = resp.choices[0].message.content
-        match = re.search(r'\{[\s\S]*"assunto"[\s\S]*"corpo"[\s\S]*\}', raw)
-        email_data = json.loads(match.group()) if match else {"assunto": "IAprendo para " + escola.get("name", ""), "corpo": raw}
-    except Exception:
-        email_data = {"assunto": "IAprendo - IA Educacional", "corpo": resp.choices[0].message.content}
+    # So gera email se canal inclui email
+    if canal in ("email", "ambos"):
+        resp = client.chat.completions.create(
+            model=model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        try:
+            import re
+            raw = resp.choices[0].message.content
+            match = re.search(r'\{[\s\S]*"assunto"[\s\S]*"corpo"[\s\S]*\}', raw)
+            email_data = json.loads(match.group()) if match else {"assunto": "IAprendo para " + escola.get("name", ""), "corpo": raw}
+        except Exception:
+            email_data = {"assunto": "IAprendo - IA Educacional", "corpo": resp.choices[0].message.content}
 
     # Agendar no melhor horario (calendario inteligente)
     smart_scheduled_at = None
@@ -4079,11 +4084,10 @@ Responda em JSON valido:
         except Exception:
             pass
 
-    canal = params.get("canal", "email").lower()
     resultados = []
 
     # === CANAL EMAIL (ou ambos) ===
-    if canal in ("email", "ambos"):
+    if canal in ("email", "ambos") and email_data:
         queue_entry = {
             "company_id": escola["id"],
             "subject": email_data["assunto"],
@@ -4099,48 +4103,109 @@ Responda em JSON valido:
         resultados.append({"canal": "email", "assunto": email_data["assunto"]})
 
     # === CANAL WHATSAPP (ou ambos) ===
+    wpp_body = None
     if canal in ("whatsapp", "ambos"):
-        # Gerar mensagem curta para WhatsApp (max 50 palavras, informal)
+        # Usa o prompt dedicado de WhatsApp (anti-IA, 3 frases max, 400 chars)
         contact_first = contato_nome.split()[0] if contato_nome else "Diretor(a)"
         meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
+        sender_name_short = os.getenv("YOUR_NAME", "Fernando").split()[0]
+        company_name = os.getenv("COMPANY_NAME", "IAprendo")
+
+        # Montar school_data ja formatado (igual ao email) — reusa dados_ricos_section
+        wpp_school_data = (
+            f"Nome: {escola.get('name', '')}\n"
+            f"Cidade/UF: {escola.get('city', '')}/{escola.get('state', '')}\n"
+            f"Dependencia: {escola.get('admin_dependency', '')}\n"
+            f"Niveis: {escola.get('education_levels', '')}"
+        )
+        wpp_contact_data = (
+            f"Nome: {contato_nome or contact_first}\n"
+            f"Cargo: {contato_cargo or '-'}"
+        )
+        wpp_qual_data = (
+            f"Score: {escola.get('qualification_score') or '-'}\n"
+            f"Reasoning: {(escola.get('qualification_reasoning') or '-')[:120]}"
+        )
+
+        # Carregar prompt WhatsApp
+        try:
+            prompt_path = Path(__file__).parent.parent / "prompts" / "whatsapp_writer_prompt.txt"
+            wpp_template = prompt_path.read_text(encoding="utf-8")
+        except Exception as _e:
+            logger.error(f"Prompt WhatsApp nao encontrado: {_e}")
+            wpp_template = ""
+
+        if wpp_template:
+            wpp_prompt = (
+                wpp_template
+                .replace("{sender_name}", sender_name_short)
+                .replace("{company_name}", company_name)
+                .replace("{school_data}", wpp_school_data)
+                .replace("{contact_data}", wpp_contact_data)
+                .replace("{qualification_data}", wpp_qual_data)
+                .replace("{meeting_link}", meeting_link or "")
+                .replace("{persona_instructions}", persona_section or "")
+            )
+
+            # Injetar angulo e dados_destaque se fornecidos (igual email)
+            if angulo or dados_destaque:
+                wpp_prompt += "\n\n== ANGULO ESCOLHIDO ==\n" + (angulo or "")
+                if dados_destaque:
+                    wpp_prompt += "\n== DADOS QUE DEVEM APARECER ==\n" + "\n".join(f"- {d}" for d in dados_destaque)
+
+            # Injetar dados ricos do Censo (reusa secao ja montada)
+            if dados_ricos_section:
+                wpp_prompt += "\n" + dados_ricos_section
+        else:
+            # Fallback minimo (nao deveria cair aqui)
+            wpp_prompt = (
+                f"Escreva WhatsApp curto (max 3 frases, 400 chars) para {contact_first} "
+                f"da escola {escola.get('name')}. Tom direto, sem 'Ola tudo bem'. "
+                f"Comece com dado concreto, termine com pergunta. Responda JSON: "
+                f'{{"body": "...", "reasoning": "..."}}'
+            )
 
         try:
-            wpp_prompt = (
-                f"Escreva uma mensagem CURTA de WhatsApp (max 50 palavras) para {contact_first} "
-                f"da escola {escola.get('name')}. Tom informal e direto, como Fernando "
-                f"escreveria pelo celular. Mencione IAprendo e BNCC. "
-                f"Termine com CTA: link {meeting_link} se houver. "
-                f"Responda APENAS o texto da mensagem, sem JSON."
-            )
             wpp_resp = client.chat.completions.create(
                 model=model,
-                max_tokens=200,
+                max_tokens=400,
                 messages=[{"role": "user", "content": wpp_prompt}],
-                temperature=0.4,
+                temperature=0.75,
             )
-            wpp_body = (wpp_resp.choices[0].message.content or "").strip()
-            # Limpar markdown
-            wpp_body = wpp_body.strip('"').strip("'")
-        except Exception:
-            wpp_body = (
-                f"Oi {contact_first}! Sou Fernando da IAprendo. "
-                f"Temos uma plataforma educacional 100% BNCC que pode ajudar a {escola.get('name')}. "
-                f"Posso te mostrar em 2 min? {meeting_link}"
-            )
+            wpp_raw = (wpp_resp.choices[0].message.content or "").strip()
+            # Tentar parsear JSON
+            try:
+                import re
+                match = re.search(r'\{[\s\S]*"body"[\s\S]*\}', wpp_raw)
+                if match:
+                    wpp_data = json.loads(match.group())
+                    wpp_body = wpp_data.get("body", "").strip()
+                else:
+                    wpp_body = wpp_raw.strip('"').strip("'")
+            except Exception:
+                wpp_body = wpp_raw.strip('"').strip("'")
+        except Exception as _e:
+            logger.error(f"Erro ao gerar msg WhatsApp: {_e}")
+            wpp_body = None
 
-        wpp_entry = {
-            "company_id": escola["id"],
-            "subject": f"WhatsApp - {escola.get('name', '')}",
-            "body": wpp_body,
-            "channel": "whatsapp",
-            "status": "pending",
-        }
-        if smart_scheduled_at:
-            wpp_entry["scheduled_send_at"] = smart_scheduled_at
-        if contact_id:
-            wpp_entry["contact_id"] = contact_id
-        db.client.table("approval_queue").insert(wpp_entry).execute()
-        resultados.append({"canal": "whatsapp", "preview": wpp_body[:80]})
+        if wpp_body:
+            # Enforcar limite de 400 chars (seguranca dupla — prompt ja pede)
+            if len(wpp_body) > 500:
+                wpp_body = wpp_body[:480].rsplit(" ", 1)[0] + "..."
+
+            wpp_entry = {
+                "company_id": escola["id"],
+                "subject": f"WhatsApp - {escola.get('name', '')}",
+                "body": wpp_body,
+                "channel": "whatsapp",
+                "status": "pending",
+            }
+            if smart_scheduled_at:
+                wpp_entry["scheduled_send_at"] = smart_scheduled_at
+            if contact_id:
+                wpp_entry["contact_id"] = contact_id
+            db.client.table("approval_queue").insert(wpp_entry).execute()
+            resultados.append({"canal": "whatsapp", "preview": wpp_body[:100]})
 
     canal_label = {"email": "Email", "whatsapp": "WhatsApp", "ambos": "Email + WhatsApp"}.get(canal, canal)
 
@@ -4150,8 +4215,8 @@ Responda em JSON valido:
         "escola": escola.get("name"),
         "contato": contato_nome,
         "resultados": resultados,
-        "assunto_email": email_data["assunto"] if canal in ("email", "ambos") else None,
-        "corpo_email": email_data["corpo"] if canal in ("email", "ambos") else None,
+        "assunto_email": (email_data or {}).get("assunto") if canal in ("email", "ambos") else None,
+        "corpo_email": (email_data or {}).get("corpo") if canal in ("email", "ambos") else None,
         "corpo_whatsapp": wpp_body if canal in ("whatsapp", "ambos") else None,
         "status": "Na fila de aprovacao (pending) — revise antes de enviar",
     }, ensure_ascii=False)
@@ -4661,36 +4726,71 @@ def _handle_criar_template(params: Dict) -> str:
 
 
 def _handle_enviar_whatsapp_escola(params: Dict) -> str:
-    """Coloca mensagem WhatsApp na fila de aprovação."""
+    """Coloca mensagem WhatsApp na fila de aprovacao.
+
+    CRITICO: usa contacts.phone_whatsapp (celular real), nao companies.phone
+    (que geralmente eh fixo de 8 digitos e nao funciona no WhatsApp).
+    """
     company_id = params.get("escola_id")
+    escola_nome = None
+
     if not company_id and params.get("escola_nome"):
-        r = db.client.table("companies").select("id,name,phone").ilike("name", f"%{params['escola_nome']}%").limit(1).execute()
+        r = db.client.table("companies").select("id,name").ilike("name", f"%{params['escola_nome']}%").limit(1).execute()
         if r.data:
             company_id = r.data[0]["id"]
-            phone = r.data[0].get("phone")
+            escola_nome = r.data[0].get("name")
         else:
             return json.dumps({"erro": f"Escola '{params['escola_nome']}' nao encontrada."})
-    else:
-        empresa = db.client.table("companies").select("name,phone").eq("id", company_id).single().execute()
-        phone = empresa.data.get("phone") if empresa.data else None
+    elif company_id:
+        empresa = db.client.table("companies").select("name").eq("id", company_id).single().execute()
+        escola_nome = empresa.data.get("name") if empresa.data else None
+
+    if not company_id:
+        return json.dumps({"erro": "Informe escola_id ou escola_nome."})
+
+    # Buscar phone_whatsapp dos contatos da escola
+    cts = db.client.table("contacts").select(
+        "id,full_name,phone_whatsapp,phone,outreach_priority"
+    ).eq("company_id", company_id).order("outreach_priority").execute().data or []
+
+    phone = None
+    contact_id = None
+    contato_nome = None
+    for c in cts:
+        wpp = (c.get("phone_whatsapp") or "").strip()
+        if wpp:
+            phone = wpp
+            contact_id = c.get("id")
+            contato_nome = c.get("full_name")
+            break
 
     if not phone:
-        return json.dumps({"erro": "Escola nao tem telefone cadastrado. Nao e possivel enviar WhatsApp."})
+        return json.dumps({
+            "erro": (
+                f"Escola '{escola_nome or '?'}' nao tem phone_whatsapp cadastrado "
+                "em nenhum contato. Rode scripts/seed_whatsapp_numbers.py ou adicione "
+                "o numero manualmente pelo dashboard (pagina Contatos)."
+            )
+        })
 
     try:
         queue_data = {
             "company_id": company_id,
-            "subject": f"WhatsApp - {params.get('contato_nome', 'Escola')}",
+            "subject": f"WhatsApp - {contato_nome or escola_nome or 'Escola'}",
             "body": params["mensagem"],
             "channel": "whatsapp",
             "status": "pending",
         }
+        if contact_id:
+            queue_data["contact_id"] = contact_id
         result = db.client.table("approval_queue").insert(queue_data).execute()
         if result.data:
             return json.dumps({
                 "sucesso": True,
                 "queue_id": result.data[0]["id"],
                 "telefone_destino": phone,
+                "contato": contato_nome,
+                "escola": escola_nome,
                 "mensagem": "Mensagem WhatsApp adicionada na fila de aprovacao. Aprove para enviar."
             }, ensure_ascii=False, default=str)
         return json.dumps({"erro": "Falha ao adicionar na fila."})

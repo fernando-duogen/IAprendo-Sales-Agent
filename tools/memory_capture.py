@@ -88,15 +88,30 @@ def capture_email_event(
     company_id: str,
     event_type: str,
     metadata: Optional[Dict[str, Any]] = None,
+    contact_id: Optional[str] = None,  # noqa: ARG001 (aceito para forward compat)
+    channel: str = "email",
 ) -> Optional[str]:
-    """Captura eventos de tracking de email e gera memoria quando relevante.
+    """Captura eventos de tracking de email/WhatsApp e gera memoria quando relevante.
 
-    Regras:
+    Args:
+        company_id: ID da escola.
+        event_type: opened, clicked, replied, delivered, hardBounce, softBounce.
+        metadata: {event_date, subject, reply_text, ...}.
+        contact_id: aceito para compat com callers futuros (nao usado ainda).
+        channel: "email" (default) ou "whatsapp". Altera textos e filtra
+            eventos nao aplicaveis (opened/clicked nao existem em WhatsApp).
+
+    Regras email:
     - delivered: NAO gera (ruido)
     - opened: insight "Abriu email em DATA (assunto SUBJECT)", imp=5
     - clicked: insight "Clicou em link do email em DATA", imp=7
     - replied: insight "RESPONDEU ao email em DATA — quente!", imp=9
     - hardBounce/softBounce: warning "Email bounce (TIPO)", imp=6
+
+    Regras WhatsApp:
+    - replied: insight "RESPONDEU ao WhatsApp em DATA — lead quente", imp=9
+    - hardBounce/softBounce: warning "WhatsApp bounce", imp=6
+    - opened/clicked/delivered: ignorados (nao existem)
     """
     if not company_id:
         return None
@@ -115,9 +130,14 @@ def capture_email_event(
         data_curta = "data desconhecida"
 
     subject_suffix = f' (assunto: "{subject}")' if subject else ""
+    is_whatsapp = channel == "whatsapp"
 
     if event_type == "delivered":
         return None  # ruido
+
+    # WhatsApp: opened/clicked nao existem — ignora silenciosamente
+    if is_whatsapp and event_type in ("opened", "clicked"):
+        return None
 
     if event_type == "opened":
         return _safe_remember(
@@ -142,6 +162,18 @@ def capture_email_event(
         )
 
     if event_type == "replied":
+        if is_whatsapp:
+            reply_preview = (metadata.get("reply_text") or "").strip()[:100]
+            preview_suffix = f' — "{reply_preview}..."' if reply_preview else ""
+            return _safe_remember(
+                content=f"RESPONDEU ao WhatsApp em {data_curta}{preview_suffix} — lead quente, acionar manual.",
+                scope="company",
+                scope_id=company_id,
+                category="insight",
+                importance=9,
+                source="auto",
+                dedupe_query=f"RESPONDEU ao WhatsApp em {data_curta}",
+            )
         return _safe_remember(
             content=f"RESPONDEU ao email em {data_curta}{subject_suffix} — lead quente, acionar manual.",
             scope="company",
@@ -154,14 +186,16 @@ def capture_email_event(
 
     if event_type in ("hardBounce", "softBounce"):
         tipo = "hard" if event_type == "hardBounce" else "soft"
+        canal_label = "WhatsApp" if is_whatsapp else "Email"
+        obs = "Verificar numero do contato." if is_whatsapp else "Verificar endereco do contato."
         return _safe_remember(
-            content=f"Email teve bounce ({tipo}) em {data_curta}. Verificar endereco do contato.",
+            content=f"{canal_label} teve bounce ({tipo}) em {data_curta}. {obs}",
             scope="company",
             scope_id=company_id,
             category="warning",
             importance=6,
             source="auto",
-            dedupe_query=f"bounce ({tipo}) em {data_curta}",
+            dedupe_query=f"{canal_label} bounce ({tipo}) em {data_curta}",
         )
 
     return None

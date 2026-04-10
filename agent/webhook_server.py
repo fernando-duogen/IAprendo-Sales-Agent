@@ -85,6 +85,176 @@ def _get_authorized_lids() -> list:
     return lids
 
 
+def _try_match_school_reply(sender: str, sender_jid: str, text: str) -> dict:
+    """Tenta identificar se uma mensagem recebida eh reply de uma escola.
+
+    Criterios:
+    1. Extrai os ultimos 9 digitos do sender
+    2. Busca contacts com phone_whatsapp terminando nesses digitos
+    3. Exige approval_queue.sent_at do canal whatsapp <= 7 dias atras
+       para o mesmo company_id (mitigacao de spoofing)
+
+    Returns:
+        Dict com {company_id, contact_id, contact_name, school_name, queue_id}
+        se for reply valida, ou {} se nao for.
+    """
+    from database.supabase_client import db
+    from datetime import datetime, timezone, timedelta
+
+    clean_sender = sender_jid.replace("@s.whatsapp.net", "").replace("@lid", "")
+    digits = "".join(c for c in clean_sender if c.isdigit())
+    if len(digits) < 9:
+        return {}
+    tail = digits[-9:]
+
+    try:
+        contacts = db.client.table("contacts").select(
+            "id,full_name,phone_whatsapp,company_id"
+        ).not_.is_("phone_whatsapp", "null").execute().data or []
+    except Exception as e:
+        logger.debug(f"school_reply contacts query erro: {e}")
+        return {}
+
+    match_contact = None
+    for c in contacts:
+        wpp = "".join(ch for ch in (c.get("phone_whatsapp") or "") if ch.isdigit())
+        if wpp and wpp.endswith(tail):
+            match_contact = c
+            break
+
+    if not match_contact:
+        return {}
+
+    company_id = match_contact.get("company_id")
+    if not company_id:
+        return {}
+
+    # Mitigacao de spoofing: exige whatsapp enviado <= 7 dias
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    try:
+        recent = db.client.table("approval_queue").select(
+            "id,sent_at,subject"
+        ).eq("company_id", company_id).eq("channel", "whatsapp").eq(
+            "status", "sent"
+        ).gte("sent_at", cutoff).order("sent_at", desc=True).limit(1).execute().data or []
+    except Exception as e:
+        logger.debug(f"school_reply approval_queue query erro: {e}")
+        return {}
+
+    if not recent:
+        logger.info(
+            "Possivel reply de escola sem sent recente — ignorando",
+            extra={"sender": clean_sender, "company_id": company_id}
+        )
+        return {}
+
+    queue_id = recent[0].get("id")
+
+    # Buscar nome da escola
+    school_name = ""
+    try:
+        comp = db.client.table("companies").select("name").eq(
+            "id", company_id
+        ).single().execute()
+        school_name = (comp.data or {}).get("name", "")
+    except Exception:
+        pass
+
+    return {
+        "company_id": company_id,
+        "contact_id": match_contact.get("id"),
+        "contact_name": match_contact.get("full_name") or "",
+        "school_name": school_name,
+        "queue_id": queue_id,
+    }
+
+
+def _handle_school_reply(match: dict, text: str, sender_jid: str) -> None:
+    """Processa reply de escola SEM responder automaticamente.
+
+    1. Atualiza approval_queue.replied_at
+    2. Insere interaction (type=whatsapp_replied)
+    3. Captura memoria (memory_capture com channel=whatsapp)
+    4. Notifica Fernando (NAO responde pra escola)
+
+    IAlex NUNCA responde automaticamente a escola. Fernando decide
+    se quer gerar uma sugestao manualmente.
+    """
+    from database.supabase_client import db
+    from datetime import datetime, timezone
+
+    company_id = match["company_id"]
+    contact_id = match.get("contact_id")
+    queue_id = match.get("queue_id")
+    school_name = match.get("school_name") or "escola"
+    contact_name = match.get("contact_name") or "contato"
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 1. Marcar replied_at na fila
+    try:
+        db.client.table("approval_queue").update({
+            "replied_at": now_iso,
+        }).eq("id", queue_id).execute()
+    except Exception as e:
+        logger.error(f"Erro ao marcar replied_at: {e}")
+
+    # 2. Registrar interacao
+    try:
+        db.insert_interaction({
+            "company_id": company_id,
+            "contact_id": contact_id,
+            "type": "whatsapp_replied",
+            "channel": "whatsapp",
+            "subject": f"Reply via WhatsApp de {contact_name}",
+            "content": text[:2000],
+            "metadata": {"queue_id": queue_id, "sender_jid": sender_jid},
+        })
+    except Exception as e:
+        logger.error(f"Erro ao inserir interaction: {e}")
+
+    # 3. Capturar memoria (lead quente)
+    try:
+        from tools.memory_capture import memory_capture
+        memory_capture.capture_email_event(
+            company_id=company_id,
+            contact_id=contact_id,
+            event_type="replied",
+            metadata={"reply_text": text[:500]},
+            channel="whatsapp",
+        )
+    except Exception as e:
+        logger.debug(f"memory_capture skip: {e}")
+
+    # 4. Notificar Fernando — NUNCA responde a escola
+    try:
+        bridge = get_bridge()
+        owner_num = os.getenv("IALEX_OWNER_NUMBER", "")
+        owner_lid = os.getenv("IALEX_OWNER_LID", "")
+        dest = owner_num
+        if owner_lid and not owner_num:
+            dest = f"{owner_lid}@lid"
+
+        if dest:
+            first = contact_name.split()[0] if contact_name else "contato"
+            preview = text[:500] + ("..." if len(text) > 500 else "")
+            notify = (
+                f"🔥 *Lead quente* — resposta no WhatsApp\n\n"
+                f"🏫 {school_name}\n"
+                f"👤 {first}\n\n"
+                f"💬 _\"{preview}\"_\n\n"
+                f"_Quer que eu sugira uma resposta? (diga 'sugerir resposta WhatsApp pro {school_name}')_"
+            )
+            bridge.send_message(dest, notify)
+    except Exception as e:
+        logger.error(f"Erro ao notificar Fernando sobre reply: {e}")
+
+    logger.info(
+        "Reply de escola processado (sem resposta automatica)",
+        extra={"company_id": company_id, "queue_id": queue_id}
+    )
+
+
 def _is_from_owner(sender: str) -> bool:
     """Verifica se a mensagem e de um numero/LID autorizado.
     Whatsapp moderno envia LIDs opacos (ex: 59824700190908@lid) em vez de
@@ -371,6 +541,25 @@ def webhook():
 
             # Verificar se e do dono
             if not _is_from_owner(sender):
+                # Antes de rejeitar, tentar detectar se eh reply de escola
+                # (precisa extrair text primeiro — pode ser text ou extendedText)
+                try:
+                    _reply_text = msg.get("text", "") or ""
+                    if not _reply_text:
+                        _mc = msg.get("message", {}) or {}
+                        _reply_text = (
+                            _mc.get("conversation", "")
+                            or _mc.get("extendedTextMessage", {}).get("text", "")
+                            or ""
+                        )
+                    if _reply_text:
+                        _match = _try_match_school_reply(sender, sender_jid, _reply_text)
+                        if _match:
+                            _handle_school_reply(_match, _reply_text, sender_jid)
+                            return jsonify({"status": "school_reply_processed"}), 200
+                except Exception as _e:
+                    logger.debug(f"school_reply detection skip: {_e}")
+
                 # Log detalhado para facilitar adicao de LIDs novos autorizados
                 is_lid = "@lid" in sender_jid
                 logger.warning(

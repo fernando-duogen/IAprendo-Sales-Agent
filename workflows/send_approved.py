@@ -56,17 +56,33 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
         to_email = None
         to_name = "Diretor(a)"
         to_phone = None
+        to_phone_whatsapp = None
         if contact_id:
             try:
-                c = db.client.table("contacts").select("full_name,email,phone").eq("id", contact_id).single().execute()
+                c = db.client.table("contacts").select("full_name,email,phone,phone_whatsapp").eq("id", contact_id).single().execute()
                 if c.data:
                     to_email = c.data.get("email")
                     to_name = c.data.get("full_name") or "Diretor(a)"
                     to_phone = c.data.get("phone")
+                    to_phone_whatsapp = c.data.get("phone_whatsapp")
             except Exception:
                 pass
 
-        # Se nao tem telefone do contato, buscar da escola
+        # Se eh canal WhatsApp, priorizar phone_whatsapp (celular com 9 dig)
+        # Fallback para qualquer contato da escola com phone_whatsapp
+        if channel == "whatsapp" and not to_phone_whatsapp and company_id:
+            try:
+                cts = db.client.table("contacts").select("id,full_name,phone_whatsapp").eq(
+                    "company_id", company_id
+                ).not_.is_("phone_whatsapp", "null").limit(1).execute().data or []
+                if cts:
+                    to_phone_whatsapp = cts[0].get("phone_whatsapp")
+                    if not to_name or to_name == "Diretor(a)":
+                        to_name = cts[0].get("full_name") or to_name
+            except Exception:
+                pass
+
+        # Se nao tem telefone do contato, buscar da escola (fallback para email)
         if not to_phone and company_id:
             try:
                 comp = db.client.table("companies").select("phone").eq("id", company_id).single().execute()
@@ -80,22 +96,45 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
 
         if channel == "whatsapp":
             # --- WHATSAPP ---
-            if not to_phone:
-                logger.warning("Sem telefone - bloqueando WhatsApp", extra={"queue_id": queue_id})
+            # Escolher melhor telefone: phone_whatsapp > phone (fallback)
+            wpp_number = to_phone_whatsapp or to_phone
+
+            if not wpp_number:
+                logger.warning("Sem telefone WhatsApp - bloqueando", extra={"queue_id": queue_id})
                 try:
                     db.client.table("approval_queue").update({
                         "status": "blocked",
-                        "rejection_reason": "Sem telefone cadastrado para envio WhatsApp.",
+                        "rejection_reason": "Sem phone_whatsapp cadastrado. Rode seed_whatsapp_numbers.",
                     }).eq("id", queue_id).execute()
                 except Exception:
                     pass
                 skipped += 1
-                details.append({"queue_id": queue_id, "status": "blocked", "reason": "sem_telefone"})
+                details.append({"queue_id": queue_id, "status": "blocked", "reason": "sem_phone_whatsapp"})
                 continue
+
             try:
                 from agent.whatsapp_bridge import WhatsAppBridge
                 bridge = WhatsAppBridge()
-                send_result = bridge.send_message(to_phone, body)
+
+                # Validar se numero eh registrado no WhatsApp antes de enviar
+                try:
+                    check = bridge.check_number(wpp_number)
+                    if check.get("exists") is False:
+                        logger.warning("Numero nao registrado no WhatsApp", extra={
+                            "queue_id": queue_id, "number": wpp_number,
+                        })
+                        db.client.table("approval_queue").update({
+                            "status": "blocked",
+                            "rejection_reason": f"Numero {wpp_number} nao registrado no WhatsApp.",
+                        }).eq("id", queue_id).execute()
+                        skipped += 1
+                        details.append({"queue_id": queue_id, "status": "blocked", "reason": "numero_nao_whatsapp"})
+                        continue
+                    # Se exists is None (erro/timeout), continua — evita bloquear tudo por falha do check
+                except Exception as _e:
+                    logger.debug(f"check_number skip: {_e}")
+
+                send_result = bridge.send_message(wpp_number, body)
                 result = {"success": bool(send_result.get("success") or send_result.get("key"))}
             except Exception as e:
                 logger.error(f"WhatsApp send erro: {e}")
