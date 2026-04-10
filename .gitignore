@@ -53,6 +53,7 @@ logs/
 data/raw/*.csv
 data/raw/Censo_2025/
 data/processed/*.csv
+data/processed/mec_snapshot_*.json
 data/exports/*.csv
 !data/raw/.gitkeep
 !data/processed/.gitkeep

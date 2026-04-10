@@ -132,6 +132,26 @@ TOOLS = [
         }
     },
     {
+        "name": "monitor_mec_status",
+        "description": (
+            "Verifica o status da base do MEC (Censo + Catalogo INEP). Pode mostrar "
+            "estatisticas atuais ou comparar com snapshot anterior (delta de novas/"
+            "removidas/mudancas). Use quando Fernando perguntar 'tem novas escolas no "
+            "MEC?', 'a base mudou?', 'quantas escolas estao na base agora?', "
+            "'rodar o monitor do MEC'. Snapshot precisa existir antes — se nao tem, "
+            "diga ao Fernando para rodar o script monitor_mec_diff.py --snapshot."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "comparar": {
+                    "type": "boolean",
+                    "description": "Se True, compara com snapshot anterior (mostra novas/removidas). Default False (so stats atuais).",
+                },
+            },
+        },
+    },
+    {
         "name": "sugerir_angulos_email",
         "description": (
             "Analisa os dados ricos do Censo 2025 de uma escola e sugere 3-5 ANGULOS "
@@ -2784,6 +2804,87 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
 
 
 # ===========================================================================
+# MONITOR MEC (delta de mudancas no Censo + Catalogo)
+# ===========================================================================
+
+def _handle_monitor_mec_status(params: Dict) -> str:
+    """Reporta status atual da base MEC ou delta vs snapshot anterior."""
+    try:
+        from pathlib import Path
+        from config.settings import settings
+        import pandas as pd
+
+        ROOT = Path(__file__).parent.parent
+        csv_path = ROOT / settings.CSV_PATH
+
+        if not csv_path.exists():
+            return json.dumps({
+                "erro": f"CSV nao encontrado em {csv_path}. Rode merge_catalogo_inep.py."
+            })
+
+        # Stats atuais
+        df = pd.read_csv(csv_path, encoding=settings.CSV_ENCODING, low_memory=False)
+        n_total = len(df)
+        n_censo = int((df["FONTE_DADOS"] == "censo_2025").sum()) if "FONTE_DADOS" in df.columns else 0
+        n_catalogo = int((df["FONTE_DADOS"] == "catalogo_inep").sum()) if "FONTE_DADOS" in df.columns else 0
+
+        result = {
+            "csv_path": str(csv_path.relative_to(ROOT)),
+            "total_escolas": n_total,
+            "censo_2025": n_censo,
+            "catalogo_inep": n_catalogo,
+        }
+
+        # Se nao quer comparar, retorna so stats
+        if not params.get("comparar"):
+            result["aviso"] = (
+                "Para comparar com snapshot anterior, use comparar=True. "
+                "Para criar snapshot, rode: scripts/monitor_mec_diff.py --snapshot"
+            )
+            return json.dumps(result, ensure_ascii=False)
+
+        # Comparar com snapshot anterior
+        from scripts.monitor_mec_diff import (
+            latest_snapshot_path, load_snapshot, to_snapshot_dict, compute_diff
+        )
+
+        last_path = latest_snapshot_path()
+        if not last_path:
+            result["erro_snapshot"] = (
+                "Nenhum snapshot anterior. Rode primeiro: "
+                "venv/Scripts/python.exe scripts/monitor_mec_diff.py --snapshot"
+            )
+            return json.dumps(result, ensure_ascii=False)
+
+        snapshot_atual = to_snapshot_dict(df)
+        snapshot_anterior = load_snapshot(last_path)
+        diff = compute_diff(snapshot_anterior, snapshot_atual, threshold_pct=10.0)
+
+        result["snapshot_anterior"] = last_path.name
+        result["delta"] = {
+            "total_anterior": diff["total_old"],
+            "total_atual": diff["total_new"],
+            "delta_total": diff["delta_total"],
+            "novas": len(diff["novas"]),
+            "removidas": len(diff["removidas"]),
+            "mudancas_fonte": len(diff["mudancas_fonte"]),
+            "mudancas_matriculas": len(diff["mudancas_matriculas"]),
+        }
+        # Top 5 novas e top 5 mudancas pra mostrar
+        result["top_novas"] = [
+            {"inep": n["inep"], "name": n["name"], "city": n["city"], "uf": n["uf"], "alvo": n["alvo"]}
+            for n in diff["novas"][:5]
+        ]
+        result["top_mudancas_matriculas"] = [
+            {"name": m["name"], "old": m["old_total"], "new": m["new_total"], "delta_pct": m["delta_pct"]}
+            for m in diff["mudancas_matriculas"][:5]
+        ]
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro no monitor MEC: {str(e)[:200]}"})
+
+
+# ===========================================================================
 # REDES EDUCACIONAIS (agrupamento por cnpj_mantenedora)
 # ===========================================================================
 
@@ -4816,6 +4917,7 @@ TOOL_HANDLERS = {
     # Contatos
     "buscar_contatos": _handle_buscar_contatos,
     "sugerir_angulos_email": _handle_sugerir_angulos_email,
+    "monitor_mec_status": _handle_monitor_mec_status,
     "listar_redes_educacionais": _handle_listar_redes_educacionais,
     "detalhes_rede": _handle_detalhes_rede,
     "enriquecer_contatos": _handle_enriquecer_contatos,
@@ -5742,6 +5844,169 @@ class Brain:
         self.model: str = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
         self.conversation_history: List[Dict[str, Any]] = []
         logger.info("Brain inicializado", extra={"model": self.model})
+
+    def get_weekly_report(self) -> str:
+        """Gera resumo semanal para envio proativo ao Fernando (sexta 17:30).
+
+        Consulta numeros da semana corrente e retorna texto formatado para
+        WhatsApp. Se o scheduler estiver agendado, este metodo e chamado por
+        agent/scheduler.py::_weekly_report.
+
+        Inclui:
+        - Emails enviados, abertos, clicados, respondidos na semana
+        - Novos leads importados/qualificados
+        - Top 3 oportunidades (por Fit IAprendo) sem contato
+        - Top 3 escolas que responderam (acionar follow-up)
+        - 1 insight rapido (alguma metrica relevante)
+        """
+        from datetime import datetime, timedelta, timezone
+        try:
+            from utils.fit_score import calcular_fit_score
+        except ImportError:
+            calcular_fit_score = None
+
+        try:
+            now = datetime.now(timezone.utc)
+            week_ago = (now - timedelta(days=7)).isoformat()
+
+            # 1. Emails da semana
+            queue = db.client.table("approval_queue").select(
+                "id,status,sent_at,opened_at,clicked_at,replied_at,company_id,subject"
+            ).gte("created_at", week_ago).execute().data or []
+
+            sent = [q for q in queue if q.get("sent_at")]
+            opened = [q for q in queue if q.get("opened_at")]
+            clicked = [q for q in queue if q.get("clicked_at")]
+            replied = [q for q in queue if q.get("replied_at")]
+
+            # 2. Leads novos da semana
+            novas = db.client.table("companies").select(
+                "id,name", count="exact"
+            ).gte("created_at", week_ago).execute()
+            n_novas = novas.count or 0
+
+            qualif_semana = db.client.table("companies").select(
+                "id", count="exact"
+            ).gte("updated_at", week_ago).not_.is_("qualification_score", "null").execute()
+            n_qualif = qualif_semana.count or 0
+
+            # 3. Top 3 oportunidades sem contato (por Fit)
+            top_oportunidades = []
+            if calcular_fit_score:
+                comps = db.client.table("companies").select(
+                    "id,name,city,state,matriculas_fund_af,matriculas_medio,"
+                    "nivel_tecnologico,qt_coordenadores,fonte_dados,categoria_privada,"
+                    "admin_dependency,qualification_score"
+                ).execute().data or []
+
+                # IDs com algum contato
+                contatos = db.client.table("contacts").select("company_id").execute().data or []
+                ids_com_contato = {c["company_id"] for c in contatos if c.get("company_id")}
+
+                sem_contato = [c for c in comps if c["id"] not in ids_com_contato]
+                with_fit = []
+                for c in sem_contato:
+                    fit = calcular_fit_score(c)
+                    if fit.get("score"):
+                        with_fit.append({"name": c["name"], "city": c.get("city"), "fit": fit["score"]})
+                with_fit.sort(key=lambda x: x["fit"], reverse=True)
+                top_oportunidades = with_fit[:3]
+
+            # 4. Quem respondeu na semana
+            respondeu = []
+            for q in replied[:5]:
+                try:
+                    cid = q.get("company_id")
+                    if not cid:
+                        continue
+                    c = db.client.table("companies").select("name,city").eq("id", cid).single().execute()
+                    if c.data:
+                        respondeu.append({
+                            "nome": c.data.get("name", "?")[:35],
+                            "cidade": c.data.get("city", ""),
+                            "subject": (q.get("subject") or "")[:40],
+                        })
+                except Exception:
+                    pass
+
+            # 4b. Follow-ups devidos (proativo — usa classificacao comportamental)
+            followups_devidos = {"hot_click": 0, "curious_open": 0, "silent_open": 0, "revival": 0}
+            try:
+                fu_result = json.loads(_handle_classificar_followups({"limite": 30}))
+                for tipo, count in (fu_result.get("por_tipo") or {}).items():
+                    if tipo in followups_devidos:
+                        followups_devidos[tipo] = count
+            except Exception:
+                pass
+            total_followups = sum(followups_devidos.values())
+
+            # 5. Calcular taxas
+            n_sent = len(sent)
+            n_opened = len(opened)
+            n_clicked = len(clicked)
+            n_replied = len(replied)
+            tx_open = round(100 * n_opened / n_sent, 0) if n_sent else 0
+            tx_click = round(100 * n_clicked / n_sent, 0) if n_sent else 0
+            tx_reply = round(100 * n_replied / n_sent, 0) if n_sent else 0
+
+            # 6. Montar texto
+            lines = []
+            lines.append(f"*Semana de {(now - timedelta(days=7)).strftime('%d/%m')} a {now.strftime('%d/%m')}*")
+            lines.append("")
+            lines.append("📤 *Emails*")
+            lines.append(f"  • Enviados: {n_sent}")
+            lines.append(f"  • Abertos: {n_opened} ({int(tx_open)}%)")
+            lines.append(f"  • Cliques: {n_clicked} ({int(tx_click)}%)")
+            lines.append(f"  • Respostas: {n_replied} ({int(tx_reply)}%)")
+            lines.append("")
+            lines.append("🏫 *Leads*")
+            lines.append(f"  • Novos: {n_novas}")
+            lines.append(f"  • Qualificados/atualizados: {n_qualif}")
+
+            if respondeu:
+                lines.append("")
+                lines.append("💬 *Respostas recebidas*")
+                for r in respondeu:
+                    lines.append(f"  • {r['nome']} ({r['cidade']})")
+                lines.append("_Responda essas manualmente — sao quentes._")
+
+            if total_followups > 0:
+                lines.append("")
+                lines.append(f"🔄 *Follow-ups devidos: {total_followups}*")
+                tipo_labels = {
+                    "hot_click": "🔥 hot_click (clicou)",
+                    "curious_open": "👀 curious_open (abriu 2+ vezes)",
+                    "silent_open": "💤 silent_open (abriu 1x e sumiu)",
+                    "revival": "🪦 revival (nao abriu)",
+                }
+                for tipo, n in followups_devidos.items():
+                    if n > 0:
+                        lines.append(f"  • {tipo_labels[tipo]}: {n}")
+                lines.append("_Pergunta: 'roda follow-ups' pra eu gerar pra fila._")
+
+            if top_oportunidades:
+                lines.append("")
+                lines.append("🎯 *Top 3 oportunidades sem contato (Fit IAprendo)*")
+                for o in top_oportunidades:
+                    lines.append(f"  • {o['name'][:35]} — Fit {o['fit']}")
+                lines.append("_Pergunta: 'enriquece contatos do X' pra eu buscar._")
+
+            # 7. Insight rapido
+            lines.append("")
+            if n_replied > 0:
+                lines.append(f"💡 *Insight*: taxa de resposta de {int(tx_reply)}% essa semana — {'acima' if tx_reply > 5 else 'na media'} do padrao B2B.")
+            elif n_sent > 0 and n_opened > 0:
+                lines.append(f"💡 *Insight*: {int(tx_open)}% de abertura mas zero respostas — vale revisar o CTA dos emails.")
+            elif n_sent == 0:
+                lines.append("💡 *Insight*: nenhum email enviado essa semana. Quer rodar o pipeline manualmente?")
+            else:
+                lines.append("💡 *Insight*: semana morna. Posso rodar o pipeline pra gerar novos leads — me avisa.")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.error("Erro ao gerar weekly report", extra={"error": str(e)})
+            return f"Erro ao gerar resumo semanal: {str(e)[:100]}"
 
     def _build_contextual_system_prompt(self, current_message: str) -> str:
         """Constroi system prompt com memorias relevantes injetadas.
