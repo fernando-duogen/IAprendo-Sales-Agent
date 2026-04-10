@@ -1016,8 +1016,10 @@ def _handle_consultar_escolas(params: Dict) -> str:
     """Consulta escolas no banco de dados (leads importados/qualificados)."""
     query = db.client.table("companies").select("*")
 
-    if params.get("nome"):
-        query = query.ilike("name", f"%{params['nome']}%")
+    # Aceita 'nome' ou 'query' (alias para flexibilidade)
+    nome_filtro = params.get("nome") or params.get("query")
+    if nome_filtro:
+        query = query.ilike("name", f"%{nome_filtro}%")
     if params.get("cidade"):
         query = query.ilike("city", f"%{params['cidade']}%")
     if params.get("estado"):
@@ -1044,18 +1046,32 @@ def _handle_consultar_escolas(params: Dict) -> str:
             "inep": s.get("inep_code"),
             "cidade": s.get("city"),
             "estado": s.get("state"),
+            "bairro": s.get("bairro"),
             "endereco": s.get("address"),
             "telefone": s.get("phone"),
             "website": s.get("website"),
             "categoria": s.get("admin_category"),
             "dependencia": s.get("admin_dependency"),
             "niveis_ensino": s.get("education_levels"),
+            "perfil_ensino": s.get("perfil_ensino"),
             "porte": s.get("school_size"),
             "status": s.get("status"),
             "score": s.get("qualification_score"),
             "motivo_score": s.get("qualification_reasoning"),
             "latitude": s.get("latitude"),
             "longitude": s.get("longitude"),
+            # Dados ricos do Censo 2025 (so populados se fonte_dados=censo_2025)
+            "fonte_dados": s.get("fonte_dados"),
+            "total_matriculas": s.get("total_matriculas"),
+            "matriculas_fund_af": s.get("matriculas_fund_af"),
+            "matriculas_medio": s.get("matriculas_medio"),
+            "mat_medio_1": s.get("mat_medio_1"),
+            "mat_medio_2": s.get("mat_medio_2"),
+            "mat_medio_3": s.get("mat_medio_3"),
+            "total_docentes": s.get("total_docentes"),
+            "qt_coordenadores": s.get("qt_coordenadores"),
+            "total_turmas": s.get("total_turmas"),
+            "nivel_tecnologico": s.get("nivel_tecnologico"),
         })
 
     if escolas:
@@ -1218,6 +1234,27 @@ def _handle_buscar_escola_brasil(params: Dict) -> str:
             "mensagem": "Nenhuma escola encontrada com esses filtros na base MEC."
         }, ensure_ascii=False)
 
+    # Helper para extrair valor numerico de forma segura
+    def _safe_num(row, col):
+        if col not in row.index:
+            return None
+        v = row.get(col)
+        if pd.isna(v):
+            return None
+        try:
+            f = float(v)
+            return int(f) if f == int(f) else round(f, 2)
+        except (ValueError, TypeError):
+            return None
+
+    def _safe_str(row, col):
+        if col not in row.index:
+            return None
+        v = row.get(col)
+        if pd.isna(v) or str(v).strip() == "":
+            return None
+        return str(v)
+
     escolas = []
     for _, row in df_found.iterrows():
         lat = row.get("_clean_latitude")
@@ -1230,18 +1267,39 @@ def _handle_buscar_escola_brasil(params: Dict) -> str:
             "inep": str(row.get(col_map["inep_code"])),
             "cidade": row.get(col_map["city"]),
             "uf": row.get(col_map["state"]),
+            "bairro": _safe_str(row, "BAIRRO"),
+            "cep": _safe_str(row, "CEP"),
             "endereco": row.get(col_map["address"]),
             "telefone": row.get(col_map["phone"]) if pd.notna(row.get(col_map["phone"])) else None,
             "categoria": row.get(col_map["admin_category"]),
             "dependencia": row.get(col_map["admin_dependency"]),
             "niveis_ensino": row.get(col_map["education_levels"]),
+            "perfil_ensino": _safe_str(row, "PERFIL_ENSINO"),
             "porte": row.get(col_map["size"]),
-            "localizacao": row.get("Localização") if "Localização" in df.columns else None,
+            "localizacao": _safe_str(row, "LOCALIZACAO"),
             "latitude": lat,
             "longitude": lng,
             "coordenadas_disponiveis": lat is not None and lng is not None,
             "fonte": "base_mec",
+            "fonte_dados": _safe_str(row, "FONTE_DADOS"),
             "in_db": False,
+            # Dados ricos do Censo 2025 (so existem se FONTE_DADOS=censo_2025)
+            "total_matriculas": _safe_num(row, "TOTAL_MATRICULAS"),
+            "matriculas_fund_af": _safe_num(row, "MATRICULAS_FUND_AF"),
+            "matriculas_medio": _safe_num(row, "MATRICULAS_MEDIO"),
+            "mat_medio_1": _safe_num(row, "MAT_MEDIO_1_ANO"),
+            "mat_medio_2": _safe_num(row, "MAT_MEDIO_2_ANO"),
+            "mat_medio_3": _safe_num(row, "MAT_MEDIO_3_ANO"),
+            "mat_6_ano": _safe_num(row, "MAT_6_ANO"),
+            "mat_7_ano": _safe_num(row, "MAT_7_ANO"),
+            "mat_8_ano": _safe_num(row, "MAT_8_ANO"),
+            "mat_9_ano": _safe_num(row, "MAT_9_ANO"),
+            "total_docentes": _safe_num(row, "TOTAL_DOCENTES"),
+            "qt_coordenadores": _safe_num(row, "QT_COORDENADORES"),
+            "total_turmas": _safe_num(row, "TOTAL_TURMAS"),
+            "nivel_tecnologico": _safe_str(row, "NIVEL_TECNOLOGICO"),
+            "banda_larga": _safe_str(row, "BANDA_LARGA"),
+            "lab_informatica": _safe_str(row, "LAB_INFORMATICA"),
         })
 
     return json.dumps({
