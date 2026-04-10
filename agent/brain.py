@@ -5845,6 +5845,103 @@ class Brain:
         self.conversation_history: List[Dict[str, Any]] = []
         logger.info("Brain inicializado", extra={"model": self.model})
 
+    def get_morning_briefing(self) -> str:
+        """Briefing matinal proativo (chamado pelo scheduler 8h dias uteis).
+
+        Foco no que aconteceu DESDE ONTEM:
+        - Respostas recebidas (acionar manual!)
+        - Aberturas/cliques novos
+        - Emails pending na fila pra aprovar
+        - 1 oportunidade quente do dia (top Fit sem contato)
+
+        Mantem CURTO (max 12 linhas) — e mensagem matinal de WhatsApp.
+        """
+        from datetime import datetime, timedelta, timezone
+        try:
+            from utils.fit_score import calcular_fit_score
+        except ImportError:
+            calcular_fit_score = None
+
+        try:
+            now = datetime.now(timezone.utc)
+            yesterday = (now - timedelta(days=1)).isoformat()
+
+            queue = db.client.table("approval_queue").select(
+                "id,status,sent_at,opened_at,clicked_at,replied_at,company_id,subject"
+            ).gte("created_at", (now - timedelta(days=7)).isoformat()).execute().data or []
+
+            # Eventos desde ontem
+            replied_24h = [q for q in queue if q.get("replied_at") and q["replied_at"] >= yesterday]
+            opened_24h = [q for q in queue if q.get("opened_at") and q["opened_at"] >= yesterday]
+            clicked_24h = [q for q in queue if q.get("clicked_at") and q["clicked_at"] >= yesterday]
+
+            # Pending na fila
+            pend = db.client.table("approval_queue").select(
+                "id", count="exact"
+            ).eq("status", "pending").execute()
+            n_pending = pend.count or 0
+
+            # Top 1 oportunidade do dia
+            top_op = None
+            if calcular_fit_score:
+                comps = db.client.table("companies").select(
+                    "id,name,city,matriculas_fund_af,matriculas_medio,nivel_tecnologico,"
+                    "qt_coordenadores,fonte_dados,categoria_privada,admin_dependency"
+                ).eq("status", "raw").limit(50).execute().data or []
+                contatos_ids = {
+                    c["company_id"] for c in (
+                        db.client.table("contacts").select("company_id").execute().data or []
+                    ) if c.get("company_id")
+                }
+                sem_contato = [c for c in comps if c["id"] not in contatos_ids]
+                with_fit = []
+                for c in sem_contato:
+                    f = calcular_fit_score(c)
+                    if f.get("score"):
+                        with_fit.append({"name": c["name"], "fit": f["score"]})
+                with_fit.sort(key=lambda x: x["fit"], reverse=True)
+                top_op = with_fit[0] if with_fit else None
+
+            # Montar briefing curto
+            lines = []
+            lines.append(f"_{now.strftime('%a, %d/%m')}_")
+
+            if replied_24h:
+                lines.append("")
+                lines.append(f"🎉 *{len(replied_24h)} resposta(s) nas ultimas 24h:*")
+                for q in replied_24h[:3]:
+                    cid = q.get("company_id")
+                    try:
+                        c = db.client.table("companies").select("name").eq("id", cid).single().execute()
+                        nome = c.data.get("name", "?")[:35] if c.data else "?"
+                        lines.append(f"  • {nome}")
+                    except Exception:
+                        pass
+                lines.append("_Responda essas hoje — sao quentes._")
+
+            if opened_24h or clicked_24h:
+                lines.append("")
+                lines.append(f"📊 *Tracking 24h:* {len(opened_24h)} aberturas, {len(clicked_24h)} cliques")
+
+            if n_pending > 0:
+                lines.append("")
+                lines.append(f"📨 *{n_pending} email(s) na fila* aguardando sua aprovacao.")
+
+            if top_op:
+                lines.append("")
+                lines.append(f"🎯 *Lead do dia:* {top_op['name'][:40]} (Fit {top_op['fit']})")
+                lines.append("_Pergunta: 'enriquece contatos do X'._")
+
+            if not (replied_24h or opened_24h or clicked_24h or n_pending or top_op):
+                lines.append("")
+                lines.append("Tudo calmo. Nada novo desde ontem.")
+                lines.append("_Quer rodar o pipeline pra gerar leads novos?_")
+
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error("Erro ao gerar morning briefing", extra={"error": str(e)})
+            return f"Erro ao gerar briefing: {str(e)[:100]}"
+
     def get_weekly_report(self) -> str:
         """Gera resumo semanal para envio proativo ao Fernando (sexta 17:30).
 
