@@ -1,3 +1,7 @@
+// Carregar .env do projeto (uma pasta acima) para ter acesso a
+// IALEX_AUTHORIZED_NUMBERS, IALEX_AUTHORIZED_LIDS, etc.
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, Browsers } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const express = require('express');
@@ -10,6 +14,40 @@ const WEBHOOK_URL = 'http://localhost:5001/webhook';
 const PORT = 8090;
 
 const logger = pino({ level: 'warn' });
+
+// ============================================================================
+// Whitelist nativa (defesa em profundidade — espelha webhook_server._is_from_owner)
+// ============================================================================
+// Carrega numeros autorizados do .env (ultimos 10 digitos de cada)
+const AUTHORIZED_NUMBERS = (process.env.IALEX_AUTHORIZED_NUMBERS || '')
+    .split(',').map(s => s.trim()).filter(Boolean)
+    .map(s => s.replace(/\D/g, '').slice(-10))
+    .filter(Boolean);
+// LIDs (WhatsApp Linked IDs) — match exato
+const AUTHORIZED_LIDS = (process.env.IALEX_AUTHORIZED_LIDS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+// OWNER sempre na lista (defensivo)
+if (OWNER_NUMBER) {
+    const ownerTail = OWNER_NUMBER.replace(/\D/g, '').slice(-10);
+    if (ownerTail && !AUTHORIZED_NUMBERS.includes(ownerTail)) {
+        AUTHORIZED_NUMBERS.push(ownerTail);
+    }
+}
+const OWNER_LID = (process.env.IALEX_OWNER_LID || '').trim();
+if (OWNER_LID && !AUTHORIZED_LIDS.includes(OWNER_LID)) {
+    AUTHORIZED_LIDS.push(OWNER_LID);
+}
+
+console.log(`[security] Autorizados: ${AUTHORIZED_NUMBERS.length} numero(s), ${AUTHORIZED_LIDS.length} LID(s)`);
+
+function isAuthorized(jid) {
+    if (!jid) return false;
+    const clean = String(jid).replace('@s.whatsapp.net', '').replace('@lid', '');
+    if (AUTHORIZED_LIDS.includes(clean)) return true;
+    const tail = clean.replace(/\D/g, '').slice(-10);
+    if (!tail) return false;
+    return AUTHORIZED_NUMBERS.some(n => tail.endsWith(n));
+}
 
 let sock = null;
 let currentQR = null;
@@ -133,14 +171,21 @@ async function connectToWhatsApp() {
                     res.on('end', () => {
                         try {
                             const response = JSON.parse(body);
-                            if (response.reply) {
+                            if (response.reply && isAuthorized(sender)) {
                                 sock.sendMessage(sender, { text: response.reply });
+                            } else if (response.reply) {
+                                console.warn(`[security] response.reply ignorado — sender ${sender} nao autorizado`);
                             }
                         } catch (e) {}
                     });
                 });
-                req.on('error', () => {
-                    sock.sendMessage(sender, { text: 'IAlex esta inicializando. Tente novamente.' });
+                req.on('error', (err) => {
+                    console.error(`[webhook] erro ao contactar Flask: ${err.message}`);
+                    if (isAuthorized(sender)) {
+                        sock.sendMessage(sender, { text: 'IAlex esta inicializando. Tente novamente.' });
+                    } else {
+                        console.warn(`[security] fallback de erro ignorado — sender ${sender} nao autorizado`);
+                    }
                 });
                 req.write(payload);
                 req.end();

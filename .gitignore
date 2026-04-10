@@ -85,6 +85,9 @@ yarn-error.log*
 
 # WhatsApp auth (sessão do Baileys - NUNCA subir)
 whatsapp-bridge/auth_info/
+whatsapp-bridge/auth_info.bkp*/
+auth_info/
+auth_info.bkp*/
 
 # Dashboard backup (não precisa no repo)
 dashboard_backup/
