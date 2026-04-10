@@ -59,6 +59,14 @@ class QualifierAgent(BaseAgent):
             "qualification_reasoning": parsed["reasoning"],})
         parsed["company_id"] = company_id
         parsed["company_name"] = school_name
+
+        # Capturar memorias uteis do resultado do qualifier (automatico)
+        try:
+            from tools.memory_capture import capture_qualifier_result
+            capture_qualifier_result(company, parsed)
+        except Exception as _e:
+            logger.debug(f"memory_capture skip (qualifier): {_e}")
+
         logger.info("Escola qualificada",
             extra={"company_id": company_id, "score": parsed["score"], "priority": parsed["priority"]})
         return parsed

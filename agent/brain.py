@@ -2364,6 +2364,13 @@ def _handle_registrar_reuniao(params: Dict) -> str:
                 "message_snippet": params.get("notas", ""),
             }).execute()
 
+            # Capturar memorias automaticas da reuniao
+            try:
+                from tools.memory_capture import capture_meeting
+                capture_meeting(company_id, meeting_data)
+            except Exception as _e:
+                logger.debug(f"memory_capture skip (meeting): {_e}")
+
             return json.dumps({
                 "sucesso": True,
                 "mensagem": "Reuniao registrada com sucesso!",
@@ -2600,6 +2607,22 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
     tem_coord_contato = any(c.get("decision_maker_type") == "coordenador_pedagogico" for c in contatos)
     n_contatos_email = sum(1 for c in contatos if c.get("email"))
 
+    # Buscar memorias relevantes da escola
+    memorias_relevantes: List[Dict[str, Any]] = []
+    try:
+        from integrations.memory import memory as _mem
+        if _mem.is_available():
+            mems = _mem.get_for("company", escola["id"], limit=5)
+            for m in (mems or []):
+                memorias_relevantes.append({
+                    "tipo": m.get("category"),
+                    "conteudo": m.get("content"),
+                    "importancia": m.get("importance"),
+                    "fonte": m.get("source"),
+                })
+    except Exception:
+        pass
+
     # Verificar se faz parte de rede
     rede_info = None
     if cnpj_mant:
@@ -2771,6 +2794,27 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
             "foco": "demo",
         })
 
+    # ANGULO 7: CONDICIONAL — retomar interacao anterior (se ha memorias)
+    # Prioriza memorias de alta importancia (insights tipo 'respondeu', 'clicou')
+    mems_altas = [m for m in memorias_relevantes if (m.get("importancia") or 0) >= 7]
+    if mems_altas:
+        _id += 1
+        # Pegar as 2 memorias mais importantes para o gancho
+        ganchos = [m["conteudo"] for m in mems_altas[:2]]
+        angulos.append({
+            "id": _id,
+            "titulo": "Retomar interacao anterior (baseado em memoria)",
+            "descricao": (
+                "Ha memoria importante desta escola. Referenciar o que aconteceu antes e "
+                "continuar a conversa de forma natural — NAO recomecar do zero. "
+                f"Dados do historico: {' | '.join(ganchos)}"
+            ),
+            "dados_destaque": ganchos,
+            "tom_sugerido": "casual",
+            "foco": "apresentacao",
+            "baseado_em_memoria": True,
+        })
+
     # Resumo contextual
     resumo = {
         "total_matriculas": total_mat,
@@ -2790,16 +2834,25 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
         "tem_coord_cadastrado": tem_coord_contato,
     }
 
+    instrucao = (
+        "Apresente os angulos numerados ao Fernando de forma objetiva e aguarde ele "
+        "escolher (por numero ou pedir outro). Quando ele escolher, chame gerar_email "
+        "passando: angulo (descricao do angulo escolhido), dados_destaque (da lista do "
+        "angulo) e tom (tom_sugerido ou o que Fernando pedir diferente)."
+    )
+    if mems_altas:
+        instrucao += (
+            " IMPORTANTE: esta escola tem memorias de alta importancia. Ao apresentar os "
+            "angulos, DESTAQUE que existe historico e RECOMENDE o angulo 'Retomar interacao "
+            "anterior' como primeira opcao — continuar conversa e muito melhor que recomecar."
+        )
+
     return json.dumps({
         "escola": name,
         "resumo_escola": resumo,
         "angulos_sugeridos": angulos,
-        "instrucao": (
-            "Apresente os angulos numerados ao Fernando de forma objetiva e aguarde ele "
-            "escolher (por numero ou pedir outro). Quando ele escolher, chame gerar_email "
-            "passando: angulo (descricao do angulo escolhido), dados_destaque (da lista do "
-            "angulo) e tom (tom_sugerido ou o que Fernando pedir diferente)."
-        ),
+        "memorias_relevantes": memorias_relevantes,
+        "instrucao": instrucao,
     }, ensure_ascii=False)
 
 
@@ -3807,37 +3860,44 @@ def _handle_gerar_email(params: Dict) -> str:
     except Exception as _e:
         logger.debug(f"RAG email examples skip: {_e}")
 
-    # === Persona adaptativa ===
+    # === Memorias da escola (SEMPRE injeta quando existem) ===
+    memory_ctx = ""
+    try:
+        from integrations.memory import memory as _mem
+        if _mem.is_available():
+            mems = _mem.get_for("company", escola["id"], limit=5)
+            if mems:
+                memory_ctx = (
+                    "\n== MEMORIAS DESTA ESCOLA (use para personalizar e continuar historia) ==\n"
+                    + _mem.format_for_context(mems)
+                    + "\nUse essas informacoes para referenciar interacoes passadas naturalmente "
+                    "ou adaptar tom/argumentos. NAO recomece do zero se ha historico relevante."
+                )
+    except Exception:
+        pass
+
+    # === Contexto de interacoes passadas (SEMPRE) ===
+    interaction_ctx = ""
+    try:
+        ints = db.client.table("approval_queue").select(
+            "opened_at,clicked_at,replied_at"
+        ).eq("company_id", escola["id"]).eq("status", "sent").limit(5).execute().data or []
+        if any(i.get("replied_at") for i in ints):
+            interaction_ctx = "\n== INTERACAO PASSADA: Esta escola JA RESPONDEU a um email anterior (sinal forte de interesse)."
+        elif any(i.get("clicked_at") for i in ints):
+            interaction_ctx = "\n== INTERACAO PASSADA: Esta escola JA CLICOU em link de email anterior (interesse demonstrado)."
+        elif any(i.get("opened_at") for i in ints):
+            interaction_ctx = "\n== INTERACAO PASSADA: Esta escola JA ABRIU emails anteriores."
+    except Exception:
+        pass
+
+    # === Persona adaptativa (SO quando persona_mode=adaptativo) ===
     persona_section = ""
     try:
         from integrations.pipeline_config import pipeline_config
         cfg = pipeline_config.get_config()
         if cfg.get("persona_mode") == "adaptativo":
-            # Buscar memorias da escola para contexto de persona
-            memory_ctx = ""
-            try:
-                from integrations.memory import memory as _mem
-                mems = _mem.get_for("company", escola["id"], limit=5)
-                if mems:
-                    memory_ctx = "\nMemorias/sinais desta escola:\n" + _mem.format_for_context(mems)
-            except Exception:
-                pass
-            # Buscar interacoes passadas (click? reply?)
-            interaction_ctx = ""
-            try:
-                ints = db.client.table("approval_queue").select(
-                    "opened_at,clicked_at,replied_at"
-                ).eq("company_id", escola["id"]).eq("status", "sent").limit(5).execute().data or []
-                if any(i.get("replied_at") for i in ints):
-                    interaction_ctx = "\nEsta escola JA RESPONDEU a um email anterior (sinal forte de interesse)."
-                elif any(i.get("clicked_at") for i in ints):
-                    interaction_ctx = "\nEsta escola JA CLICOU em link de email anterior (interesse demonstrado)."
-                elif any(i.get("opened_at") for i in ints):
-                    interaction_ctx = "\nEsta escola JA ABRIU emails anteriores."
-            except Exception:
-                pass
-
-            persona_section = f"""
+            persona_section = """
 == PERSONA ADAPTATIVA (ATIVO) ==
 Classifique esta escola em UMA das 4 personas e adapte TOM, ARGUMENTOS e CTA:
 
@@ -3856,12 +3916,14 @@ Classifique esta escola em UMA das 4 personas e adapte TOM, ARGUMENTOS e CTA:
 4. ENTUSIASTA — escola que ja interagiu positivamente (clicou, respondeu, memoria positiva)
    Tom: caloroso, parceiro. Fale de proximos passos, piloto, case de sucesso.
    CTA: "Quando podemos comecar?"
-{memory_ctx}{interaction_ctx}
 
 INDIQUE a persona escolhida no campo "reasoning" da resposta.
 """
     except Exception:
         pass
+
+    # Juntar memorias + interacoes + persona numa unica secao de contexto
+    persona_section = persona_section + memory_ctx + interaction_ctx
 
     # ============ DADOS RICOS DO CENSO ============
     angulo = params.get("angulo", "").strip()

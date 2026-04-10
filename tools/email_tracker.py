@@ -284,9 +284,9 @@ class EmailTracker:
             field_name, interaction_type = field_map[event_type]
             event_date = event.get("date", datetime.utcnow().isoformat())
 
-            # Buscar item na fila para obter company_id
+            # Buscar item na fila para obter company_id + subject (memory_capture usa)
             queue_result = db.client.table("approval_queue") \
-                .select("id, company_id, contact_id, " + field_name) \
+                .select("id, company_id, contact_id, subject, " + field_name) \
                 .eq("id", queue_id) \
                 .execute()
 
@@ -320,6 +320,21 @@ class EmailTracker:
                 interaction_data["contact_id"] = queue_item["contact_id"]
 
             db.insert_interaction(interaction_data)
+
+            # Capturar memoria automatica para eventos relevantes
+            try:
+                from tools.memory_capture import capture_email_event
+                capture_email_event(
+                    queue_item["company_id"],
+                    event_type,
+                    {
+                        "event_date": event_date,
+                        "queue_id": queue_id,
+                        "subject": queue_item.get("subject", ""),
+                    },
+                )
+            except Exception as _e:
+                logger.debug(f"memory_capture skip (email): {_e}")
 
             logger.debug(
                 "Evento Brevo processado",
