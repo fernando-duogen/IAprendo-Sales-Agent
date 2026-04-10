@@ -132,6 +132,25 @@ TOOLS = [
         }
     },
     {
+        "name": "sugerir_angulos_email",
+        "description": (
+            "Analisa os dados ricos do Censo 2025 de uma escola e sugere 3-5 ANGULOS "
+            "concretos para um email personalizado, com justificativa baseada em numeros "
+            "reais (matriculas por etapa, equipe, nivel tec, pertence a rede, etc.). "
+            "USE SEMPRE ANTES de gerar_email, exceto se Fernando ja indicou explicitamente "
+            "o angulo na mensagem dele. Exemplos de uso: Fernando diz 'gera email pro X' -> "
+            "chame sugerir_angulos_email -> apresente os angulos numerados -> espere Fernando "
+            "escolher -> entao chame gerar_email passando o angulo escolhido."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {"type": "string", "description": "Nome da escola (busca parcial)"},
+                "escola_id": {"type": "string", "description": "ID da escola (UUID) — alternativa"},
+            },
+        },
+    },
+    {
         "name": "listar_redes_educacionais",
         "description": (
             "Lista REDES/GRUPOS EDUCACIONAIS presentes no banco — escolas que compartilham o mesmo "
@@ -324,11 +343,16 @@ TOOLS = [
     },
     {
         "name": "gerar_email",
-        "description": "Gera um email de prospecção para uma escola. Dois modos:\n"
-                       "- modo='ia' (default): IA gera email personalizado do zero\n"
-                       "- modo='template': usa template salvo no banco, substituindo variaveis\n"
-                       "Quando Fernando pedir 'usa template', passe modo='template'. "
-                       "O email vai para a fila de aprovação.",
+        "description": (
+            "Gera um email de prospeccao para uma escola. IMPORTANTE: antes de chamar esta "
+            "tool, use sugerir_angulos_email para apresentar opcoes de angulo ao Fernando e "
+            "so chame gerar_email depois que ele escolher. Excecao: se Fernando ja indicou o "
+            "angulo/foco/tom na mensagem dele, pode chamar direto.\n\n"
+            "Dois modos:\n"
+            "- modo='ia' (default): IA gera email personalizado do zero usando angulo + dados\n"
+            "- modo='template': usa template salvo no banco, substituindo variaveis\n\n"
+            "O email vai para a fila de aprovacao (NUNCA envia direto)."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -336,8 +360,28 @@ TOOLS = [
                 "contato_nome": {"type": "string", "description": "Nome do decisor/contato"},
                 "contato_cargo": {"type": "string", "description": "Cargo do contato (ex: Diretor, Coordenador)"},
                 "contato_email": {"type": "string", "description": "Email do contato"},
-                "tom": {"type": "string", "description": "Tom do email: formal, amigavel, direto (default: amigavel)"},
+                "tom": {"type": "string", "description": "Tom: formal, amigavel, direto, casual, tecnico, estrategico (default: amigavel)"},
                 "foco": {"type": "string", "description": "Foco do email: apresentacao, demo, case de sucesso, convite evento (default: apresentacao)"},
+                "angulo": {
+                    "type": "string",
+                    "description": (
+                        "ANGULO narrativo do email (gancho principal). Exemplos: 'ENEM — "
+                        "focar nos alunos do medio', 'Rede Marista — proposta institucional "
+                        "para as 5 unidades', 'Coordenacao pedagogica — acompanhamento de "
+                        "aprendizagem', 'Contraturno — uso do tempo integral'. Geralmente "
+                        "vem do angulo que Fernando escolheu dentre os sugeridos por "
+                        "sugerir_angulos_email."
+                    ),
+                },
+                "dados_destaque": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Lista de dados concretos do Censo que devem aparecer no email (max 2-3). "
+                        "Exemplos: ['1026 alunos no ensino medio', '5 coordenadores pedagogicos', "
+                        "'5 unidades na rede Marista']."
+                    ),
+                },
                 "modo": {"type": "string", "enum": ["ia", "template"], "description": "Modo: 'ia' (IA gera do zero) ou 'template' (usa template salvo). Default: ia"},
                 "template_nome": {"type": "string", "description": "Nome do template a usar (se modo=template). Se nao informado, usa o template padrao."},
                 "canal": {"type": "string", "enum": ["email", "whatsapp", "ambos"], "description": "Canal de envio: 'email' (default), 'whatsapp' (msg curta), 'ambos' (gera email + whatsapp)."}
@@ -2481,6 +2525,265 @@ def _handle_buscar_contatos(params: Dict) -> str:
 
 
 # ===========================================================================
+# SUGESTAO DE ANGULOS PARA EMAIL (evita "cara de IA")
+# ===========================================================================
+
+def _handle_sugerir_angulos_email(params: Dict) -> str:
+    """Analisa dados ricos da escola e sugere angulos narrativos para o email.
+
+    Objetivo: evitar que Fernando peca 'gera um email' e o IAlex gere algo
+    generico. Primeiro, o IAlex oferece ate 5 angulos concretos baseados em
+    dados reais da escola — Fernando escolhe, e SO ENTAO o email e gerado.
+    """
+    # Buscar escola
+    escola_id = params.get("escola_id")
+    nome = params.get("escola_nome", "").strip()
+
+    if escola_id:
+        r = db.client.table("companies").select("*").eq("id", escola_id).limit(1).execute()
+    elif nome:
+        r = db.client.table("companies").select("*").ilike("name", f"%{nome}%").limit(1).execute()
+    else:
+        return json.dumps({"erro": "Informe escola_nome ou escola_id."})
+
+    if not r.data:
+        return json.dumps({"erro": f"Escola '{nome}' nao encontrada no banco."})
+
+    escola = r.data[0]
+    fonte = escola.get("fonte_dados") or ""
+    total_mat = escola.get("total_matriculas") or 0
+    fund_af = escola.get("matriculas_fund_af") or 0
+    medio = escola.get("matriculas_medio") or 0
+    alvo = fund_af + medio
+    nivel_tech = escola.get("nivel_tecnologico") or ""
+    qt_coord = escola.get("qt_coordenadores") or 0
+    docentes = escola.get("total_docentes") or 0
+    turmas = escola.get("total_turmas") or 0
+    mat_integral = escola.get("matriculas_integral") or 0
+    perc_integral = escola.get("perc_integral")
+    categoria = escola.get("categoria_privada") or ""
+    dep = escola.get("admin_dependency") or ""
+    cnpj_mant = escola.get("cnpj_mantenedora") or ""
+    name = escola.get("name", "?")
+
+    # Contar contatos disponiveis
+    contatos = []
+    try:
+        ct = db.client.table("contacts").select(
+            "full_name,role,email,decision_maker_type"
+        ).eq("company_id", escola["id"]).execute()
+        contatos = ct.data or []
+    except Exception:
+        pass
+
+    tem_diretor = any(c.get("decision_maker_type") == "diretor" for c in contatos)
+    tem_coord_contato = any(c.get("decision_maker_type") == "coordenador_pedagogico" for c in contatos)
+    n_contatos_email = sum(1 for c in contatos if c.get("email"))
+
+    # Verificar se faz parte de rede
+    rede_info = None
+    if cnpj_mant:
+        from collections import defaultdict
+        all_r = db.client.table("companies").select(
+            "id,name,matriculas_fund_af,matriculas_medio"
+        ).eq("cnpj_mantenedora", cnpj_mant).execute()
+        rede_escolas = all_r.data or []
+        if len(rede_escolas) >= 2:
+            rede_alvo_total = sum(
+                int((e.get("matriculas_fund_af") or 0) + (e.get("matriculas_medio") or 0))
+                for e in rede_escolas
+            )
+            rede_info = {
+                "unidades": len(rede_escolas),
+                "alvo_total": rede_alvo_total,
+                "nome_rede": _derivar_nome_rede(rede_escolas),
+            }
+
+    # Escola do catalogo: ha menos dados, angulos mais genericos
+    if fonte == "catalogo_inep" or total_mat == 0:
+        return json.dumps({
+            "escola": name,
+            "aviso": (
+                "Escola do Catalogo INEP — sem dados do Censo 2025. Angulos baseados "
+                "apenas em informacoes basicas (endereco, telefone, porte declarado)."
+            ),
+            "dados_limitados": True,
+            "contatos_disponiveis": len(contatos),
+            "angulos_sugeridos": [
+                {
+                    "id": 1,
+                    "titulo": "Primeira aproximacao institucional",
+                    "descricao": "Mensagem breve de apresentacao institucional, sem citar numeros.",
+                    "tom_sugerido": "formal",
+                    "foco": "apresentacao",
+                },
+                {
+                    "id": 2,
+                    "titulo": "Conversa direta com diretor(a)",
+                    "descricao": "Pedido direto de 15-20 min de conversa. Sem pitch, so curiosidade.",
+                    "tom_sugerido": "casual",
+                    "foco": "apresentacao",
+                },
+                {
+                    "id": 3,
+                    "titulo": "BNCC e recursos pedagogicos",
+                    "descricao": "Foca no alinhamento BNCC e material pedagogico estruturado.",
+                    "tom_sugerido": "tecnico",
+                    "foco": "apresentacao",
+                },
+            ],
+        }, ensure_ascii=False)
+
+    # Escola do Censo — angulos ricos e concretos
+    angulos = []
+    _id = 0
+
+    # ANGULO 1: sempre "primeira abordagem com dado concreto"
+    _id += 1
+    dados_gancho = []
+    if alvo > 0:
+        dados_gancho.append(f"{alvo} alunos em Fund AF + Medio")
+    if nivel_tech == "Alto":
+        dados_gancho.append("nivel tecnologico Alto")
+    if docentes:
+        dados_gancho.append(f"{docentes} docentes")
+    angulos.append({
+        "id": _id,
+        "titulo": "Primeira abordagem com dado concreto",
+        "descricao": (
+            f"Email leve abrindo com um dado real do Censo ({dados_gancho[0]}), "
+            "sem superlativos. Tom humano, 4-5 frases. Termina com pergunta aberta."
+        ),
+        "dados_destaque": dados_gancho[:2],
+        "tom_sugerido": "casual",
+        "foco": "apresentacao",
+    })
+
+    # ANGULO 2: foco no Ensino Medio (se tem muito medio)
+    if medio >= 100:
+        _id += 1
+        mat_1 = escola.get("mat_medio_1") or 0
+        mat_2 = escola.get("mat_medio_2") or 0
+        mat_3 = escola.get("mat_medio_3") or 0
+        dados_med = [f"{medio} alunos no Ensino Medio"]
+        if mat_3:
+            dados_med.append(f"{mat_3} no 3o ano (pre-ENEM)")
+        angulos.append({
+            "id": _id,
+            "titulo": "ENEM e preparacao do Ensino Medio",
+            "descricao": (
+                f"Foco nos {medio} alunos do medio. Abordagem: como o IAprendo ajuda "
+                "na preparacao individualizada pro ENEM e revisao BNCC. Bom para direcao "
+                "pedagogica."
+            ),
+            "dados_destaque": dados_med,
+            "tom_sugerido": "tecnico",
+            "foco": "demo",
+        })
+
+    # ANGULO 3: foco no Fundamental Anos Finais
+    if fund_af >= 100:
+        _id += 1
+        angulos.append({
+            "id": _id,
+            "titulo": "Fund Anos Finais e BNCC 6o-9o",
+            "descricao": (
+                f"Foco nos {fund_af} alunos do Fund Anos Finais. Abordagem: trilhas "
+                "personalizadas por aluno alinhadas a BNCC. Bom para escolas que querem "
+                "reforcar o acompanhamento individual."
+            ),
+            "dados_destaque": [f"{fund_af} alunos em Fund AF"],
+            "tom_sugerido": "tecnico",
+            "foco": "demo",
+        })
+
+    # ANGULO 4: coordenacao pedagogica (se tem)
+    if qt_coord > 0:
+        _id += 1
+        angulos.append({
+            "id": _id,
+            "titulo": "Conversa com a coordenacao pedagogica",
+            "descricao": (
+                f"Escola tem {qt_coord} coordenador(es) pedagogico(s) — decisor tecnico "
+                "claro. Abordagem direta a coordenacao sobre acompanhamento de aprendizagem "
+                "e relatorios por aluno. Evitar conversa com direcao nesse angulo."
+            ),
+            "dados_destaque": [f"{qt_coord} coordenadores pedagogicos", f"{turmas} turmas"],
+            "tom_sugerido": "tecnico",
+            "foco": "apresentacao",
+        })
+
+    # ANGULO 5: rede educacional (se faz parte)
+    if rede_info and rede_info["unidades"] >= 2:
+        _id += 1
+        angulos.append({
+            "id": _id,
+            "titulo": f"Proposta institucional - Rede {rede_info['nome_rede']}",
+            "descricao": (
+                f"A escola faz parte da rede {rede_info['nome_rede']} "
+                f"({rede_info['unidades']} unidades, {rede_info['alvo_total']} alunos alvo "
+                f"no total). Abordagem: conversa institucional com a mantenedora, oferecer "
+                f"piloto numa unidade com potencial de expandir para as outras. Muda a "
+                f"escala do deal drasticamente."
+            ),
+            "dados_destaque": [
+                f"{rede_info['unidades']} unidades na rede {rede_info['nome_rede']}",
+                f"{rede_info['alvo_total']} alunos alvo totais na rede",
+            ],
+            "tom_sugerido": "estrategico",
+            "foco": "apresentacao",
+        })
+
+    # ANGULO 6: ensino integral (se tem muito)
+    if perc_integral and perc_integral >= 20:
+        _id += 1
+        angulos.append({
+            "id": _id,
+            "titulo": "Uso do contraturno / tempo integral",
+            "descricao": (
+                f"Escola tem {perc_integral}% dos alunos em tempo integral ({mat_integral} "
+                f"alunos). Abordagem: IAprendo como atividade estruturada do contraturno, "
+                f"permitindo o professor acompanhar cada aluno sem sobrecarga. Diferencial "
+                f"competitivo para escola que ja investe em integral."
+            ),
+            "dados_destaque": [f"{perc_integral}% em tempo integral", f"{mat_integral} alunos integral"],
+            "tom_sugerido": "estrategico",
+            "foco": "demo",
+        })
+
+    # Resumo contextual
+    resumo = {
+        "total_matriculas": total_mat,
+        "alunos_alvo": alvo,
+        "fund_af": fund_af,
+        "medio": medio,
+        "docentes": docentes,
+        "coordenadores": qt_coord,
+        "nivel_tecnologico": nivel_tech,
+        "categoria_privada": categoria,
+        "dependencia": dep,
+        "eh_rede": rede_info is not None,
+        "rede": rede_info,
+        "contatos_disponiveis": len(contatos),
+        "contatos_com_email": n_contatos_email,
+        "tem_diretor_cadastrado": tem_diretor,
+        "tem_coord_cadastrado": tem_coord_contato,
+    }
+
+    return json.dumps({
+        "escola": name,
+        "resumo_escola": resumo,
+        "angulos_sugeridos": angulos,
+        "instrucao": (
+            "Apresente os angulos numerados ao Fernando de forma objetiva e aguarde ele "
+            "escolher (por numero ou pedir outro). Quando ele escolher, chame gerar_email "
+            "passando: angulo (descricao do angulo escolhido), dados_destaque (da lista do "
+            "angulo) e tom (tom_sugerido ou o que Fernando pedir diferente)."
+        ),
+    }, ensure_ascii=False)
+
+
+# ===========================================================================
 # REDES EDUCACIONAIS (agrupamento por cnpj_mantenedora)
 # ===========================================================================
 
@@ -3183,29 +3486,126 @@ INDIQUE a persona escolhida no campo "reasoning" da resposta.
     except Exception:
         pass
 
+    # ============ DADOS RICOS DO CENSO ============
+    angulo = params.get("angulo", "").strip()
+    dados_destaque = params.get("dados_destaque") or []
+
+    # Montar secao de dados ricos (so se tiver no banco)
+    dados_ricos_section = ""
+    total_mat = escola.get("total_matriculas") or 0
+    if total_mat and escola.get("fonte_dados") == "censo_2025":
+        partes = [f"- Total de alunos: {total_mat}"]
+        fund_af = escola.get("matriculas_fund_af") or 0
+        medio = escola.get("matriculas_medio") or 0
+        if fund_af:
+            partes.append(f"- Fundamental Anos Finais (6o-9o): {fund_af}")
+        if medio:
+            partes.append(f"- Ensino Medio (1o-3o): {medio}")
+        docentes = escola.get("total_docentes") or 0
+        if docentes:
+            partes.append(f"- Docentes: {docentes}")
+        coord = escola.get("qt_coordenadores") or 0
+        if coord:
+            partes.append(f"- Coordenadores pedagogicos: {coord}")
+        turmas = escola.get("total_turmas") or 0
+        if turmas:
+            partes.append(f"- Turmas: {turmas}")
+        nivel_tech = escola.get("nivel_tecnologico") or ""
+        if nivel_tech:
+            partes.append(f"- Nivel tecnologico: {nivel_tech}")
+        categoria = escola.get("categoria_privada") or ""
+        if categoria:
+            partes.append(f"- Categoria: {categoria}")
+        dados_ricos_section = "\n== DADOS REAIS DO CENSO 2025 (use numeros concretos) ==\n" + "\n".join(partes) + "\n"
+
+    # Segmentacao automatica
+    dep = (escola.get("admin_dependency") or "").lower()
+    alvo = int((escola.get("matriculas_fund_af") or 0) + (escola.get("matriculas_medio") or 0))
+    if "privad" in dep:
+        segmento = "privada_grande" if alvo > 500 else "privada_pequena"
+    elif any(p in dep for p in ("municipal", "estadual", "federal")):
+        segmento = "publica"
+    else:
+        segmento = "outra"
+
+    segmento_instrucoes = {
+        "privada_grande": (
+            "Escola privada grande. Foco: diferenciacao competitiva, escalabilidade, "
+            "retorno em imagem/marca da escola. Tom: estrategico, maduro. Evite tratar "
+            "o diretor como iniciante em tecnologia."
+        ),
+        "privada_pequena": (
+            "Escola privada pequena/media. Foco: facilidade de implementacao, sem "
+            "investimento em infra adicional, ganho por aluno. Tom: proximo, praticop. "
+            "Evite jargoes de grandes redes."
+        ),
+        "publica": (
+            "Escola publica. Foco: BNCC, ganho pedagogico comprovado, sem custo para "
+            "famılias. Tom: institucional, respeitoso. NAO fale em 'ROI' ou 'margem'."
+        ),
+        "outra": "Escola sem categoria clara. Use tom neutro e profissional.",
+    }
+
+    angulo_section = ""
+    if angulo:
+        angulo_section = f"\n== ANGULO ESCOLHIDO ==\n{angulo}\n"
+    if dados_destaque:
+        angulo_section += f"\n== DADOS QUE DEVEM APARECER NO EMAIL ==\n" + "\n".join(f"- {d}" for d in dados_destaque) + "\n"
+
     # Gerar email usando OpenAI
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
     model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
-    prompt = f"""Gere um email de prospecção B2B para a escola abaixo.
-Tom: {tom}. Foco: {foco}.
-Produto: IAprendo - plataforma de IA educacional alinhada à BNCC.
-{persona_section}{examples_section}
-Escola: {escola.get('name')}
+    prompt = f"""Voce e Fernando Nienaber, fundador da IAprendo. Escreva um email CURTO e HUMANO para uma escola, SEM CARA DE IA.
+
+== REGRAS ABSOLUTAS (NAO NEGOCIAVEIS) ==
+- NUNCA comece com "Ola [Nome], tudo bem?", "Espero que esteja bem", ou similares vazios.
+- NUNCA use adjetivos exagerados: "incrivel", "excepcional", "revolucionario", "transformador", "inovador", "disruptivo".
+- NUNCA use jargoes corporativos: "otimizar", "maximizar", "alavancar", "impulsionar", "potencializar", "empoderar", "unlocking".
+- NUNCA prometa numeros especificos de melhoria ("30% melhor", "2x mais rapido") a menos que estejam nos dados reais da escola.
+- NUNCA use emojis.
+- NUNCA escreva "IAprendo e uma plataforma incrivel que..."
+- MAXIMO 5 frases no corpo (nao conte saudacao e assinatura).
+
+== COMO ESCREVER ==
+- Abra direto com um DADO CONCRETO da escola (dos dados reais abaixo), nao com saudacao.
+- Em 1 frase, conte por que VOCE esta escrevendo especificamente para essa escola.
+- Em 1 frase, explique o que o IAprendo faz, SEM superlativos — apenas o que ele e, factualmente.
+- Termine com uma PERGUNTA ABERTA, nao um pitch. Ex: "Faz sentido conversar 15 min sobre como isso funciona na pratica?"
+- Assine com "Fernando" (primeiro nome apenas) + linha "IAprendo · BNCC".
+- Tom: como se voce estivesse escrevendo de memoria para um conhecido do setor educacional, NAO como empresa fazendo cold outreach.
+
+== SEGMENTO DETECTADO ==
+{segmento_instrucoes[segmento]}
+
+== TOM E FOCO ==
+Tom solicitado: {tom}. Foco: {foco}.
+{angulo_section}
+{dados_ricos_section}{persona_section}{examples_section}
+
+== ESCOLA ==
+Nome: {escola.get('name')}
 Cidade: {escola.get('city')}/{escola.get('state')}
-Categoria: {escola.get('admin_category')}
-Porte: {escola.get('school_size')}
+Bairro: {escola.get('bairro') or '-'}
+Dependencia: {escola.get('admin_dependency')}
 Niveis: {escola.get('education_levels')}
-Contato: {contato_nome} ({contato_cargo})
 
-Regras:
-- Assunto curto e atrativo (max 60 caracteres)
-- Corpo do email: 3-4 paragrafos curtos
-- Mencione o nome da escola e do contato
-- Termine com CTA claro (agendar demo de 15 min)
-- Assinatura: Fernando Nienaber, IAprendo
-- IMPORTANTE: NAO copie texto literal dos exemplos, apenas inspire-se no estilo
+== CONTATO ==
+Nome: {contato_nome or '(sem nome — use tratamento neutro como "Prezado(a)")'}
+Cargo: {contato_cargo or '-'}
 
-Responda em JSON: {{"assunto": "...", "corpo": "...", "reasoning": "persona escolhida + justificativa"}}"""
+== ASSUNTO ==
+Maximo 60 caracteres. NUNCA use CAIXA ALTA. Use o dado concreto quando possivel.
+Exemplos BONS: "Sobre os 625 alunos do medio no Farroupilha", "IAprendo e o Colegio Marista"
+Exemplos RUINS: "Descubra o poder da IA!!!", "Oportunidade unica para sua escola"
+
+== REGRA DE NUMEROS (CRITICA) ==
+Os UNICOS numeros que voce pode usar no email sao os que estao na secao "DADOS QUE DEVEM APARECER NO EMAIL" acima (se houver) ou os explicitamente listados em "DADOS REAIS DO CENSO 2025". NUNCA invente numeros. NUNCA faca contas combinando dados (ex: somar matriculas). NUNCA confunda dado de escola com dado de rede. Se precisa de um numero e nao esta na lista, escreva sem numero.
+
+== IMPORTANTE ==
+Nao copie texto literal dos exemplos acima, apenas inspire-se no tom humano.
+
+Responda em JSON valido:
+{{"assunto": "...", "corpo": "...", "reasoning": "justifique em 1 frase POR QUE escolheu esse angulo/tom, e cite explicitamente qual dado concreto usou"}}"""
 
     resp = client.chat.completions.create(
         model=model,
@@ -4415,6 +4815,7 @@ TOOL_HANDLERS = {
     "atualizar_escola": _handle_atualizar_escola,
     # Contatos
     "buscar_contatos": _handle_buscar_contatos,
+    "sugerir_angulos_email": _handle_sugerir_angulos_email,
     "listar_redes_educacionais": _handle_listar_redes_educacionais,
     "detalhes_rede": _handle_detalhes_rede,
     "enriquecer_contatos": _handle_enriquecer_contatos,
@@ -4558,13 +4959,18 @@ no banco.
 *Contatos e emails:*
 - Ver contatos de escola → *buscar_contatos*
 - Buscar novos contatos via APIs → *enriquecer_contatos*
-- Criar email personalizado → *gerar_email*
+- **Sugerir angulos para email** → *sugerir_angulos_email* (use ANTES de gerar_email)
+- Criar email personalizado → *gerar_email* (passe o angulo escolhido)
 - Ver fila de aprovacao → *fila_aprovacao*
 - Aprovar email → *aprovar_mensagem*
 - Editar e aprovar → *editar_e_aprovar*
 - Rejeitar email → *rejeitar_mensagem*
 - Disparar emails aprovados → *enviar_aprovados*
 - Gerar follow-ups → *gerar_followups*
+
+*Redes educacionais:*
+- Listar redes (mantenedoras com 2+ unidades) → *listar_redes_educacionais*
+- Detalhes de uma rede especifica → *detalhes_rede*
 
 *Analytics e relatorios:*
 - Resultados de emails (opens, clicks, replies) → *tracking_emails*
@@ -4577,6 +4983,45 @@ no banco.
 - Registrar visita/reuniao → *registrar_reuniao*
 - Qualificar escolas em lote → *operacao_lote* (acao: qualificar)
 - Gerar emails em lote → *operacao_lote* (acao: gerar_emails)
+
+== REGRA CRITICA: FLUXO DE GERACAO DE EMAIL (anti-IA) ==
+Emails com "cara de IA" (genericos, com adjetivos vazios, saudacoes chatas) tem taxa de resposta PESSIMA. Por isso, o fluxo para gerar email e CONVERSACIONAL, nao automatico:
+
+1. Fernando pede "gera um email pro X" / "me manda um email pro X" / "escreve um email pro X".
+
+2. ANTES DE GERAR: chame *sugerir_angulos_email* passando o nome da escola. Essa tool analisa os dados ricos do Censo 2025 (matriculas por etapa, equipe, nivel tec, redes) e retorna 3-5 angulos concretos para a escola especifica.
+
+3. APRESENTE os angulos ao Fernando de forma NUMERADA e CURTA. Exemplo de resposta:
+
+   *Antes de escrever, olha os angulos que fazem sentido pro Marista Rosario (1.871 alunos alvo, 5 coordenadores, nivel Alto):*
+
+   1️⃣ *ENEM focado* — 1026 alunos no medio, falar sobre preparacao ENEM
+   2️⃣ *Rede Marista* — proposta institucional (5 unidades, 4095 alvo total)
+   3️⃣ *Coordenacao pedagogica* — conversa direto com os 5 coordenadores
+   4️⃣ *Primeira abordagem* — dado concreto + pergunta aberta
+
+   *Qual voce quer? Ou prefere outro angulo?* Tambem posso ajustar o tom (casual / estrategico / tecnico).
+
+4. ESPERE Fernando escolher. Quando ele responder "1", "ENEM", "o primeiro", "vai no 2" etc:
+   -> Chame *gerar_email* passando:
+      - escola_nome
+      - angulo: (descricao do angulo escolhido, copia do titulo+descricao)
+      - dados_destaque: (array com os dados concretos do angulo)
+      - tom: (o tom_sugerido do angulo, ou o que Fernando pediu diferente)
+      - foco: (o foco do angulo)
+
+5. MOSTRE o email gerado para Fernando aprovar (REGRA ZERO). NUNCA aprove automaticamente.
+
+EXCECOES ao fluxo:
+- Se Fernando JA disser o angulo na mesma mensagem ("gera email focando em ENEM pro X", "escreve sobre a rede Marista"), voce pode pular *sugerir_angulos_email* e chamar *gerar_email* direto passando o angulo que ele deu.
+- Se Fernando disser "me sugere algo", "voce decide", "escolhe voce" → chame *sugerir_angulos_email* mas ja recomende o melhor angulo da lista (ex: "Minha sugestao: angulo 2 (rede Marista) porque o potencial e muito maior. Quer esse?").
+- Se for escola do *Catalogo INEP* (fonte_dados=catalogo_inep), os angulos sao mais genericos — explique isso ao Fernando antes.
+
+REGRAS DE QUALIDADE (valem sempre para emails):
+- O email deve ter MAXIMO 5 frases no corpo. Se vier maior, peca pro Fernando revisar ou chame de novo.
+- Se o reasoning do email nao citar qual dado concreto foi usado, algo esta errado.
+- Emails com emojis, "Ola [Nome], tudo bem?", adjetivos vazios ou CTA generico NAO sao bons — alerte Fernando e sugira regerar.
+
 
 == REGRA CRITICA: FLUXO DE IMPORTACAO ==
 Quando Fernando pedir para buscar uma escola e depois quiser adicionar ao banco/CRM:
