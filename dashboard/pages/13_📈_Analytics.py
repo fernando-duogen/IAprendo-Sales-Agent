@@ -77,10 +77,17 @@ def load_analytics_data():
     # Companies por status + dados ricos do Censo 2025
     try:
         comps = db.client.table("companies").select(
-            "id,name,status,city,state,admin_category,qualification_score,created_at,"
+            "id,name,status,city,state,admin_category,admin_dependency,categoria_privada,"
+            "qualification_score,created_at,"
             "fonte_dados,total_matriculas,matriculas_fund_af,matriculas_medio,"
             "total_docentes,qt_coordenadores,nivel_tecnologico"
         ).execute().data or []
+        # Calcular Fit IAprendo para cada empresa
+        from utils.fit_score import calcular_fit_score
+        for _c in comps:
+            _fit = calcular_fit_score(_c)
+            _c["_fit"] = _fit["score"] or 0
+            _c["_fit_level"] = _fit["level"]
         data["companies"] = comps
     except Exception:
         data["companies"] = []
@@ -554,6 +561,45 @@ else:
         fig_fonte.update_traces(textposition="inside", textinfo="percent+label")
         fig_fonte.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_fonte, use_container_width=True)
+
+    # --- Distribuicao do Fit Score IAprendo ---
+    st.markdown("")
+    fit_counts = df_comp["_fit_level"].value_counts().reset_index()
+    fit_counts.columns = ["Fit IAprendo", "Escolas"]
+    # Ordenar manualmente: alto, medio, baixo, sem_dados
+    _order_fit = {"alto": 0, "medio": 1, "baixo": 2, "sem_dados": 3}
+    fit_counts["_order"] = fit_counts["Fit IAprendo"].map(_order_fit)
+    fit_counts = fit_counts.sort_values("_order")
+    fit_counts["Fit IAprendo"] = fit_counts["Fit IAprendo"].map({
+        "alto": "🟢 Alto (70+)",
+        "medio": "🟡 Medio (40-69)",
+        "baixo": "🔴 Baixo (<40)",
+        "sem_dados": "⚪ Sem dados",
+    })
+
+    fig_fit_dist = px.bar(
+        fit_counts,
+        x="Fit IAprendo",
+        y="Escolas",
+        color="Fit IAprendo",
+        color_discrete_map={
+            "🟢 Alto (70+)": COLORS["success"],
+            "🟡 Medio (40-69)": COLORS["warning"],
+            "🔴 Baixo (<40)": COLORS["error"],
+            "⚪ Sem dados": "#bdbdbd",
+        },
+        text="Escolas",
+        title="Distribuicao por Fit IAprendo",
+        height=280,
+    )
+    fig_fit_dist.update_traces(textposition="outside")
+    fig_fit_dist.update_layout(
+        showlegend=False,
+        margin=dict(l=0, r=0, t=40, b=0),
+        xaxis_title="",
+        plot_bgcolor="white",
+    )
+    st.plotly_chart(fig_fit_dist, use_container_width=True)
 
     # --- Metricas agregadas ---
     st.markdown("")

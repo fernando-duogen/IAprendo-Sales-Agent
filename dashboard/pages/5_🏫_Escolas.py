@@ -13,6 +13,7 @@ from dashboard.theme import (
     alert_banner, avatar, breadcrumb, timeline_item, COLORS, STATUS_COLORS,
     score_color,
 )
+from utils.fit_score import calcular_fit_score, fit_emoji, fit_cor_hex
 
 apply_theme_no_config()
 
@@ -100,6 +101,12 @@ if st.session_state.escola_detail_id:
     sc = company.get("qualification_score") or 0
     fonte_dados = company.get("fonte_dados") or ""
 
+    # Calcular Fit Score IAprendo
+    fit_result = calcular_fit_score(company)
+    fit_val = fit_result["score"]
+    fit_level = fit_result["level"]
+    fit_motivo = fit_result["motivo"]
+
     # Badge de fonte dos dados (so mostra se for catalogo_inep — aviso)
     fonte_badge_html = ""
     if fonte_dados == "catalogo_inep":
@@ -121,6 +128,20 @@ if st.session_state.escola_detail_id:
 
     bairro_txt = f" &middot; {company.get('bairro')}" if company.get('bairro') else ""
 
+    # Badge do Fit Score (so se tiver dados)
+    fit_badge_html = ""
+    if fit_val is not None:
+        fit_color = fit_cor_hex(fit_level)
+        fit_emoji_char = fit_emoji(fit_level)
+        fit_badge_html = (
+            f'<div style="display:flex; flex-direction:column; align-items:center; '
+            f'padding:0 8px; border-right:1px solid #e0e0e0; margin-right:8px;">'
+            f'<span style="font-size:9px; color:#757575; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Fit</span>'
+            f'<span style="font-size:22px; font-weight:700; color:{fit_color};">{fit_emoji_char} {fit_val}</span>'
+            f'<span style="font-size:9px; color:#757575;">/ 100</span>'
+            f'</div>'
+        )
+
     st.markdown(f"""
     <div class="data-card" style="border-left: 4px solid {COLORS['primary']}; padding: 20px 24px;">
         <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
@@ -134,12 +155,20 @@ if st.session_state.escola_detail_id:
             </div>
             <div style="display:flex; gap:12px; align-items:center;">
                 {status_badge(status_en, status_label)}
-                <span style="font-size:28px; font-weight:700; color:{score_color(sc)};">{sc}</span>
-                <span style="font-size:12px; color:#757575;">/ 100</span>
+                {fit_badge_html}
+                <div style="display:flex; flex-direction:column; align-items:center;">
+                    <span style="font-size:9px; color:#757575; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Score IA</span>
+                    <span style="font-size:22px; font-weight:700; color:{score_color(sc)};">{sc}</span>
+                    <span style="font-size:9px; color:#757575;">/ 100</span>
+                </div>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # Caption com motivo do Fit
+    if fit_val is not None and fit_motivo:
+        st.caption(f"**Fit IAprendo:** {fit_motivo}")
 
     st.markdown("")
 
@@ -678,7 +707,8 @@ else:
     try:
         result = db.client.table("companies").select(
             "id, name, city, state, bairro, status, qualification_score, "
-            "school_size, admin_dependency, inep_code, created_at, fonte_dados, "
+            "school_size, admin_dependency, admin_category, categoria_privada, "
+            "inep_code, created_at, fonte_dados, "
             "matriculas_fund_af, matriculas_medio, total_docentes, "
             "qt_coordenadores, nivel_tecnologico"
         ).order("created_at", desc=True).limit(1000).execute()
@@ -709,6 +739,12 @@ else:
     )
     df["Importado"] = pd.to_datetime(df["created_at"]).dt.strftime("%d/%m/%Y")
 
+    # Fit Score IAprendo (calculado em tempo real)
+    def _calc_fit(row):
+        fit = calcular_fit_score(row.to_dict())
+        return fit["score"] if fit["score"] is not None else 0
+    df["Fit"] = df.apply(_calc_fit, axis=1).astype(int)
+
     # --- Filtros inline (barra horizontal) ---
     st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
     fc1, fc2, fc3, fc4 = st.columns([3, 2, 2, 2])
@@ -727,7 +763,7 @@ else:
         score_range = st.slider("Score", 0, 100, (0, 100), label_visibility="collapsed")
 
     # Segunda linha: filtros dos dados ricos do Censo
-    fc5, fc6, fc7, fc8 = st.columns([2, 2, 2, 2])
+    fc5, fc6, fc7, fc8, fc9 = st.columns([2, 2, 2, 2, 2])
     with fc5:
         tech_options = ["Alto", "Medio", "Baixo"]
         sel_tech = st.multiselect("Tech", tech_options, default=[],
@@ -742,6 +778,10 @@ else:
     with fc8:
         min_medio = st.number_input("Min Medio", min_value=0, max_value=5000, value=0, step=50,
                                      label_visibility="collapsed", placeholder="Min Medio")
+    with fc9:
+        min_fit = st.number_input("Min Fit", min_value=0, max_value=100, value=0, step=5,
+                                   label_visibility="collapsed", placeholder="Min Fit IAprendo",
+                                   help="Fit IAprendo minimo (0-100)")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Aplicar filtros
@@ -761,6 +801,8 @@ else:
         df_f = df_f[df_f["Fund AF"] >= min_fund]
     if min_medio > 0:
         df_f = df_f[df_f["Medio"] >= min_medio]
+    if min_fit > 0:
+        df_f = df_f[df_f["Fit"] >= min_fit]
 
     # --- Metricas ---
     avg = df["Score"].replace(0, pd.NA).dropna().mean()
@@ -787,7 +829,7 @@ else:
         st.session_state.escola_msg = None
 
     # --- Tabela interativa com selecao por clique ---
-    table_cols = ["name", "city", "UF", "Bairro", "Tipo", "Fund AF", "Medio", "Tech", "Coord", "Score", "Status"]
+    table_cols = ["name", "city", "UF", "Bairro", "Tipo", "Fund AF", "Medio", "Tech", "Coord", "Fit", "Score", "Status"]
     col_config = {
         "name": st.column_config.TextColumn("Escola", width="large"),
         "city": st.column_config.TextColumn("Cidade", width="small"),
@@ -809,6 +851,10 @@ else:
         "Coord": st.column_config.NumberColumn(
             "Coord", width="small", disabled=True,
             help="Quantidade de coordenadores pedagogicos",
+        ),
+        "Fit": st.column_config.ProgressColumn(
+            "Fit", min_value=0, max_value=100, width="small",
+            help="Fit IAprendo: 0-100, deterministico, baseado em alvo×tech×coord×categoria",
         ),
         "Score": st.column_config.NumberColumn("Score", min_value=0, max_value=100, width="small"),
         "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
@@ -937,7 +983,7 @@ else:
     csv_cols = [c for c in [
         "name", "city", "UF", "Bairro", "inep_code", "Tipo", "Porte",
         "Fund AF", "Medio", "Tech", "Coord", "Fonte",
-        "Status", "Score",
+        "Status", "Score", "Fit",
     ] if c in df_f.columns]
     csv = df_f[csv_cols].to_csv(index=False)
     st.download_button("Exportar CSV", csv, "escolas.csv", "text/csv", icon=":material/download:")

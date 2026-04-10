@@ -50,13 +50,17 @@ STATUS_ICON = {
 # ======================================================================
 try:
     all_companies = db.client.table("companies").select(
-        "id,name,city,state,status,qualification_score,admin_dependency,school_size,"
-        "fonte_dados,matriculas_fund_af,matriculas_medio,nivel_tecnologico,qt_coordenadores"
+        "id,name,city,state,status,qualification_score,admin_dependency,admin_category,"
+        "categoria_privada,school_size,fonte_dados,matriculas_fund_af,matriculas_medio,"
+        "nivel_tecnologico,qt_coordenadores"
     ).order("qualification_score", desc=True).execute().data or []
 
-    # Calcular alvo (Fund AF + Medio) para cada escola
+    # Calcular alvo (Fund AF + Medio) e Fit Score IAprendo para cada escola
+    from utils.fit_score import calcular_fit_score
     for _c in all_companies:
         _c["_alvo"] = int((_c.get("matriculas_fund_af") or 0) + (_c.get("matriculas_medio") or 0))
+        _fit = calcular_fit_score(_c)
+        _c["_fit"] = _fit["score"] or 0
 
     status_counts = {}
     for c in all_companies:
@@ -115,12 +119,12 @@ with preset_cols[0]:
         st.toast("Top 10 por score selecionadas!")
         st.rerun()
 with preset_cols[1]:
-    if st.button("Top 10 por alvo", use_container_width=True, icon=":material/groups:",
-                 help="Escolas com maior numero de matriculas Fund AF + Medio"):
-        by_alvo = sorted(all_companies, key=lambda x: x.get("_alvo", 0), reverse=True)
-        by_alvo = [c for c in by_alvo if c.get("_alvo", 0) > 0]
-        st.session_state["pipeline_selected_ids"] = [c["id"] for c in by_alvo[:10]]
-        st.toast(f"Top 10 por alunos alvo selecionadas!")
+    if st.button("Top 10 por Fit", use_container_width=True, icon=":material/diamond:",
+                 help="Escolas com maior Fit IAprendo (alvo x tech x coord x categoria)"):
+        by_fit = sorted(all_companies, key=lambda x: x.get("_fit", 0), reverse=True)
+        by_fit = [c for c in by_fit if c.get("_fit", 0) > 0]
+        st.session_state["pipeline_selected_ids"] = [c["id"] for c in by_fit[:10]]
+        st.toast(f"Top 10 por Fit IAprendo selecionadas!")
         st.rerun()
 with preset_cols[2]:
     if st.button("Todas nao processadas", use_container_width=True, icon=":material/fiber_new:"):
@@ -195,6 +199,15 @@ with tab_filter:
             help="Escolas que tem pelo menos 1 coordenador pedagogico (decisor tecnico)",
         )
 
+    # Linha 3 — filtro de Fit Score IAprendo
+    fc9, _, _, _ = st.columns(4)
+    with fc9:
+        filter_min_fit = st.number_input(
+            "Min Fit IAprendo:",
+            min_value=0, max_value=100, value=0, step=5,
+            help="Fit Score minimo (0-100, deterministico, baseado no Censo 2025)",
+        )
+
     if st.button("Aplicar filtros e selecionar", type="primary", icon=":material/filter_alt:"):
         filtered = all_companies
         if filter_status:
@@ -213,6 +226,8 @@ with tab_filter:
             filtered = [c for c in filtered if c.get("fonte_dados") in filter_fonte]
         if filter_com_coord:
             filtered = [c for c in filtered if (c.get("qt_coordenadores") or 0) > 0]
+        if filter_min_fit > 0:
+            filtered = [c for c in filtered if (c.get("_fit") or 0) >= filter_min_fit]
         new_ids = [c["id"] for c in filtered]
         current = set(st.session_state["pipeline_selected_ids"])
         current.update(new_ids)
@@ -228,6 +243,7 @@ with tab_manual:
             "Cidade": c.get("city", ""),
             "Status": STATUS_PT.get(c.get("status", ""), c.get("status", "")),
             "Score": c.get("qualification_score") or 0,
+            "Fit": c.get("_fit", 0),
             "Tipo": c.get("admin_dependency", ""),
             "Alvo": c.get("_alvo", 0),
             "Tech": c.get("nivel_tecnologico") or "-",
@@ -235,13 +251,17 @@ with tab_manual:
         } for c in all_companies])
 
         edited_df = st.data_editor(
-            df_manual[["Selecionar", "Escola", "Cidade", "Status", "Score", "Alvo", "Tech", "Tipo"]],
+            df_manual[["Selecionar", "Escola", "Cidade", "Status", "Score", "Fit", "Alvo", "Tech", "Tipo"]],
             use_container_width=True,
             hide_index=True,
             height=350,
             column_config={
                 "Selecionar": st.column_config.CheckboxColumn("Sel.", default=False, width="small"),
                 "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+                "Fit": st.column_config.ProgressColumn(
+                    "Fit", min_value=0, max_value=100, format="%d",
+                    help="Fit IAprendo: deterministico, baseado em alvo x tech x coord x categoria",
+                ),
                 "Alvo": st.column_config.NumberColumn(
                     "Alvo", width="small",
                     help="Matriculas Fund AF + Medio (segmento IAprendo)",
@@ -251,7 +271,7 @@ with tab_manual:
                     help="Nivel tecnologico (Alto/Medio/Baixo)",
                 ),
             },
-            disabled=["Escola", "Cidade", "Status", "Score", "Alvo", "Tech", "Tipo"],
+            disabled=["Escola", "Cidade", "Status", "Score", "Fit", "Alvo", "Tech", "Tipo"],
             key="pipeline_manual_editor",
         )
         selected_rows = edited_df[edited_df["Selecionar"] == True]

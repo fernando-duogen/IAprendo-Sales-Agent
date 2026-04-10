@@ -132,6 +132,56 @@ TOOLS = [
         }
     },
     {
+        "name": "listar_redes_educacionais",
+        "description": (
+            "Lista REDES/GRUPOS EDUCACIONAIS presentes no banco — escolas que compartilham o mesmo "
+            "CNPJ de mantenedora (ex: Marista, La Salle, Sinodal, etc). Use quando Fernando perguntar "
+            "'quais redes temos no banco', 'qual rede tem mais escolas', 'quantas unidades da La Salle "
+            "temos', 'mostra os grupos educacionais', etc. Retorna cada rede com total de unidades, "
+            "soma de alunos alvo, score medio, e lista das escolas. UTIL para identificar oportunidades "
+            "de venda em rede (negociar uma vez e fechar varias unidades)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "minimo_unidades": {
+                    "type": "integer",
+                    "description": "Minimo de unidades para considerar uma 'rede' (default 2)",
+                },
+                "ordenar_por": {
+                    "type": "string",
+                    "enum": ["unidades", "alunos_alvo", "score_medio"],
+                    "description": "Criterio de ordenacao (default: alunos_alvo)",
+                },
+                "limite": {
+                    "type": "integer",
+                    "description": "Maximo de redes a retornar (default 15)",
+                },
+            },
+        },
+    },
+    {
+        "name": "detalhes_rede",
+        "description": (
+            "Retorna TODAS as unidades de uma rede educacional especifica (por nome da mantenedora ou "
+            "CNPJ). Use quando Fernando pedir 'me mostra todas as unidades do Marista', 'quais La Salle "
+            "temos', 'detalhes da rede X'. Retorna cada unidade com score, status, contatos, alvo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nome_rede": {
+                    "type": "string",
+                    "description": "Nome parcial da rede (ex: 'Marista', 'La Salle', 'Sinodal')",
+                },
+                "cnpj_mantenedora": {
+                    "type": "string",
+                    "description": "CNPJ da mantenedora (alternativa a nome_rede)",
+                },
+            },
+        },
+    },
+    {
         "name": "estatisticas_gerais",
         "description": "Retorna estatisticas completas do CRM: total de escolas por status, contatos, fila de aprovacao, interacoes.",
         "input_schema": {
@@ -2430,6 +2480,251 @@ def _handle_buscar_contatos(params: Dict) -> str:
     return json.dumps({"total": len(contatos), "contatos": contatos}, ensure_ascii=False)
 
 
+# ===========================================================================
+# REDES EDUCACIONAIS (agrupamento por cnpj_mantenedora)
+# ===========================================================================
+
+def _derivar_nome_rede(escolas: List[Dict]) -> str:
+    """Deriva um nome de rede a partir dos nomes das unidades.
+
+    Estrategia: encontrar a SUBSEQUENCIA MAIS LONGA comum no comeco dos
+    nomes das escolas (ignorando palavras genericas). Ex: 'COL MARISTA X',
+    'COL MARISTA Y' -> 'Marista'. 'COL LA SALLE X' -> 'La Salle'.
+    """
+    STOPWORDS = {"COLEGIO", "ESCOLA", "COL", "ESC", "EEF", "EEM", "EMEF",
+                 "INSTITUTO", "CENTRO", "DE", "DA", "DO", "DAS", "DOS", "E",
+                 "ENSINO", "MEDIO", "FUNDAMENTAL", "EDUCACAO", "BASICA",
+                 "ANOS", "FINAIS", "INICIAIS", "EST", "MUN", "MEI", "INF",
+                 "ENS", "FUND", "MED", "PROFISSIONAL", "PROF", "TECNICA",
+                 "TEC", "MUNICIPAL", "ESTADUAL", "FEDERAL", "PRIVADA",
+                 "SEM", "COM"}
+
+    def limpar_nome(nome: str) -> list:
+        """Remove TODAS as stopwords (nao so do inicio) e retorna lista."""
+        palavras = [p.strip(",.-()").upper() for p in (nome or "").split() if p.strip(",.-()")]
+        return [p for p in palavras if p not in STOPWORDS and len(p) >= 2]
+
+    nomes_limpos = [limpar_nome(e.get("name") or "") for e in escolas]
+    nomes_limpos = [n for n in nomes_limpos if n]
+    if not nomes_limpos:
+        return "Rede sem nome"
+
+    # Encontrar prefixo comum (sequencia de palavras)
+    prefixo = []
+    primeiro = nomes_limpos[0]
+    for i in range(min(len(n) for n in nomes_limpos)):
+        palavra = primeiro[i]
+        if all(n[i] == palavra for n in nomes_limpos):
+            prefixo.append(palavra)
+        else:
+            break
+
+    if prefixo:
+        # Palavras incompletas/genericas — forca pegar a segunda palavra tambem
+        INCOMPLETAS = {"LA", "SAO", "SANTA", "SANTO", "DA", "DO", "NOSSA",
+                       "NOSSO", "SENHOR", "SENHORA"}
+        if len(prefixo) == 1 and prefixo[0] in INCOMPLETAS:
+            # Tenta pegar a palavra mais comum na POSICAO 1 (segunda palavra)
+            from collections import Counter
+            segundas = [n[1] for n in nomes_limpos if len(n) > 1]
+            if segundas:
+                seg = Counter(segundas).most_common(1)[0][0]
+                return f"{prefixo[0].title()} {seg.title()}"
+        return " ".join(p.title() for p in prefixo)
+
+    # Fallback: palavra mais comum entre as primeiras nao-stopword
+    from collections import Counter
+    primeiros = [n[0] for n in nomes_limpos if n]
+    if primeiros:
+        return Counter(primeiros).most_common(1)[0][0].title()
+    return "Rede sem nome"
+
+
+def _handle_listar_redes_educacionais(params: Dict) -> str:
+    """Agrupa escolas do banco por cnpj_mantenedora e retorna as redes."""
+    from collections import defaultdict
+
+    minimo = int(params.get("minimo_unidades", 2))
+    ordenar = params.get("ordenar_por", "alunos_alvo")
+    limite = int(params.get("limite", 15))
+
+    r = db.client.table("companies").select(
+        "id,name,city,state,cnpj_mantenedora,qualification_score,"
+        "matriculas_fund_af,matriculas_medio,total_matriculas,status,nivel_tecnologico"
+    ).not_.is_("cnpj_mantenedora", "null").execute()
+
+    # Agrupar por CNPJ
+    grupos = defaultdict(list)
+    for e in r.data or []:
+        cnpj = e.get("cnpj_mantenedora")
+        if cnpj:
+            grupos[cnpj].append(e)
+
+    # Filtrar por minimo de unidades
+    redes = []
+    for cnpj, escolas in grupos.items():
+        if len(escolas) < minimo:
+            continue
+        alvo_total = sum(
+            int((e.get("matriculas_fund_af") or 0) + (e.get("matriculas_medio") or 0))
+            for e in escolas
+        )
+        total_alunos = sum(int(e.get("total_matriculas") or 0) for e in escolas)
+        scores = [e.get("qualification_score") for e in escolas if e.get("qualification_score")]
+        score_medio = round(sum(scores) / len(scores), 1) if scores else 0
+        cidades = sorted(set(e.get("city") or "" for e in escolas))
+        ufs = sorted(set(e.get("state") or "" for e in escolas))
+
+        redes.append({
+            "cnpj_mantenedora": cnpj,
+            "nome_rede": _derivar_nome_rede(escolas),
+            "unidades": len(escolas),
+            "alunos_alvo": alvo_total,
+            "total_alunos": total_alunos,
+            "score_medio": score_medio,
+            "cidades": cidades,
+            "ufs": ufs,
+            "escolas": [
+                {
+                    "id": e["id"],
+                    "nome": e["name"],
+                    "cidade": e.get("city"),
+                    "uf": e.get("state"),
+                    "score": e.get("qualification_score"),
+                    "alvo": int((e.get("matriculas_fund_af") or 0) + (e.get("matriculas_medio") or 0)),
+                    "status": e.get("status"),
+                    "nivel_tecnologico": e.get("nivel_tecnologico"),
+                }
+                for e in escolas
+            ],
+        })
+
+    # Ordenar
+    ordem_key = {
+        "unidades": lambda r: r["unidades"],
+        "alunos_alvo": lambda r: r["alunos_alvo"],
+        "score_medio": lambda r: r["score_medio"],
+    }.get(ordenar, lambda r: r["alunos_alvo"])
+    redes.sort(key=ordem_key, reverse=True)
+
+    # Limitar
+    redes = redes[:limite]
+
+    return json.dumps({
+        "total_redes_encontradas": len(redes),
+        "criterio_minimo": f"{minimo} unidades ou mais",
+        "ordenado_por": ordenar,
+        "redes": redes,
+    }, ensure_ascii=False)
+
+
+def _handle_detalhes_rede(params: Dict) -> str:
+    """Retorna todas as unidades de uma rede por nome ou CNPJ."""
+    from collections import defaultdict
+
+    nome_busca = (params.get("nome_rede") or "").strip()
+    cnpj_busca = (params.get("cnpj_mantenedora") or "").strip()
+
+    if not nome_busca and not cnpj_busca:
+        return json.dumps({"erro": "Informe nome_rede ou cnpj_mantenedora."})
+
+    # Buscar todas as escolas com mantenedora
+    r = db.client.table("companies").select(
+        "*"
+    ).not_.is_("cnpj_mantenedora", "null").execute()
+
+    # Agrupar por CNPJ
+    grupos = defaultdict(list)
+    for e in r.data or []:
+        grupos[e["cnpj_mantenedora"]].append(e)
+
+    # Filtrar pela rede pedida
+    redes_match = []
+    for cnpj, escolas in grupos.items():
+        if cnpj_busca and cnpj == cnpj_busca:
+            redes_match.append((cnpj, escolas))
+            break
+        if nome_busca:
+            # Match se qualquer escola tem o nome buscado
+            if any(nome_busca.lower() in (e.get("name") or "").lower() for e in escolas):
+                if len(escolas) >= 2:  # so redes de verdade
+                    redes_match.append((cnpj, escolas))
+
+    if not redes_match:
+        return json.dumps({"erro": f"Nenhuma rede encontrada para '{nome_busca or cnpj_busca}'."})
+
+    # Se achou varias, mostra todas
+    result_redes = []
+    for cnpj, escolas in redes_match:
+        nome_rede = _derivar_nome_rede(escolas)
+        alvo_total = sum(
+            int((e.get("matriculas_fund_af") or 0) + (e.get("matriculas_medio") or 0))
+            for e in escolas
+        )
+        total_alunos = sum(int(e.get("total_matriculas") or 0) for e in escolas)
+        docentes = sum(int(e.get("total_docentes") or 0) for e in escolas)
+        turmas = sum(int(e.get("total_turmas") or 0) for e in escolas)
+        scores = [e.get("qualification_score") for e in escolas if e.get("qualification_score")]
+        score_medio = round(sum(scores) / len(scores), 1) if scores else 0
+
+        # Contatos de todas as unidades
+        ids = [e["id"] for e in escolas]
+        contatos = []
+        try:
+            ct_r = db.client.table("contacts").select(
+                "full_name,role,email,phone,company_id"
+            ).in_("company_id", ids).execute()
+            contatos_por_id = defaultdict(list)
+            for c in ct_r.data or []:
+                contatos_por_id[c["company_id"]].append(c)
+        except Exception:
+            contatos_por_id = {}
+
+        unidades_detalhadas = []
+        for e in escolas:
+            cts = contatos_por_id.get(e["id"], [])
+            unidades_detalhadas.append({
+                "id": e["id"],
+                "nome": e["name"],
+                "cidade": e.get("city"),
+                "uf": e.get("state"),
+                "bairro": e.get("bairro"),
+                "score": e.get("qualification_score"),
+                "status": e.get("status"),
+                "total_matriculas": e.get("total_matriculas"),
+                "matriculas_fund_af": e.get("matriculas_fund_af"),
+                "matriculas_medio": e.get("matriculas_medio"),
+                "alvo": int((e.get("matriculas_fund_af") or 0) + (e.get("matriculas_medio") or 0)),
+                "nivel_tecnologico": e.get("nivel_tecnologico"),
+                "total_docentes": e.get("total_docentes"),
+                "qt_coordenadores": e.get("qt_coordenadores"),
+                "contatos_count": len(cts),
+                "contatos": [
+                    {"nome": c.get("full_name"), "cargo": c.get("role"), "email": c.get("email")}
+                    for c in cts[:3]  # ate 3 por unidade
+                ],
+            })
+
+        result_redes.append({
+            "nome_rede": nome_rede,
+            "cnpj_mantenedora": cnpj,
+            "unidades": len(escolas),
+            "total_alunos": total_alunos,
+            "alunos_alvo_total": alvo_total,
+            "total_docentes": docentes,
+            "total_turmas": turmas,
+            "score_medio": score_medio,
+            "cidades": sorted(set(e.get("city") or "" for e in escolas)),
+            "ufs": sorted(set(e.get("state") or "" for e in escolas)),
+            "unidades_detalhadas": unidades_detalhadas,
+        })
+
+    return json.dumps({
+        "total": len(result_redes),
+        "redes": result_redes,
+    }, ensure_ascii=False)
+
+
 def _handle_estatisticas_gerais(params: Dict) -> str:
     stats = {}
 
@@ -4120,6 +4415,8 @@ TOOL_HANDLERS = {
     "atualizar_escola": _handle_atualizar_escola,
     # Contatos
     "buscar_contatos": _handle_buscar_contatos,
+    "listar_redes_educacionais": _handle_listar_redes_educacionais,
+    "detalhes_rede": _handle_detalhes_rede,
     "enriquecer_contatos": _handle_enriquecer_contatos,
     # Pipeline e qualificação
     "rodar_pipeline": _handle_rodar_pipeline,
