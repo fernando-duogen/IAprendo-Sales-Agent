@@ -3281,34 +3281,132 @@ def _handle_consultar_interacoes(params: Dict) -> str:
 
 
 def _handle_uso_apis(params: Dict) -> str:
-    query = db.client.table("api_usage").select("api_name,credits_used,success,created_at")
+    """Retorna uso e custo de APIs (Anthropic, OpenAI, Hunter, Apollo, etc).
+
+    Enriquecido com:
+    - USD e BRL reais (coluna cost_usd)
+    - Tokens in/out quando disponivel
+    - Custo do mes atual (filtro por created_at)
+    - Top 3 operacoes mais caras (por endpoint/model)
+    - Insight automatico sobre onde esta concentrado o gasto
+    """
+    from datetime import datetime, timezone
+    from collections import defaultdict
+
+    USD_BRL = 5.50  # fallback se nao conseguir buscar cotacao
+
+    query = db.client.table("api_usage").select(
+        "api_name,endpoint,credits_used,success,created_at,"
+        "prompt_tokens,completion_tokens,total_tokens,model,cost_usd"
+    )
 
     if params.get("api_name"):
         query = query.eq("api_name", params["api_name"])
 
-    result = query.order("created_at", desc=True).limit(100).execute()
+    result = query.order("created_at", desc=True).limit(1000).execute()
+    rows = result.data or []
 
     # Agregar por API
-    apis = {}
-    for row in result.data:
+    apis = defaultdict(lambda: {
+        "chamadas": 0, "creditos": 0, "sucesso": 0, "erro": 0,
+        "cost_usd": 0.0, "tokens_in": 0, "tokens_out": 0,
+    })
+    for row in rows:
         name = row.get("api_name", "?")
-        if name not in apis:
-            apis[name] = {"chamadas": 0, "creditos": 0, "sucesso": 0, "erro": 0}
         apis[name]["chamadas"] += 1
         apis[name]["creditos"] += row.get("credits_used", 0) or 0
         if row.get("success"):
             apis[name]["sucesso"] += 1
         else:
             apis[name]["erro"] += 1
+        if row.get("cost_usd"):
+            apis[name]["cost_usd"] += float(row["cost_usd"])
+        apis[name]["tokens_in"] += (row.get("prompt_tokens") or 0)
+        apis[name]["tokens_out"] += (row.get("completion_tokens") or 0)
 
-    # Limites mensais
+    # Formatar para saida
+    apis_output = {}
+    total_cost_usd = 0.0
+    for name, data in apis.items():
+        cost_usd = round(data["cost_usd"], 4)
+        cost_brl = round(cost_usd * USD_BRL, 2)
+        total_cost_usd += cost_usd
+        apis_output[name] = {
+            "chamadas": data["chamadas"],
+            "sucesso": data["sucesso"],
+            "erro": data["erro"],
+            "creditos": data["creditos"],
+            "tokens_in": data["tokens_in"],
+            "tokens_out": data["tokens_out"],
+            "custo_usd": cost_usd,
+            "custo_brl": cost_brl,
+        }
+
+    # Custo do mes atual
+    now = datetime.now(timezone.utc)
+    primeiro_dia = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    mes_cost_usd = 0.0
+    mes_por_api = defaultdict(float)
+    for row in rows:
+        cost = row.get("cost_usd")
+        if not cost:
+            continue
+        created = row.get("created_at") or ""
+        try:
+            created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            if created_dt >= primeiro_dia:
+                v = float(cost)
+                mes_cost_usd += v
+                mes_por_api[row.get("api_name", "?")] += v
+        except Exception:
+            continue
+
+    # Top 3 operacoes mais caras (por endpoint/model)
+    op_stats = defaultdict(float)
+    for row in rows:
+        if not row.get("cost_usd"):
+            continue
+        key = f"{row.get('api_name', '?')}/{row.get('model') or row.get('endpoint') or '?'}"
+        op_stats[key] += float(row["cost_usd"])
+    top_ops = sorted(op_stats.items(), key=lambda x: x[1], reverse=True)[:3]
+
+    # Insight automatico
+    insight = ""
+    if mes_cost_usd > 0:
+        top_api_mes = max(mes_por_api.items(), key=lambda x: x[1]) if mes_por_api else None
+        if top_api_mes:
+            pct = (top_api_mes[1] / mes_cost_usd) * 100
+            insight = (
+                f"{top_api_mes[0]} consumiu {pct:.0f}% do custo do mes "
+                f"(R$ {top_api_mes[1] * USD_BRL:.2f} de R$ {mes_cost_usd * USD_BRL:.2f})."
+            )
+    elif total_cost_usd == 0:
+        insight = "Nenhum custo registrado com cost_usd. Rows antigas sem tracking."
+    else:
+        insight = f"Custo total registrado: USD {total_cost_usd:.4f}. Sem custo neste mes ainda."
+
+    # Limites mensais (operacionais)
     limites = {"apollo": 60, "snov": 50, "hunter": 25, "perplexity": 200}
-    for api, data in apis.items():
+    for api, data in apis_output.items():
         if api in limites:
-            data["limite_mensal"] = limites[api]
-            data["restante"] = limites[api] - data["creditos"]
+            data["limite_mensal_creditos"] = limites[api]
+            data["creditos_restantes"] = limites[api] - data["creditos"]
 
-    return json.dumps(apis, ensure_ascii=False)
+    return json.dumps({
+        "total_chamadas": sum(d["chamadas"] for d in apis_output.values()),
+        "custo_total_usd": round(total_cost_usd, 4),
+        "custo_total_brl": round(total_cost_usd * USD_BRL, 2),
+        "custo_mes_atual_usd": round(mes_cost_usd, 4),
+        "custo_mes_atual_brl": round(mes_cost_usd * USD_BRL, 2),
+        "mes": now.strftime("%Y-%m"),
+        "por_api": apis_output,
+        "top_operacoes_caras": [
+            {"operacao": op, "custo_usd": round(cost, 4), "custo_brl": round(cost * USD_BRL, 2)}
+            for op, cost in top_ops
+        ],
+        "insight": insight,
+        "taxa_usd_brl": USD_BRL,
+    }, ensure_ascii=False)
 
 
 def _handle_detalhes_escola(params: Dict) -> str:
@@ -3327,13 +3425,34 @@ def _handle_detalhes_escola(params: Dict) -> str:
         return json.dumps({"erro": "Escola nao encontrada."})
 
     # Buscar contatos
-    contatos = db.client.table("contacts").select("full_name,role,email,phone,linkedin_url,source,confidence_score").eq("company_id", escola["id"]).execute()
+    contatos = db.client.table("contacts").select("full_name,role,email,phone,linkedin_url,source,confidence_score,decision_maker_type").eq("company_id", escola["id"]).execute()
 
     # Buscar interacoes recentes
     interacoes = db.client.table("interactions").select("type,subject,created_at").eq("company_id", escola["id"]).order("created_at", desc=True).limit(5).execute()
 
-    # Buscar itens na fila
-    fila = db.client.table("approval_queue").select("id,subject,status,channel,created_at").eq("company_id", escola["id"]).order("created_at", desc=True).limit(5).execute()
+    # Buscar itens na fila (com tracking)
+    fila = db.client.table("approval_queue").select(
+        "id,subject,status,channel,created_at,sent_at,opened_at,clicked_at,replied_at,bounced_at"
+    ).eq("company_id", escola["id"]).order("created_at", desc=True).limit(5).execute()
+
+    # Buscar memorias relevantes da escola
+    memorias_list: List[Dict[str, Any]] = []
+    try:
+        from integrations.memory import memory as _mem
+        if _mem.is_available():
+            mems = _mem.get_for("company", escola["id"], limit=5)
+            for m in (mems or []):
+                memorias_list.append({
+                    "tipo": m.get("memory_type"),
+                    "conteudo": m.get("content"),
+                    "fonte": m.get("source"),
+                    "criado_em": m.get("created_at"),
+                })
+    except Exception:
+        pass
+
+    # Calcular proxima acao sugerida (regra deterministica)
+    proxima_acao = _calcular_proxima_acao(escola, contatos.data or [], fila.data or [])
 
     # Campos ricos do Censo MEC 2025 (incluidos so se preenchidos)
     censo: Dict[str, Any] = {}
@@ -3382,11 +3501,168 @@ def _handle_detalhes_escola(params: Dict) -> str:
             "hubspot_id": escola.get("hubspot_company_id"),
             "fonte_dados": escola.get("fonte_dados"),  # censo_2025 | catalogo_inep | manual
             "censo_mec_2025": censo,  # Dados ricos (so se fonte_dados=censo_2025)
+            "proxima_acao_sugerida": proxima_acao,  # Regra deterministica
+            "memorias_relevantes": memorias_list,  # Top 5 memorias da escola
         },
-        "contatos": [{"nome": c.get("full_name"), "cargo": c.get("role"), "email": c.get("email"), "telefone": c.get("phone"), "linkedin": c.get("linkedin_url"), "fonte": c.get("source")} for c in contatos.data],
+        "contatos": [
+            {
+                "nome": c.get("full_name"),
+                "cargo": c.get("role"),
+                "email": c.get("email"),
+                "telefone": c.get("phone"),
+                "linkedin": c.get("linkedin_url"),
+                "fonte": c.get("source"),
+                "tipo_decisor": c.get("decision_maker_type"),
+            }
+            for c in contatos.data
+        ],
         "interacoes_recentes": [{"tipo": i.get("type"), "assunto": i.get("subject"), "data": i.get("created_at")} for i in interacoes.data],
-        "fila_aprovacao": [{"id": f["id"], "assunto": f.get("subject"), "status": f.get("status"), "canal": f.get("channel")} for f in fila.data],
+        "fila_aprovacao": [
+            {
+                "id": f["id"],
+                "assunto": f.get("subject"),
+                "status": f.get("status"),
+                "canal": f.get("channel"),
+                "enviado_em": f.get("sent_at"),
+                "aberto_em": f.get("opened_at"),
+                "clicado_em": f.get("clicked_at"),
+                "respondido_em": f.get("replied_at"),
+            }
+            for f in fila.data
+        ],
     }, ensure_ascii=False)
+
+
+def _calcular_proxima_acao(escola: Dict, contatos: List[Dict], fila: List[Dict]) -> Dict[str, str]:
+    """Regra deterministica para sugerir proxima acao.
+
+    Baseado em status da escola + presenca de contatos + estado da fila
+    + tracking (sent/opened/replied). Nao usa LLM.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    status = (escola.get("status") or "raw").lower()
+    tem_contatos = len(contatos) > 0
+    tem_email_contato = any(c.get("email") for c in contatos)
+
+    # 1. Se ja respondeu, prioridade maxima: responder manualmente
+    for f in fila:
+        if f.get("replied_at"):
+            return {
+                "acao": "Responder manualmente — escola engajada!",
+                "motivo": "Recebemos resposta desta escola. Eh o momento mais quente do ciclo.",
+                "prioridade": "critica",
+            }
+
+    # 2. Se tem pending na fila, aprovar
+    pendentes = [f for f in fila if f.get("status") == "pending"]
+    if pendentes:
+        return {
+            "acao": "Aprovar email pendente na fila",
+            "motivo": f"Existe(m) {len(pendentes)} mensagem(ns) aguardando sua aprovacao.",
+            "prioridade": "alta",
+        }
+
+    # 3. Se tem sent sem open ha > 5 dias: follow-up silent_open
+    now = datetime.now(timezone.utc)
+    cinco_dias_atras = now - timedelta(days=5)
+    for f in fila:
+        sent_at_raw = f.get("sent_at")
+        if not sent_at_raw or f.get("opened_at"):
+            continue
+        try:
+            sent_dt = datetime.fromisoformat(sent_at_raw.replace("Z", "+00:00"))
+            if sent_dt <= cinco_dias_atras and not f.get("bounced_at"):
+                return {
+                    "acao": "Gerar follow-up (silent_open)",
+                    "motivo": "Email enviado ha mais de 5 dias e nao foi aberto. Candidato a revival.",
+                    "prioridade": "media",
+                }
+        except Exception:
+            pass
+
+    # 4. Sent + opened + no click > 2 dias: curious_open
+    dois_dias_atras = now - timedelta(days=2)
+    for f in fila:
+        opened_at_raw = f.get("opened_at")
+        if not opened_at_raw or f.get("clicked_at"):
+            continue
+        try:
+            opened_dt = datetime.fromisoformat(opened_at_raw.replace("Z", "+00:00"))
+            if opened_dt <= dois_dias_atras:
+                return {
+                    "acao": "Gerar follow-up (curious_open)",
+                    "motivo": "Abriu o email mas nao clicou. Ha 2+ dias — bom momento pra reforcar CTA.",
+                    "prioridade": "media",
+                }
+        except Exception:
+            pass
+
+    # 5. Status-based fallbacks
+    if status == "raw":
+        return {
+            "acao": "Qualificar a escola (rodar qualifier)",
+            "motivo": "Escola ainda nao foi qualificada — sem score nem reasoning.",
+            "prioridade": "media",
+        }
+
+    if status in ("qualified", "filtered") and not tem_contatos:
+        return {
+            "acao": "Enriquecer contatos (Apollo/Hunter ou Perplexity)",
+            "motivo": "Escola qualificada mas sem contatos cadastrados.",
+            "prioridade": "alta",
+        }
+
+    if status in ("qualified", "enriched") and tem_contatos and not tem_email_contato:
+        return {
+            "acao": "Buscar email dos contatos (contact_finder)",
+            "motivo": "Contatos cadastrados mas nenhum tem email.",
+            "prioridade": "alta",
+        }
+
+    if status in ("qualified", "enriched") and tem_email_contato and not fila:
+        return {
+            "acao": "Gerar email (use sugerir_angulos_email primeiro)",
+            "motivo": "Contatos prontos e fila vazia. Bom momento pra primeira abordagem.",
+            "prioridade": "alta",
+        }
+
+    # Caso geral: status qualified/enriched com contatos+email+fila (mas sem pending ativo)
+    # — todos os emails anteriores ja foram enviados, aguardar tracking
+    if status in ("qualified", "enriched") and tem_email_contato and fila:
+        return {
+            "acao": "Aguardar tracking (emails ja enviados)",
+            "motivo": "Ja existe historico de emails na fila. Veja o tracking antes de gerar novo follow-up.",
+            "prioridade": "baixa",
+        }
+
+    if status == "contacted":
+        return {
+            "acao": "Aguardar tracking ou gerar follow-up",
+            "motivo": "Escola ja foi contatada recentemente. Aguarde open/click ou gere follow-up.",
+            "prioridade": "baixa",
+        }
+
+    if status in ("responded", "converted"):
+        return {
+            "acao": "Manter relacionamento (registrar interacao)",
+            "motivo": "Escola engajada. Foque em nutrir e evoluir na jornada.",
+            "prioridade": "media",
+        }
+
+    if status == "rejected":
+        return {
+            "acao": "Nenhuma acao (escola descartada)",
+            "motivo": "Esta escola foi marcada como rejeitada.",
+            "prioridade": "nenhuma",
+        }
+
+    # Default
+    return {
+        "acao": "Revisar status manualmente",
+        "motivo": f"Status atual '{status}' nao tem acao sugerida automatica.",
+        "prioridade": "baixa",
+    }
 
 
 def _handle_gerar_email(params: Dict) -> str:

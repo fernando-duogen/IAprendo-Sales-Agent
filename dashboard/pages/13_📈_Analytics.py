@@ -401,6 +401,63 @@ st.markdown('<hr class="divider">', unsafe_allow_html=True)
 # =============================================================================
 section_header("Custo e ROI", "payments")
 
+# --- Custo do mes atual + projecao ---
+from datetime import datetime, timedelta, timezone
+_now = datetime.now(timezone.utc)
+_primeiro_dia = _now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+_dias_corridos = max(1, (_now - _primeiro_dia).days + 1)
+
+# Quantos dias tem o mes atual?
+if _now.month == 12:
+    _proximo_mes = _now.replace(year=_now.year + 1, month=1, day=1)
+else:
+    _proximo_mes = _now.replace(month=_now.month + 1, day=1)
+_dias_do_mes = (_proximo_mes - _primeiro_dia).days
+
+# Custo do mes atual (so rows com cost_usd preenchido)
+_mes_cost_usd = 0.0
+for a in api_usage:
+    cost = a.get("cost_usd")
+    if not cost:
+        continue
+    created = a.get("created_at") or ""
+    try:
+        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        if created_dt >= _primeiro_dia:
+            _mes_cost_usd += float(cost)
+    except Exception:
+        continue
+
+_mes_cost_brl = _mes_cost_usd * USD_BRL
+_projecao_usd = (_mes_cost_usd / _dias_corridos) * _dias_do_mes if _dias_corridos > 0 else 0
+_projecao_brl = _projecao_usd * USD_BRL
+
+_mes_nome_pt = {
+    1: "Janeiro", 2: "Fevereiro", 3: "Marco", 4: "Abril",
+    5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+    9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+}[_now.month]
+
+cc1, cc2 = st.columns(2)
+with cc1:
+    metric_card(
+        f"Custo de {_mes_nome_pt}",
+        f"R$ {_mes_cost_brl:.2f}",
+        color=COLORS["primary"],
+        icon="calendar_month",
+        delta=f"USD {_mes_cost_usd:.4f} | {_dias_corridos}/{_dias_do_mes} dias",
+    )
+with cc2:
+    metric_card(
+        "Projecao do mes",
+        f"R$ {_projecao_brl:.2f}",
+        color=COLORS["accent"],
+        icon="trending_up",
+        delta=f"ritmo atual ate {_dias_do_mes}/{_now.month:02d}",
+    )
+
+st.markdown("")
+
 api_stats = defaultdict(lambda: {"credits": 0, "cost_usd": 0.0, "tokens_in": 0, "tokens_out": 0})
 for a in api_usage:
     api_name = a.get("api_name", "?")
@@ -451,6 +508,50 @@ if api_stats:
 
         metric_card("Custo/lead qualificado", cost_per_lead, icon="person_search", color=COLORS["info"])
         metric_card("Custo/resposta", cost_per_reply, icon="reply_all", color=COLORS["success"])
+
+    # --- Grafico temporal: custo por dia ultimos 30 dias ---
+    st.markdown("")
+    _30d_ago = _now - timedelta(days=30)
+    _temporal_rows = []
+    for a in api_usage:
+        cost = a.get("cost_usd")
+        if not cost:
+            continue
+        created = a.get("created_at") or ""
+        try:
+            created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            if created_dt >= _30d_ago:
+                _temporal_rows.append({
+                    "dia": created_dt.strftime("%d/%m"),
+                    "api": a.get("api_name", "?"),
+                    "cost_usd": float(cost),
+                })
+        except Exception:
+            continue
+
+    if _temporal_rows:
+        df_temp = pd.DataFrame(_temporal_rows)
+        df_temp_agg = df_temp.groupby(["dia", "api"], as_index=False)["cost_usd"].sum()
+        df_temp_agg["cost_brl"] = df_temp_agg["cost_usd"] * USD_BRL
+
+        fig_temporal = px.bar(
+            df_temp_agg,
+            x="dia",
+            y="cost_brl",
+            color="api",
+            title="Custo por dia (ultimos 30 dias) — agrupado por API",
+            labels={"cost_brl": "Custo (R$)", "dia": "Dia", "api": "API"},
+            height=320,
+        )
+        fig_temporal.update_layout(
+            margin=dict(l=0, r=0, t=40, b=0),
+            plot_bgcolor="white",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            xaxis=dict(categoryorder="category ascending"),
+        )
+        st.plotly_chart(fig_temporal, use_container_width=True)
+    else:
+        st.caption("_Sem custos registrados nos ultimos 30 dias._")
 else:
     st.info("Sem dados de uso de API.")
 
