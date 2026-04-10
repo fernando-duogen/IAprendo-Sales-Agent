@@ -98,6 +98,28 @@ if st.session_state.escola_detail_id:
     status_en = company.get("status", "raw")
     status_label = STATUS_PT.get(status_en, status_en)
     sc = company.get("qualification_score") or 0
+    fonte_dados = company.get("fonte_dados") or ""
+
+    # Badge de fonte dos dados (so mostra se for catalogo_inep — aviso)
+    fonte_badge_html = ""
+    if fonte_dados == "catalogo_inep":
+        fonte_badge_html = (
+            '<div style="display:inline-flex; align-items:center; gap:4px; '
+            'background:#fff3e0; color:#e65100; padding:2px 10px; border-radius:12px; '
+            'font-size:11px; font-weight:600; margin-top:4px;">'
+            '&#9888; Catalogo INEP &middot; sem dados do Censo 2025'
+            '</div>'
+        )
+    elif fonte_dados == "censo_2025":
+        fonte_badge_html = (
+            '<div style="display:inline-flex; align-items:center; gap:4px; '
+            'background:#e8f5e9; color:#2e7d32; padding:2px 10px; border-radius:12px; '
+            'font-size:11px; font-weight:600; margin-top:4px;">'
+            '&#10004; Censo 2025'
+            '</div>'
+        )
+
+    bairro_txt = f" &middot; {company.get('bairro')}" if company.get('bairro') else ""
 
     st.markdown(f"""
     <div class="data-card" style="border-left: 4px solid {COLORS['primary']}; padding: 20px 24px;">
@@ -106,8 +128,9 @@ if st.session_state.escola_detail_id:
             <div style="flex:1;">
                 <div style="font-size:22px; font-weight:700; color:#212121;">{company.get('name', '?')}</div>
                 <div style="font-size:14px; color:#757575; margin-top:2px;">
-                    {company.get('city', '')}/{company.get('state', '')} &middot; INEP: {company.get('inep_code', '')}
+                    {company.get('city', '')}/{company.get('state', '')}{bairro_txt} &middot; INEP: {company.get('inep_code', '')}
                 </div>
+                {fonte_badge_html}
             </div>
             <div style="display:flex; gap:12px; align-items:center;">
                 {status_badge(status_en, status_label)}
@@ -165,6 +188,197 @@ if st.session_state.escola_detail_id:
                 else:
                     st.session_state.escola_msg = ("error", "Erro ao salvar.")
                 st.rerun()
+
+        # =====================================================================
+        # CARDS DE DADOS DO CENSO 2025 (escala, equipe, tecnologia)
+        # =====================================================================
+        fonte = company.get("fonte_dados") or ""
+        total_mat = company.get("total_matriculas") or 0
+
+        if fonte == "catalogo_inep":
+            # Aviso: escola do catalogo — sem dados ricos
+            alert_banner(
+                "Escola ativa no Cat&aacute;logo INEP mas n&atilde;o enviou dados ao Censo 2025. "
+                "Dados de matr&iacute;culas, equipe e n&iacute;vel tecnol&oacute;gico n&atilde;o est&atilde;o dispon&iacute;veis.",
+                "warning",
+            )
+        elif fonte == "censo_2025" and total_mat > 0:
+            st.markdown("")
+            section_header("Escala e Matr&iacute;culas (Censo 2025)", "groups")
+
+            # Metricas rapidas
+            mat_fund_af = int(company.get("matriculas_fund_af") or 0)
+            mat_medio = int(company.get("matriculas_medio") or 0)
+            alunos_alvo = mat_fund_af + mat_medio
+            perc_integral = company.get("perc_integral")
+
+            mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+            with mcol1:
+                metric_card(
+                    "Total alunos",
+                    f"{int(total_mat):,}".replace(",", "."),
+                    COLORS["primary"],
+                    icon="groups",
+                )
+            with mcol2:
+                metric_card(
+                    "Alvo IAprendo",
+                    f"{alunos_alvo:,}".replace(",", "."),
+                    COLORS["accent"],
+                    icon="track_changes",
+                )
+            with mcol3:
+                metric_card(
+                    "Fund AF (6o-9o)",
+                    f"{mat_fund_af:,}".replace(",", "."),
+                    COLORS["info"],
+                    icon="school",
+                )
+            with mcol4:
+                metric_card(
+                    "Medio (1o-3o)",
+                    f"{mat_medio:,}".replace(",", "."),
+                    COLORS["secondary"],
+                    icon="auto_stories",
+                )
+
+            # Grafico de barras horizontais: matriculas por ano
+            series_data = []
+            for label, key, segmento in [
+                ("6o ano", "mat_6_ano", "Fund AF"),
+                ("7o ano", "mat_7_ano", "Fund AF"),
+                ("8o ano", "mat_8_ano", "Fund AF"),
+                ("9o ano", "mat_9_ano", "Fund AF"),
+                ("1o medio", "mat_medio_1", "Medio"),
+                ("2o medio", "mat_medio_2", "Medio"),
+                ("3o medio", "mat_medio_3", "Medio"),
+            ]:
+                val = company.get(key) or 0
+                if val > 0:
+                    series_data.append({"Ano/Serie": label, "Alunos": int(val), "Segmento": segmento})
+
+            if series_data:
+                try:
+                    import plotly.express as px
+                    df_series = pd.DataFrame(series_data)
+                    fig = px.bar(
+                        df_series,
+                        x="Alunos",
+                        y="Ano/Serie",
+                        color="Segmento",
+                        orientation="h",
+                        color_discrete_map={"Fund AF": COLORS["info"], "Medio": COLORS["secondary"]},
+                        text="Alunos",
+                        height=320,
+                    )
+                    fig.update_traces(textposition="outside", cliponaxis=False)
+                    fig.update_layout(
+                        yaxis=dict(autorange="reversed", title=""),
+                        xaxis=dict(title="Matriculas"),
+                        margin=dict(l=0, r=40, t=30, b=0),
+                        plot_bgcolor="white",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                except ImportError:
+                    st.info("Plotly nao instalado — grafico nao disponivel.")
+            else:
+                st.caption("Sem dados de matriculas por ano/serie disponiveis.")
+
+            # Info extra de escala
+            info_escala = []
+            if perc_integral:
+                info_escala.append(f"**{perc_integral}%** em tempo integral")
+            alunos_doc = company.get("alunos_por_docente")
+            if alunos_doc:
+                info_escala.append(f"**{alunos_doc}** alunos por docente")
+            mat_integral = company.get("matriculas_integral") or 0
+            if mat_integral > 0:
+                info_escala.append(f"**{int(mat_integral)}** em integral")
+            if info_escala:
+                st.caption(" &middot; ".join(info_escala))
+
+            # Equipe
+            st.markdown("")
+            section_header("Equipe e Decisores (Censo 2025)", "badge")
+            docentes = int(company.get("total_docentes") or 0)
+            gestores = int(company.get("total_gestores") or 0)
+            coord = int(company.get("qt_coordenadores") or 0)
+            turmas = int(company.get("total_turmas") or 0)
+
+            ec1, ec2, ec3, ec4 = st.columns(4)
+            with ec1:
+                metric_card("Docentes", docentes, COLORS["primary"], icon="record_voice_over")
+            with ec2:
+                metric_card(
+                    "Coordenadores",
+                    coord,
+                    COLORS["accent"],
+                    icon="supervisor_account",
+                )
+            with ec3:
+                metric_card("Gestores", gestores, COLORS["secondary"], icon="manage_accounts")
+            with ec4:
+                metric_card("Turmas", turmas, COLORS["info"], icon="class")
+
+            if coord > 0:
+                st.caption(
+                    "&#9989; Coordenador pedagogico presente — decisor tecnico claro para venda de edtech."
+                )
+            else:
+                st.caption(
+                    "&#9888; Sem coordenador pedagogico cadastrado — decisao pode passar diretamente pelo(a) diretor(a)."
+                )
+
+            # Tecnologia
+            st.markdown("")
+            section_header("Tecnologia (Censo 2025)", "router")
+            nivel_tech = company.get("nivel_tecnologico") or "-"
+            tech_color = {
+                "Alto": COLORS["success"],
+                "Medio": COLORS["warning"],
+                "M&eacute;dio": COLORS["warning"],
+                "Médio": COLORS["warning"],
+                "Baixo": COLORS["error"],
+            }.get(nivel_tech, COLORS["secondary"])
+
+            def _bool_badge(label, val):
+                if val is True:
+                    return f'<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600;margin:2px;">&#10004; {label}</span>'
+                elif val is False:
+                    return f'<span style="display:inline-block;background:#ffebee;color:#c62828;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600;margin:2px;">&#10006; {label}</span>'
+                return ""
+
+            nivel_html = (
+                f'<span style="display:inline-block;background:{tech_color};color:white;'
+                f'padding:6px 14px;border-radius:16px;font-size:13px;font-weight:700;margin-right:8px;">'
+                f"Nivel {nivel_tech}</span>"
+            )
+
+            badges_html = (
+                nivel_html
+                + _bool_badge("Banda larga", company.get("banda_larga"))
+                + _bool_badge("Internet alunos", company.get("internet_alunos"))
+                + _bool_badge("Internet aprendizagem", company.get("internet_aprendizagem"))
+                + _bool_badge("Lab informatica", company.get("lab_informatica"))
+            )
+            st.markdown(
+                f'<div style="margin:8px 0 16px 0;">{badges_html}</div>',
+                unsafe_allow_html=True,
+            )
+
+            # Dispositivos (se tiver)
+            qt_desk = company.get("qt_desktop_aluno") or 0
+            qt_note = company.get("qt_notebook_aluno") or 0
+            qt_tab = company.get("qt_tablet_aluno") or 0
+            if qt_desk + qt_note + qt_tab > 0:
+                disp_cols = st.columns(3)
+                with disp_cols[0]:
+                    metric_card("Desktops p/ aluno", int(qt_desk), COLORS["secondary"], icon="computer")
+                with disp_cols[1]:
+                    metric_card("Notebooks p/ aluno", int(qt_note), COLORS["info"], icon="laptop")
+                with disp_cols[2]:
+                    metric_card("Tablets p/ aluno", int(qt_tab), COLORS["accent"], icon="tablet")
 
     # === TAB CONTATOS ===
     with tab_contatos:
@@ -460,10 +674,13 @@ if st.session_state.escola_detail_id:
 else:
     section_header("Escolas", "school")
 
-    # Buscar dados
+    # Buscar dados — inclui campos ricos do Censo 2025
     try:
         result = db.client.table("companies").select(
-            "id, name, city, state, status, qualification_score, school_size, admin_dependency, inep_code, created_at"
+            "id, name, city, state, bairro, status, qualification_score, "
+            "school_size, admin_dependency, inep_code, created_at, fonte_dados, "
+            "matriculas_fund_af, matriculas_medio, total_docentes, "
+            "qt_coordenadores, nivel_tecnologico"
         ).order("created_at", desc=True).limit(1000).execute()
         rows = result.data or []
     except Exception as e:
@@ -481,6 +698,15 @@ else:
     df["Score"] = df["qualification_score"].fillna(0).astype(int)
     df["Porte"] = df["school_size"].fillna("").map(lambda x: PORTE_SHORT.get(x.strip(), x[:15] if x else ""))
     df["Tipo"] = df["admin_dependency"].fillna("")
+    df["UF"] = df["state"].fillna("")
+    df["Bairro"] = df["bairro"].fillna("")
+    df["Fund AF"] = df["matriculas_fund_af"].fillna(0).astype(int)
+    df["Medio"] = df["matriculas_medio"].fillna(0).astype(int)
+    df["Coord"] = df["qt_coordenadores"].fillna(0).astype(int)
+    df["Tech"] = df["nivel_tecnologico"].fillna("-")
+    df["Fonte"] = df["fonte_dados"].fillna("-").map(
+        lambda x: {"censo_2025": "Censo 2025", "catalogo_inep": "Catalogo INEP"}.get(x, "-")
+    )
     df["Importado"] = pd.to_datetime(df["created_at"]).dt.strftime("%d/%m/%Y")
 
     # --- Filtros inline (barra horizontal) ---
@@ -499,6 +725,23 @@ else:
                                   placeholder="Filtrar tipo...")
     with fc4:
         score_range = st.slider("Score", 0, 100, (0, 100), label_visibility="collapsed")
+
+    # Segunda linha: filtros dos dados ricos do Censo
+    fc5, fc6, fc7, fc8 = st.columns([2, 2, 2, 2])
+    with fc5:
+        tech_options = ["Alto", "Medio", "Baixo"]
+        sel_tech = st.multiselect("Tech", tech_options, default=[],
+                                   label_visibility="collapsed", placeholder="Nivel tec...")
+    with fc6:
+        fonte_options = ["Censo 2025", "Catalogo INEP"]
+        sel_fonte = st.multiselect("Fonte", fonte_options, default=[],
+                                    label_visibility="collapsed", placeholder="Fonte dos dados...")
+    with fc7:
+        min_fund = st.number_input("Min Fund AF", min_value=0, max_value=5000, value=0, step=50,
+                                    label_visibility="collapsed", placeholder="Min Fund AF")
+    with fc8:
+        min_medio = st.number_input("Min Medio", min_value=0, max_value=5000, value=0, step=50,
+                                     label_visibility="collapsed", placeholder="Min Medio")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Aplicar filtros
@@ -510,16 +753,25 @@ else:
     df_f = df_f[(df_f["Score"] >= score_range[0]) & (df_f["Score"] <= score_range[1])]
     if search:
         df_f = df_f[df_f["name"].str.contains(search, case=False, na=False)]
+    if sel_tech:
+        df_f = df_f[df_f["Tech"].isin(sel_tech)]
+    if sel_fonte:
+        df_f = df_f[df_f["Fonte"].isin(sel_fonte)]
+    if min_fund > 0:
+        df_f = df_f[df_f["Fund AF"] >= min_fund]
+    if min_medio > 0:
+        df_f = df_f[df_f["Medio"] >= min_medio]
 
     # --- Metricas ---
     avg = df["Score"].replace(0, pd.NA).dropna().mean()
+    total_alvo = int((df["Fund AF"] + df["Medio"]).sum())
     mc1, mc2, mc3, mc4 = st.columns(4)
     with mc1:
         metric_card("Total", len(df), COLORS["primary"], icon="domain")
     with mc2:
         metric_card("Filtradas", len(df_f), COLORS["secondary"], icon="filter_alt")
     with mc3:
-        metric_card("Com Score", int((df["Score"] > 0).sum()), COLORS["info"], icon="trending_up")
+        metric_card("Alunos Alvo", f"{total_alvo:,}".replace(",", "."), COLORS["info"], icon="groups")
     with mc4:
         metric_card("Score Medio", f"{avg:.0f}" if pd.notna(avg) else "N/A", COLORS["success"], icon="analytics")
 
@@ -535,16 +787,31 @@ else:
         st.session_state.escola_msg = None
 
     # --- Tabela interativa com selecao por clique ---
-    table_cols = ["name", "city", "state", "Status", "Score", "Tipo", "Porte", "Importado"]
+    table_cols = ["name", "city", "UF", "Bairro", "Tipo", "Fund AF", "Medio", "Tech", "Coord", "Score", "Status"]
     col_config = {
         "name": st.column_config.TextColumn("Escola", width="large"),
-        "city": st.column_config.TextColumn("Cidade", width="medium"),
-        "state": st.column_config.TextColumn("UF", width="small"),
-        "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
-        "Score": st.column_config.NumberColumn("Score", min_value=0, max_value=100, width="small"),
+        "city": st.column_config.TextColumn("Cidade", width="small"),
+        "UF": st.column_config.TextColumn("UF", width="small", disabled=True),
+        "Bairro": st.column_config.TextColumn("Bairro", width="small", disabled=True),
         "Tipo": st.column_config.TextColumn("Tipo", width="small", disabled=True),
-        "Porte": st.column_config.TextColumn("Porte", width="small", disabled=True),
-        "Importado": st.column_config.TextColumn("Importado", width="small", disabled=True),
+        "Fund AF": st.column_config.NumberColumn(
+            "Fund AF", width="small", disabled=True,
+            help="Matriculas no Ensino Fundamental Anos Finais (6o-9o) — alvo IAprendo",
+        ),
+        "Medio": st.column_config.NumberColumn(
+            "Medio", width="small", disabled=True,
+            help="Matriculas no Ensino Medio (1o-3o) — alvo IAprendo",
+        ),
+        "Tech": st.column_config.TextColumn(
+            "Tech", width="small", disabled=True,
+            help="Nivel tecnologico da escola (Alto/Medio/Baixo)",
+        ),
+        "Coord": st.column_config.NumberColumn(
+            "Coord", width="small", disabled=True,
+            help="Quantidade de coordenadores pedagogicos",
+        ),
+        "Score": st.column_config.NumberColumn("Score", min_value=0, max_value=100, width="small"),
+        "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
     }
 
     st.caption("Clique em uma linha para ver acoes. Edite Status e Score diretamente na tabela.")
@@ -667,6 +934,10 @@ else:
 
     # --- Exportar ---
     st.divider()
-    csv_cols = [c for c in ["name", "city", "state", "Status", "Score", "Tipo", "Porte", "inep_code"] if c in df_f.columns]
+    csv_cols = [c for c in [
+        "name", "city", "UF", "Bairro", "inep_code", "Tipo", "Porte",
+        "Fund AF", "Medio", "Tech", "Coord", "Fonte",
+        "Status", "Score",
+    ] if c in df_f.columns]
     csv = df_f[csv_cols].to_csv(index=False)
     st.download_button("Exportar CSV", csv, "escolas.csv", "text/csv", icon=":material/download:")

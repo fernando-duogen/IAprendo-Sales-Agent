@@ -110,34 +110,34 @@ PORTE_PT = {
 DEFAULT_COLOR = [150, 150, 150, 150]
 
 # ---------------------------------------------------------------------------
-# CSV loader
+# CSV loader (base mesclada: Censo 2025 + Catalogo INEP)
 # ---------------------------------------------------------------------------
-CSV_PATH = ROOT / "data" / "raw" / "escolas_brasil.csv"
+from config.settings import settings
+CSV_PATH = ROOT / settings.CSV_PATH
 
 
-@st.cache_data(show_spinner="Carregando CSV do MEC (212k escolas)...")
+@st.cache_data(show_spinner="Carregando base mesclada (185k escolas)...")
 def load_csv():
-    """Carrega e normaliza o CSV do MEC com mapeamento de colunas."""
+    """Carrega base mesclada com mapeamento de colunas do Censo 2025."""
     if not CSV_PATH.exists():
         return None
-    df = pd.read_csv(str(CSV_PATH), encoding="utf-8", low_memory=False)
+    df = pd.read_csv(str(CSV_PATH), encoding=settings.CSV_ENCODING, low_memory=False)
     df.columns = [c.strip() for c in df.columns]
-    col_names = df.columns.tolist()
-    mapping = {
-        "restricao": next((c for c in col_names if "Restri" in c), None),
-        "escola": next((c for c in col_names if c.strip() == "Escola"), None),
-        "inep": next((c for c in col_names if "INEP" in c), None),
-        "uf": next((c for c in col_names if c == "UF"), None),
-        "municipio": next((c for c in col_names if "Munic" in c), None),
-        "dep_adm": next((c for c in col_names if "Depend" in c and "Adm" in c), None),
-        "porte": next((c for c in col_names if "Porte" in c), None),
-        "niveis": next((c for c in col_names if "Etapas" in c or "Modalidade" in c), None),
-        "latitude": next((c for c in col_names if c == "Latitude"), None),
-        "longitude": next((c for c in col_names if c == "Longitude"), None),
+    # Mapear colunas da base mesclada para nomes internos
+    rename_map = {
+        "NOME_ESCOLA": "escola",
+        "CODIGO_INEP": "inep",
+        "UF": "uf",
+        "MUNICIPIO": "municipio",
+        "DEPENDENCIA": "dep_adm",
+        "PORTE_ESCOLA": "porte",
+        "PERFIL_ENSINO": "niveis",
+        "LATITUDE": "latitude",
+        "LONGITUDE": "longitude",
+        "FONTE_DADOS": "fonte_dados",
     }
-    rename = {v: k for k, v in mapping.items() if v}
-    df = df.rename(columns=rename)
-    for col in ["restricao", "escola", "uf", "municipio", "dep_adm", "porte", "niveis", "latitude", "longitude"]:
+    df = df.rename(columns=rename_map)
+    for col in ["escola", "inep", "uf", "municipio", "dep_adm", "porte", "niveis", "latitude", "longitude", "fonte_dados"]:
         if col not in df.columns:
             df[col] = ""
     return df
@@ -148,9 +148,9 @@ def load_csv():
 # ---------------------------------------------------------------------------
 modo = st.radio(
     "Fonte de dados:",
-    ["Escolas Importadas", "Explorar CSV Completo (212k)"],
+    ["Escolas Importadas", "Explorar Base Completa (185k)"],
     horizontal=True,
-    help="Importadas = escolas ja no banco. CSV = todas as 212k escolas do MEC.",
+    help="Importadas = escolas ja no banco. Base completa = 180k Censo 2025 + 4.7k Catalogo INEP.",
 )
 
 is_csv_mode = "CSV" in modo
@@ -257,15 +257,19 @@ if not is_csv_mode:
 # MODO 2: Explorar CSV Completo
 # ===========================================================================
 else:
-    st.caption("Todas as 212k escolas do MEC (com coordenadas). Cor = tipo administrativo.")
+    st.caption("Base mesclada: 180k Censo 2025 + 4.7k Catalogo INEP. Cor = tipo administrativo.")
 
     df_raw = load_csv()
     if df_raw is None:
-        alert_banner("CSV nao encontrado em data/raw/escolas_brasil.csv", "error")
+        alert_banner(
+            f"CSV nao encontrado em {settings.CSV_PATH}. "
+            "Rode merge_catalogo_inep.py para gerar.",
+            "error",
+        )
         st.stop()
 
-    # Filtro base: apenas em funcionamento
-    df_ativo = df_raw[df_raw["restricao"].str.upper().str.contains("SEM RESTRI", na=False)].copy()
+    # Base mesclada ja vem so com escolas ativas
+    df_ativo = df_raw.copy()
 
     # Garantir lat/lon numerico
     df_ativo.loc[:, "latitude"] = pd.to_numeric(df_ativo["latitude"], errors="coerce")

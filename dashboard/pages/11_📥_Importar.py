@@ -12,19 +12,25 @@ from dashboard.theme import (
     apply_theme_no_config, metric_card, section_header,
     alert_banner, breadcrumb, COLORS,
 )
+from config.settings import settings
 
 apply_theme_no_config()
 
 # --- Header ---
 breadcrumb(["IAprendo", "Importar Escolas"])
 st.markdown("# Importar Escolas")
-st.caption("Explore os filtros sobre as 210k escolas do MEC, veja quantas resultam e confirme a importacao.")
+st.caption("Base mesclada Censo 2025 + Catalogo INEP — 185k escolas ativas com dados ricos.")
 
 # --- Configuracoes ---
-CSV_PATH = ROOT / "data" / "raw" / "escolas_brasil.csv"
-RESTRICAO_OK = "SEM RESTRI"
+CSV_PATH = ROOT / settings.CSV_PATH
 
 PORTE_PT = {
+    "Ate 50 matriculas": "Ate 50 alunos",
+    "51 a 200 matriculas": "51 a 200 alunos",
+    "201 a 500 matriculas": "201 a 500 alunos",
+    "501 a 1000 matriculas": "501 a 1000 alunos",
+    "Mais de 1000 matriculas": "Mais de 1000 alunos",
+    # Fallbacks para formato antigo do catalogo
     "Ate 50 matriculas de escolarizacao": "Ate 50 alunos",
     "Entre 51 e 200 matriculas de escolarizacao": "51 a 200 alunos",
     "Entre 201 e 500 matriculas de escolarizacao": "201 a 500 alunos",
@@ -33,25 +39,25 @@ PORTE_PT = {
 }
 
 
-@st.cache_data(show_spinner="Carregando CSV do MEC (210k escolas)...")
+@st.cache_data(show_spinner="Carregando base mesclada (185k escolas)...")
 def load_csv():
     if not CSV_PATH.exists():
         return None
-    df = pd.read_csv(str(CSV_PATH), encoding="utf-8", low_memory=False)
+    df = pd.read_csv(str(CSV_PATH), encoding=settings.CSV_ENCODING, low_memory=False)
     df.columns = [c.strip() for c in df.columns]
-    col_names = df.columns.tolist()
-    mapping = {
-        "restricao": next((c for c in col_names if "Restri" in c), None),
-        "escola": next((c for c in col_names if c.strip() == "Escola"), None),
-        "uf": next((c for c in col_names if c == "UF"), None),
-        "municipio": next((c for c in col_names if "Munic" in c), None),
-        "dep_adm": next((c for c in col_names if "Depend" in c and "Adm" in c), None),
-        "porte": next((c for c in col_names if "Porte" in c), None),
-        "niveis": next((c for c in col_names if "Etapas" in c or "Modalidade" in c), None),
+    # Mapear colunas da base mesclada (Censo 2025 + Catalogo) para nomes internos
+    rename_map = {
+        "NOME_ESCOLA": "escola",
+        "UF": "uf",
+        "MUNICIPIO": "municipio",
+        "DEPENDENCIA": "dep_adm",
+        "PORTE_ESCOLA": "porte",
+        "PERFIL_ENSINO": "niveis",
+        "FONTE_DADOS": "fonte_dados",
     }
-    rename = {v: k for k, v in mapping.items() if v}
-    df = df.rename(columns=rename)
-    for col in ["restricao", "escola", "uf", "municipio", "dep_adm", "porte", "niveis"]:
+    df = df.rename(columns=rename_map)
+    # Garantir colunas obrigatorias
+    for col in ["escola", "uf", "municipio", "dep_adm", "porte", "niveis", "fonte_dados"]:
         if col not in df.columns:
             df[col] = ""
     return df
@@ -61,14 +67,15 @@ def load_csv():
 df_raw = load_csv()
 if df_raw is None:
     alert_banner(
-        "CSV nao encontrado em data/raw/escolas_brasil.csv. "
-        "Faca o download em: gov.br/inep (Sinopses Estatisticas).",
+        f"CSV nao encontrado em {settings.CSV_PATH}. "
+        "Rode: venv/Scripts/python.exe database/migrations/merge_catalogo_inep.py",
         "error",
     )
     st.stop()
 
-# --- Filtro base: so escolas em funcionamento sem restricao ---
-df_ativo = df_raw[df_raw["restricao"].str.upper().str.contains(RESTRICAO_OK, na=False)].copy()
+# --- Base mesclada ja vem so com escolas ativas (Censo 2025 so tem ativas,
+#     Catalogo so incluimos as ativas no merge). Nao precisa filtro extra. ---
+df_ativo = df_raw.copy()
 total_ativos = len(df_ativo)
 
 # =============================================================================
