@@ -51,7 +51,8 @@ try:
     # SHARED DATA
     # =========================================================================
     companies = db.client.table("companies").select(
-        "id,name,status,qualification_score,last_contacted_at,email_domain,notes"
+        "id,name,status,qualification_score,last_contacted_at,email_domain,notes,"
+        "matriculas_fund_af,matriculas_medio,nivel_tecnologico"
     ).order("name").execute().data or []
 
     sent_emails = db.client.table("approval_queue").select(
@@ -145,13 +146,32 @@ try:
                     score = comp.get("qualification_score") or 0
                     name = comp.get("name", "?")
                     emails_info = email_map.get(comp["id"], {})
-                    badge = f" ({score})" if score else ""
 
-                    # Card como botao clicavel
+                    # Dados ricos do Censo 2025
+                    alvo = int(
+                        (comp.get("matriculas_fund_af") or 0)
+                        + (comp.get("matriculas_medio") or 0)
+                    )
+                    tech = comp.get("nivel_tecnologico") or ""
+
+                    # Card HTML com badges (via kanban_card)
+                    st.markdown(
+                        kanban_card(
+                            name=name[:30],
+                            subtitle="",
+                            score=int(score),
+                            color=stage["color"],
+                            alvo=alvo,
+                            nivel_tech=tech,
+                        ),
+                        unsafe_allow_html=True,
+                    )
+                    # Botao compacto abaixo do card para abrir detalhe
                     if st.button(
-                        f"{name[:30]}{badge}",
+                        "Abrir detalhe",
                         key=f"crm_{comp['id']}",
                         use_container_width=True,
+                        icon=":material/open_in_new:",
                     ):
                         st.session_state["escola_detail_id"] = comp["id"]
                         st.switch_page("pages/5_🏫_Escolas.py")

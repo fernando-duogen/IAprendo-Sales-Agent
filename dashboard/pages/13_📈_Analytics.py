@@ -74,10 +74,12 @@ def load_analytics_data():
     """Carrega todos os dados necessarios para analytics."""
     data = {}
 
-    # Companies por status
+    # Companies por status + dados ricos do Censo 2025
     try:
         comps = db.client.table("companies").select(
-            "id,status,city,admin_category,qualification_score,created_at"
+            "id,name,status,city,state,admin_category,qualification_score,created_at,"
+            "fonte_dados,total_matriculas,matriculas_fund_af,matriculas_medio,"
+            "total_docentes,qt_coordenadores,nivel_tecnologico"
         ).execute().data or []
         data["companies"] = comps
     except Exception:
@@ -463,10 +465,229 @@ if top_schools:
         "Escola": s.get("name", "?")[:40],
         "Cidade": s.get("city", ""),
         "Tipo": s.get("admin_category", ""),
+        "Alvo": int((s.get("matriculas_fund_af") or 0) + (s.get("matriculas_medio") or 0)),
+        "Tech": s.get("nivel_tecnologico") or "-",
         "Score": s.get("qualification_score", 0),
         "Status": s.get("status", ""),
     } for s in top_schools]
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True,
-                 column_config={"Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100)})
+                 column_config={
+                     "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                     "Alvo": st.column_config.NumberColumn(
+                         "Alvo",
+                         help="Matriculas Fund AF + Medio (segmento IAprendo)",
+                     ),
+                 })
 else:
     st.info("Nenhuma escola qualificada ainda.")
+
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+# =============================================================================
+# SECAO 9 — Perfil da carteira (Censo 2025)
+# =============================================================================
+section_header("Perfil da carteira (Censo 2025)", "insights")
+st.caption(
+    "Distribuicao das escolas do CRM por nivel tecnologico, fonte dos dados, "
+    "e ranking por potencial de alunos alvo (Fund AF + Medio)."
+)
+
+# --- Preparar DataFrame enriquecido ---
+import pandas as _pd
+df_comp = _pd.DataFrame(companies)
+
+if df_comp.empty:
+    st.info("Nenhuma escola no CRM.")
+else:
+    # Calcular alunos alvo (Fund AF + Medio)
+    df_comp["alvo"] = (
+        df_comp["matriculas_fund_af"].fillna(0).astype(int)
+        + df_comp["matriculas_medio"].fillna(0).astype(int)
+    )
+    df_comp["nivel_tech_label"] = df_comp["nivel_tecnologico"].fillna("Sem dado")
+    df_comp["fonte_label"] = df_comp["fonte_dados"].fillna("Sem dado").map(
+        lambda x: {"censo_2025": "Censo 2025", "catalogo_inep": "Catalogo INEP"}.get(x, "Sem dado")
+    )
+
+    # --- Graficos de distribuicao (pizza) ---
+    pc1, pc2 = st.columns(2)
+
+    with pc1:
+        tech_counts = df_comp["nivel_tech_label"].value_counts().reset_index()
+        tech_counts.columns = ["Nivel", "Escolas"]
+        tech_color_map = {
+            "Alto": COLORS["success"],
+            "Medio": COLORS["warning"],
+            "Médio": COLORS["warning"],
+            "Baixo": COLORS["error"],
+            "Sem dado": "#bdbdbd",
+        }
+        fig_tech = px.pie(
+            tech_counts,
+            values="Escolas",
+            names="Nivel",
+            title="Distribuicao por Nivel Tecnologico",
+            color="Nivel",
+            color_discrete_map=tech_color_map,
+            hole=0.4,
+        )
+        fig_tech.update_traces(textposition="inside", textinfo="percent+label")
+        fig_tech.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig_tech, use_container_width=True)
+
+    with pc2:
+        fonte_counts = df_comp["fonte_label"].value_counts().reset_index()
+        fonte_counts.columns = ["Fonte", "Escolas"]
+        fig_fonte = px.pie(
+            fonte_counts,
+            values="Escolas",
+            names="Fonte",
+            title="Distribuicao por Fonte dos Dados",
+            color="Fonte",
+            color_discrete_map={
+                "Censo 2025": COLORS["primary"],
+                "Catalogo INEP": COLORS["warning"],
+                "Sem dado": "#bdbdbd",
+            },
+            hole=0.4,
+        )
+        fig_fonte.update_traces(textposition="inside", textinfo="percent+label")
+        fig_fonte.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig_fonte, use_container_width=True)
+
+    # --- Metricas agregadas ---
+    st.markdown("")
+    total_alunos = int(df_comp["total_matriculas"].fillna(0).sum())
+    total_alvo = int(df_comp["alvo"].sum())
+    total_docentes = int(df_comp["total_docentes"].fillna(0).sum())
+    n_com_coord = int((df_comp["qt_coordenadores"].fillna(0) > 0).sum())
+    n_total = len(df_comp)
+    pct_coord = (100 * n_com_coord / n_total) if n_total else 0
+
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    with mc1:
+        metric_card(
+            "Alunos totais (carteira)",
+            f"{total_alunos:,}".replace(",", "."),
+            COLORS["primary"],
+            icon="groups",
+        )
+    with mc2:
+        metric_card(
+            "Alunos alvo (Fund AF + Medio)",
+            f"{total_alvo:,}".replace(",", "."),
+            COLORS["accent"],
+            icon="track_changes",
+        )
+    with mc3:
+        metric_card(
+            "Docentes na carteira",
+            f"{total_docentes:,}".replace(",", "."),
+            COLORS["info"],
+            icon="record_voice_over",
+        )
+    with mc4:
+        metric_card(
+            "% com coordenador",
+            f"{pct_coord:.0f}%",
+            COLORS["secondary"],
+            icon="supervisor_account",
+        )
+
+    st.markdown("")
+
+    # --- Top 10 escolas por Alunos Alvo ---
+    section_header("Top 10 escolas por potencial (alunos alvo)", "leaderboard")
+
+    df_top = df_comp[df_comp["alvo"] > 0].sort_values("alvo", ascending=False).head(10).copy()
+    if not df_top.empty:
+        df_top["Escola"] = df_top["name"].str[:45]
+        df_top["Fund AF"] = df_top["matriculas_fund_af"].fillna(0).astype(int)
+        df_top["Medio"] = df_top["matriculas_medio"].fillna(0).astype(int)
+        df_top["Tech"] = df_top["nivel_tech_label"]
+        df_top["Alvo"] = df_top["alvo"]
+
+        # Grafico horizontal: Fund AF vs Medio empilhado
+        fig_top = go.Figure()
+        fig_top.add_trace(go.Bar(
+            y=df_top["Escola"],
+            x=df_top["Fund AF"],
+            name="Fund AF (6o-9o)",
+            orientation="h",
+            marker_color=COLORS["info"],
+            text=df_top["Fund AF"],
+            textposition="inside",
+        ))
+        fig_top.add_trace(go.Bar(
+            y=df_top["Escola"],
+            x=df_top["Medio"],
+            name="Medio (1o-3o)",
+            orientation="h",
+            marker_color=COLORS["secondary"],
+            text=df_top["Medio"],
+            textposition="inside",
+        ))
+        fig_top.update_layout(
+            barmode="stack",
+            height=420,
+            margin=dict(l=0, r=40, t=10, b=0),
+            xaxis_title="Matriculas",
+            yaxis=dict(autorange="reversed", title=""),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            plot_bgcolor="white",
+        )
+        st.plotly_chart(fig_top, use_container_width=True)
+
+        # Tabela resumo
+        st.dataframe(
+            df_top[["Escola", "city", "Fund AF", "Medio", "Alvo", "Tech"]].rename(
+                columns={"city": "Cidade"}
+            ),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Alvo": st.column_config.NumberColumn(
+                    "Alvo",
+                    help="Fund AF + Medio",
+                ),
+            },
+        )
+    else:
+        st.info("Nenhuma escola com dados de matriculas para ranquear.")
+
+    # --- Oportunidades ocultas: alto volume de alvo mas score baixo ---
+    st.markdown("")
+    section_header("Oportunidades ocultas", "visibility")
+    st.caption(
+        "Escolas com muito aluno alvo (Fund AF + Medio) mas score baixo — "
+        "vale revisar o score manualmente."
+    )
+
+    df_oculta = df_comp[
+        (df_comp["alvo"] >= 200)
+        & (df_comp["qualification_score"].fillna(0) < 50)
+    ].sort_values("alvo", ascending=False).head(10)
+
+    if not df_oculta.empty:
+        df_oculta_view = df_oculta[[
+            "name", "city", "alvo", "qualification_score", "nivel_tech_label", "status"
+        ]].rename(columns={
+            "name": "Escola",
+            "city": "Cidade",
+            "alvo": "Alvo",
+            "qualification_score": "Score",
+            "nivel_tech_label": "Tech",
+            "status": "Status",
+        })
+        df_oculta_view["Escola"] = df_oculta_view["Escola"].str[:45]
+        st.dataframe(
+            df_oculta_view,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                "Alvo": st.column_config.NumberColumn("Alvo"),
+            },
+        )
+    else:
+        st.info("Nenhuma oportunidade oculta detectada (ou todas ja estao bem qualificadas).")

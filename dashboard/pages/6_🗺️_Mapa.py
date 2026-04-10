@@ -99,6 +99,14 @@ DEP_ADM_COLORS = {
     "Federal": [160, 80, 220, 180],
 }
 
+TECH_COLORS = {
+    "Alto": [46, 125, 50, 200],     # verde
+    "Medio": [245, 124, 0, 200],    # laranja
+    "Médio": [245, 124, 0, 200],
+    "Baixo": [198, 40, 40, 200],    # vermelho
+    "Sem dado": [150, 150, 150, 120],
+}
+
 PORTE_PT = {
     "Ate 50 matriculas de escolarizacao": "Ate 50 alunos",
     "Entre 51 e 200 matriculas de escolarizacao": "51 a 200 alunos",
@@ -169,7 +177,7 @@ metricas = {}
 # MODO 1: Escolas Importadas (Supabase)
 # ===========================================================================
 if not is_csv_mode:
-    st.caption("Escolas ja importadas no banco. Cor = status | Tamanho = score de qualificacao.")
+    st.caption("Escolas ja importadas no banco. Tamanho = score de qualificacao.")
 
     try:
         from database.supabase_client import db
@@ -191,12 +199,23 @@ if not is_csv_mode:
         only_geocoded = st.checkbox("Apenas com coordenadas", value=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    legenda_md = "**Legenda:** Azul = Novo | Amarelo = Qualificado | Verde = Contatado | Roxo = Respondeu"
+    # Toggle para colorir por status ou nivel tecnologico
+    colorir_por_db = st.radio(
+        "Colorir pontos por:",
+        ["Status", "Nivel tecnologico"],
+        horizontal=True,
+        key="mapa_colorir_por_db",
+    )
+
+    if colorir_por_db == "Nivel tecnologico":
+        legenda_md = "**Legenda:** Verde = Alto | Laranja = Medio | Vermelho = Baixo | Cinza = Sem dado"
+    else:
+        legenda_md = "**Legenda:** Azul = Novo | Amarelo = Qualificado | Verde = Contatado | Roxo = Respondeu"
 
     # --- Query ---
     try:
         query = db.client.table("companies").select(
-            "id,name,city,state,status,qualification_score,address,latitude,longitude"
+            "id,name,city,state,status,qualification_score,address,latitude,longitude,nivel_tecnologico"
         )
         all_companies = query.execute().data or []
     except Exception as e:
@@ -226,6 +245,13 @@ if not is_csv_mode:
             lon = -51.2177 + (hash(c.get("city", "")) % 100) * 0.001
         score = c.get("qualification_score") or 0
         status = c.get("status", "raw")
+        nivel_tech = c.get("nivel_tecnologico") or "Sem dado"
+
+        if colorir_por_db == "Nivel tecnologico":
+            cor = TECH_COLORS.get(nivel_tech, DEFAULT_COLOR)
+        else:
+            cor = STATUS_COLORS_MAP.get(status, DEFAULT_COLOR)
+
         records.append({
             "lat": float(lat),
             "lon": float(lon),
@@ -233,8 +259,9 @@ if not is_csv_mode:
             "status": STATUS_PT.get(status, status),
             "score": score,
             "city": c.get("city", ""),
+            "tech": nivel_tech,
             "radius": max(50, score * 3),
-            "color": STATUS_COLORS_MAP.get(status, DEFAULT_COLOR),
+            "color": cor,
         })
 
     if not records:
@@ -242,7 +269,7 @@ if not is_csv_mode:
         st.stop()
 
     df_map = pd.DataFrame(records)
-    tooltip_html = "<b>{name}</b><br/>Status: {status}<br/>Score: {score}<br/>Cidade: {city}"
+    tooltip_html = "<b>{name}</b><br/>Status: {status}<br/>Score: {score}<br/>Cidade: {city}<br/>Nivel tec: {tech}"
 
     total_banco = len(all_companies)
     com_coords = sum(1 for c in all_companies if c.get("latitude"))
@@ -257,7 +284,7 @@ if not is_csv_mode:
 # MODO 2: Explorar CSV Completo
 # ===========================================================================
 else:
-    st.caption("Base mesclada: 180k Censo 2025 + 4.7k Catalogo INEP. Cor = tipo administrativo.")
+    st.caption("Base mesclada: 180k Censo 2025 + 4.7k Catalogo INEP.")
 
     df_raw = load_csv()
     if df_raw is None:
@@ -314,6 +341,14 @@ else:
         inc_medio = st.checkbox("Ensino Medio", value=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # Toggle para colorir por tipo ou nivel tec
+    colorir_por_csv = st.radio(
+        "Colorir pontos por:",
+        ["Tipo administrativo", "Nivel tecnologico"],
+        horizontal=True,
+        key="mapa_colorir_por_csv",
+    )
+
     # --- Aplica filtros ---
     df_filtered = df_ativo.copy()
     if sel_ufs:
@@ -338,6 +373,20 @@ else:
         st.stop()
 
     # --- Monta DataFrame para o mapa ---
+    # Coluna NIVEL_TECNOLOGICO existe apenas no CSV mesclado (load_csv nao
+    # renomeia, entao ela mantem o nome original). Usa fallback se nao existir.
+    if "NIVEL_TECNOLOGICO" in df_filtered.columns:
+        tech_series = df_filtered["NIVEL_TECNOLOGICO"].fillna("Sem dado")
+    else:
+        tech_series = pd.Series(["Sem dado"] * len(df_filtered), index=df_filtered.index)
+
+    if colorir_por_csv == "Nivel tecnologico":
+        color_series = tech_series.map(lambda x: TECH_COLORS.get(x, DEFAULT_COLOR))
+    else:
+        color_series = df_filtered["dep_adm"].fillna("Outro").map(
+            lambda x: DEP_ADM_COLORS.get(x, DEFAULT_COLOR)
+        )
+
     df_map = pd.DataFrame({
         "lat": df_filtered["latitude"].values,
         "lon": df_filtered["longitude"].values,
@@ -345,17 +394,19 @@ else:
         "city": df_filtered["municipio"].fillna("").values,
         "uf": df_filtered["uf"].fillna("").values,
         "tipo": df_filtered["dep_adm"].fillna("Outro").values,
+        "tech": tech_series.values,
         "porte": df_filtered["porte"].fillna("").str.strip().map(
             lambda x: PORTE_PT.get(x, x)
         ).values,
         "radius": 40,
-        "color": df_filtered["dep_adm"].fillna("Outro").map(
-            lambda x: DEP_ADM_COLORS.get(x, DEFAULT_COLOR)
-        ).values,
+        "color": color_series.values,
     })
 
-    tooltip_html = "<b>{name}</b><br/>Cidade: {city} - {uf}<br/>Tipo: {tipo}<br/>Porte: {porte}"
-    legenda_md = "**Legenda:** Azul = Estadual | Verde = Municipal | Laranja = Privada | Roxo = Federal"
+    tooltip_html = "<b>{name}</b><br/>Cidade: {city} - {uf}<br/>Tipo: {tipo}<br/>Porte: {porte}<br/>Nivel tec: {tech}"
+    if colorir_por_csv == "Nivel tecnologico":
+        legenda_md = "**Legenda:** Verde = Alto | Laranja = Medio | Vermelho = Baixo | Cinza = Sem dado"
+    else:
+        legenda_md = "**Legenda:** Azul = Estadual | Verde = Municipal | Laranja = Privada | Roxo = Federal"
 
     metricas = {
         "No mapa": (f"{len(df_map):,}".replace(",", "."), "place", COLORS["primary"]),

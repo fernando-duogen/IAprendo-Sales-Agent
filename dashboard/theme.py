@@ -656,22 +656,71 @@ def alert_banner(message: str, type: str = "info"):
     )
 
 
-def kanban_card(name: str, subtitle: str = "", score: int = 0, color: str = COLORS["primary"]):
-    """Renderiza card de kanban estilo Material."""
-    score_color = COLORS["success"] if score >= 70 else COLORS["warning"] if score >= 40 else COLORS["on_surface_secondary"]
+def kanban_card(
+    name: str,
+    subtitle: str = "",
+    score: int = 0,
+    color: str = COLORS["primary"],
+    alvo: int = 0,
+    nivel_tech: str = "",
+):
+    """Renderiza card de kanban estilo Material.
+
+    Args:
+        name: Nome da escola.
+        subtitle: Linha de legenda (cidade, data, etc.).
+        score: Score de qualificacao (0-100).
+        color: Cor da borda esquerda.
+        alvo: Total de alunos alvo (Fund AF + Medio). Se > 0, renderiza badge.
+        nivel_tech: Nivel tecnologico (Alto/Medio/Baixo). Se preenchido, renderiza chip colorido.
+    """
+    score_c = COLORS["success"] if score >= 70 else COLORS["warning"] if score >= 40 else COLORS["on_surface_secondary"]
     score_html = (
         f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
-        f'font-size:11px;font-weight:700;color:white;background:{score_color}">{score}</span>'
+        f'font-size:11px;font-weight:700;color:white;background:{score_c};margin-right:4px">{score}</span>'
         if score else ""
     )
+
+    # Badge de alvo (alunos Fund AF + Medio)
+    alvo_html = ""
+    if alvo and alvo > 0:
+        alvo_html = (
+            f'<span style="display:inline-block;padding:2px 7px;border-radius:10px;'
+            f'font-size:10px;font-weight:600;color:#1565c0;background:#e3f2fd;margin-right:4px" '
+            f'title="Alunos alvo: Fund AF + Medio">&#128101; {alvo}</span>'
+        )
+
+    # Chip de nivel tecnologico
+    tech_html = ""
+    if nivel_tech and nivel_tech != "-":
+        tech_color_map = {
+            "Alto": "#2e7d32",
+            "Medio": "#f57c00",
+            "Médio": "#f57c00",
+            "Baixo": "#c62828",
+        }
+        tech_bg_map = {
+            "Alto": "#e8f5e9",
+            "Medio": "#fff3e0",
+            "Médio": "#fff3e0",
+            "Baixo": "#ffebee",
+        }
+        tc = tech_color_map.get(nivel_tech, "#616161")
+        tb = tech_bg_map.get(nivel_tech, "#f5f5f5")
+        tech_html = (
+            f'<span style="display:inline-block;padding:2px 7px;border-radius:10px;'
+            f'font-size:10px;font-weight:600;color:{tc};background:{tb}" '
+            f'title="Nivel tecnologico">{nivel_tech}</span>'
+        )
+
     return (
         f'<p style="background:#FFFFFF;border-radius:10px;padding:12px 14px;margin-bottom:8px;'
         f'box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid {color}">'
         f'<strong style="font-size:13px;color:#212121;display:block;overflow:hidden;'
         f'text-overflow:ellipsis;white-space:nowrap">{name}</strong>'
         f'<span style="font-size:11px;color:#757575;display:block;overflow:hidden;'
-        f'text-overflow:ellipsis;white-space:nowrap">{subtitle}</span>'
-        f'{score_html}</p>'
+        f'text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">{subtitle}</span>'
+        f'{score_html}{alvo_html}{tech_html}</p>'
     )
 
 
