@@ -215,7 +215,8 @@ if not is_csv_mode:
     # --- Query ---
     try:
         query = db.client.table("companies").select(
-            "id,name,city,state,status,qualification_score,address,latitude,longitude,nivel_tecnologico"
+            "id,name,city,state,status,qualification_score,address,latitude,longitude,"
+            "nivel_tecnologico,matriculas_fund_af,matriculas_medio"
         )
         all_companies = query.execute().data or []
     except Exception as e:
@@ -252,6 +253,7 @@ if not is_csv_mode:
         else:
             cor = STATUS_COLORS_MAP.get(status, DEFAULT_COLOR)
 
+        alvo = int((c.get("matriculas_fund_af") or 0) + (c.get("matriculas_medio") or 0))
         records.append({
             "lat": float(lat),
             "lon": float(lon),
@@ -260,6 +262,7 @@ if not is_csv_mode:
             "score": score,
             "city": c.get("city", ""),
             "tech": nivel_tech,
+            "alvo": alvo,
             "radius": max(50, score * 3),
             "color": cor,
         })
@@ -387,6 +390,15 @@ else:
             lambda x: DEP_ADM_COLORS.get(x, DEFAULT_COLOR)
         )
 
+    # Calcular alvo (Fund AF + Medio) — colunas mantem nome original do CSV
+    if "MATRICULAS_FUND_AF" in df_filtered.columns and "MATRICULAS_MEDIO" in df_filtered.columns:
+        alvo_series = (
+            pd.to_numeric(df_filtered["MATRICULAS_FUND_AF"], errors="coerce").fillna(0)
+            + pd.to_numeric(df_filtered["MATRICULAS_MEDIO"], errors="coerce").fillna(0)
+        ).astype(int)
+    else:
+        alvo_series = pd.Series([0] * len(df_filtered), index=df_filtered.index)
+
     df_map = pd.DataFrame({
         "lat": df_filtered["latitude"].values,
         "lon": df_filtered["longitude"].values,
@@ -395,6 +407,7 @@ else:
         "uf": df_filtered["uf"].fillna("").values,
         "tipo": df_filtered["dep_adm"].fillna("Outro").values,
         "tech": tech_series.values,
+        "alvo": alvo_series.values,
         "porte": df_filtered["porte"].fillna("").str.strip().map(
             lambda x: PORTE_PT.get(x, x)
         ).values,
@@ -402,7 +415,7 @@ else:
         "color": color_series.values,
     })
 
-    tooltip_html = "<b>{name}</b><br/>Cidade: {city} - {uf}<br/>Tipo: {tipo}<br/>Porte: {porte}<br/>Nivel tec: {tech}"
+    tooltip_html = "<b>{name}</b><br/>Cidade: {city} - {uf}<br/>Tipo: {tipo}<br/>Porte: {porte}<br/>Nivel tec: {tech}<br/>Alvo (Fund AF + Medio): {alvo}"
     if colorir_por_csv == "Nivel tecnologico":
         legenda_md = "**Legenda:** Verde = Alto | Laranja = Medio | Vermelho = Baixo | Cinza = Sem dado"
     else:
@@ -430,18 +443,85 @@ for col, (label, (value, icon, color)) in zip(cols_m, metricas.items()):
 st.markdown(f'<div class="mt-1" style="font-size:13px;color:#757575">{legenda_md}</div>', unsafe_allow_html=True)
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-# Mapa PyDeck
-scatter_layer = pdk.Layer(
-    "ScatterplotLayer",
-    data=df_map,
-    get_position=["lon", "lat"],
-    get_color="color",
-    get_radius="radius",
-    radius_min_pixels=2 if is_csv_mode else 4,
-    radius_max_pixels=40,
-    pickable=True,
-    auto_highlight=True,
+# Toggle de tipo de visualizacao (vale para ambos os modos)
+tipo_viz = st.radio(
+    "Tipo de visualizacao:",
+    ["Pontos", "Mapa de calor", "Hexagonos"],
+    horizontal=True,
+    key="mapa_tipo_viz",
+    help=(
+        "Pontos: um marcador por escola (scatter). "
+        "Mapa de calor: densidade ponderada por alunos alvo (Fund AF + Medio). "
+        "Hexagonos: colunas 3D agregando densidade em regioes."
+    ),
 )
+
+# Verifica se a coluna alvo existe (pode nao existir em bases antigas)
+has_alvo = "alvo" in df_map.columns and df_map["alvo"].sum() > 0
+
+# Se o usuario escolher Heatmap/Hexagon mas nao ha alvo, avisa e volta pra Pontos
+if tipo_viz in ("Mapa de calor", "Hexagonos") and not has_alvo:
+    alert_banner(
+        "Dados de alunos alvo (Fund AF + Medio) nao disponiveis para essas escolas. "
+        "Voltando para visualizacao em Pontos.",
+        "warning",
+    )
+    tipo_viz = "Pontos"
+
+# Montar camada(s) condicionalmente
+layers = []
+if tipo_viz == "Pontos":
+    scatter_layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=df_map,
+        get_position=["lon", "lat"],
+        get_color="color",
+        get_radius="radius",
+        radius_min_pixels=2 if is_csv_mode else 4,
+        radius_max_pixels=40,
+        pickable=True,
+        auto_highlight=True,
+    )
+    layers.append(scatter_layer)
+
+elif tipo_viz == "Mapa de calor":
+    heatmap_layer = pdk.Layer(
+        "HeatmapLayer",
+        data=df_map,
+        get_position=["lon", "lat"],
+        get_weight="alvo",
+        radius_pixels=60,
+        opacity=0.8,
+        aggregation="SUM",
+        pickable=False,
+    )
+    layers.append(heatmap_layer)
+    # Caption explicativa
+    st.caption(
+        f"Mapa de calor ponderado por alunos alvo. "
+        f"Total: {int(df_map['alvo'].sum()):,} alunos em {len(df_map)} escolas.".replace(",", ".")
+    )
+
+elif tipo_viz == "Hexagonos":
+    hex_layer = pdk.Layer(
+        "HexagonLayer",
+        data=df_map,
+        get_position=["lon", "lat"],
+        get_elevation_weight="alvo",
+        elevation_scale=0.5,
+        elevation_range=[0, 3000],
+        radius=800,
+        extruded=True,
+        coverage=0.85,
+        opacity=0.7,
+        pickable=True,
+        auto_highlight=True,
+    )
+    layers.append(hex_layer)
+    st.caption(
+        f"Hexagonos 3D agregando {int(df_map['alvo'].sum()):,} alunos alvo em regioes de ~800m. "
+        "Altura e cor = densidade de alvo.".replace(",", ".")
+    )
 
 # Centralizar no centroide dos dados
 center_lat = df_map["lat"].mean()
@@ -467,7 +547,8 @@ view_state = pdk.ViewState(
     latitude=center_lat,
     longitude=center_lon,
     zoom=auto_zoom,
-    pitch=0,
+    pitch=40 if tipo_viz == "Hexagonos" else 0,
+    bearing=0,
 )
 
 tooltip = {
@@ -483,10 +564,13 @@ tooltip = {
     },
 }
 
+# Tooltip nao funciona bem em HeatmapLayer
+deck_tooltip = tooltip if tipo_viz != "Mapa de calor" else None
+
 deck = pdk.Deck(
-    layers=[scatter_layer],
+    layers=layers,
     initial_view_state=view_state,
-    tooltip=tooltip,
+    tooltip=deck_tooltip,
     map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
 )
 

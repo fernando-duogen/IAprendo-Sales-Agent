@@ -76,7 +76,9 @@ with col_f3:
 # ===========================================================================
 try:
     all_companies = db.client.table("companies").select(
-        "id,name,city,state,qualification_score,status"
+        "id,name,city,state,qualification_score,status,"
+        "matriculas_fund_af,matriculas_medio,nivel_tecnologico,"
+        "qt_coordenadores,fonte_dados,categoria_privada,admin_dependency"
     ).order("qualification_score", desc=True).limit(200).execute().data or []
 except Exception as e:
     st.error(f"Erro: {e}")
@@ -146,6 +148,153 @@ with mc4:
     metric_card("Com Email", com_email, COLORS["secondary"], icon="email")
 
 st.markdown("")
+
+# ===========================================================================
+# SECAO: COBERTURA DE CONTATOS (expansivel)
+# ===========================================================================
+with st.expander("📊 Cobertura de contatos (insights + gaps prioritarios)", expanded=False):
+    import pandas as pd
+    import plotly.express as px
+    from utils.contact_stats import compute_contact_coverage, rank_sem_contato_por_fit
+    from utils.fit_score import calcular_fit_score
+
+    stats = compute_contact_coverage(all_companies, all_contacts)
+
+    def _cor_pct(pct: float) -> str:
+        """Verde >=80%, amarelo 50-80%, vermelho <50%."""
+        if pct >= 80:
+            return COLORS["success"]
+        if pct >= 50:
+            return COLORS["warning"]
+        return COLORS["error"]
+
+    cov1, cov2, cov3, cov4 = st.columns(4)
+    with cov1:
+        metric_card(
+            "% com Email",
+            f"{stats['pct_com_email']}%",
+            _cor_pct(stats["pct_com_email"]),
+            icon="email",
+        )
+    with cov2:
+        metric_card(
+            "% com WhatsApp",
+            f"{stats['pct_com_whatsapp']}%",
+            _cor_pct(stats["pct_com_whatsapp"]),
+            icon="chat",
+        )
+    with cov3:
+        metric_card(
+            "% com Diretor",
+            f"{stats['pct_com_diretor']}%",
+            _cor_pct(stats["pct_com_diretor"]),
+            icon="school",
+        )
+    with cov4:
+        metric_card(
+            "% Diretor + Email",
+            f"{stats['pct_com_diretor_email']}%",
+            _cor_pct(stats["pct_com_diretor_email"]),
+            icon="verified_user",
+        )
+
+    st.caption(
+        f"Base: **{stats['total_escolas']} escolas**, "
+        f"**{stats['total_contatos']} contatos**. "
+        f"{len(stats['escolas_sem_contato_ids'])} escolas sem nenhum contato, "
+        f"{len(stats['escolas_sem_email_ids'])} sem email, "
+        f"{len(stats['escolas_sem_whatsapp_ids'])} sem WhatsApp."
+    )
+
+    st.markdown("")
+
+    # Grafico de fonte dos contatos
+    if stats["por_fonte"]:
+        SRC_LABELS_FULL = {
+            "perplexity": "Perplexity",
+            "hunter": "Hunter.io",
+            "apollo": "Apollo.io",
+            "web_scraping": "Scraping",
+            "manual": "Manual",
+            "email_pattern": "Padrao de email",
+            "deduced:nome.sobrenome": "Deduzido (nome.sobrenome)",
+            "snov": "Snov",
+            "placeholder": "Placeholder",
+            "desconhecida": "Desconhecida",
+        }
+        df_fonte = pd.DataFrame([
+            {"Fonte": SRC_LABELS_FULL.get(k, k), "Contatos": v}
+            for k, v in stats["por_fonte"].items()
+        ]).sort_values("Contatos", ascending=False)
+
+        fig_fonte = px.pie(
+            df_fonte,
+            values="Contatos",
+            names="Fonte",
+            title="Contatos por fonte de coleta",
+            hole=0.4,
+        )
+        fig_fonte.update_traces(textposition="inside", textinfo="percent+label")
+        fig_fonte.update_layout(height=300, margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig_fonte, use_container_width=True)
+
+    st.markdown("")
+
+    # Top 10 escolas sem contato, priorizadas por Fit
+    top_sem_contato = rank_sem_contato_por_fit(
+        all_companies, stats["escolas_sem_contato_ids"], calcular_fit_score, limite=10
+    )
+    top_sem_email = rank_sem_contato_por_fit(
+        all_companies, stats["escolas_sem_email_ids"], calcular_fit_score, limite=10
+    )
+
+    col_gap1, col_gap2 = st.columns(2)
+    with col_gap1:
+        st.markdown("**🚨 Top 10 escolas SEM contato, por Fit IAprendo**")
+        if top_sem_contato:
+            df_sc = pd.DataFrame([{
+                "Escola": t["name"][:38],
+                "Cidade": f"{t['city'] or ''}/{t['state'] or ''}",
+                "Alvo": t["alvo"],
+                "Fit": t["fit"],
+            } for t in top_sem_contato])
+            st.dataframe(
+                df_sc,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Fit": st.column_config.ProgressColumn("Fit", min_value=0, max_value=100),
+                    "Alvo": st.column_config.NumberColumn("Alvo"),
+                },
+            )
+        else:
+            st.caption("Nenhuma escola sem contato — cobertura total.")
+
+    with col_gap2:
+        st.markdown("**📭 Top 10 escolas SEM email, por Fit IAprendo**")
+        if top_sem_email:
+            df_se = pd.DataFrame([{
+                "Escola": t["name"][:38],
+                "Cidade": f"{t['city'] or ''}/{t['state'] or ''}",
+                "Alvo": t["alvo"],
+                "Fit": t["fit"],
+            } for t in top_sem_email])
+            st.dataframe(
+                df_se,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Fit": st.column_config.ProgressColumn("Fit", min_value=0, max_value=100),
+                    "Alvo": st.column_config.NumberColumn("Alvo"),
+                },
+            )
+        else:
+            st.caption("Nenhuma escola sem email — todas cobertas.")
+
+    st.caption(
+        "💡 Essas sao as escolas com maior potencial (Fit IAprendo) que "
+        "ainda nao tem contato ou email. Priorize-as no enriquecimento."
+    )
 
 if not filtered:
     alert_banner("Nenhuma escola encontrada com os filtros atuais.", "warning")
