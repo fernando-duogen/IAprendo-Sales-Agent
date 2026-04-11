@@ -276,6 +276,23 @@ TOOLS = [
         }
     },
     {
+        "name": "diagnostico_sistema",
+        "description": "Verifica saude geral do sistema IAprendo: banco, bridge WhatsApp, "
+                       "webhook Flask, tools do IAlex, fila de aprovacao, erros recentes, "
+                       "quotas de API, pipeline config. Retorna overall (healthy/degraded/critical) "
+                       "+ detalhes por check. Use quando Fernando perguntar 'como esta o sistema', "
+                       "'tudo ok', 'check saude', 'ta tudo funcionando', ou quando algo parecer estranho.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "detalhado": {
+                    "type": "boolean",
+                    "description": "Se true, retorna todos os 10 checks. Se false (default), so os com problema + resumo."
+                }
+            }
+        }
+    },
+    {
         "name": "detalhes_escola",
         "description": "Retorna TODOS os detalhes de uma escola especifica: dados cadastrais, score, contatos, interacoes, fila de aprovacao.",
         "input_schema": {
@@ -3814,6 +3831,67 @@ def _handle_uso_apis(params: Dict) -> str:
     }, ensure_ascii=False)
 
 
+def _handle_diagnostico_sistema(params: Dict) -> str:
+    """Health check consolidado do sistema. Chama tools.health_check.run_health_check
+    e formata a resposta pro WhatsApp com emojis de status."""
+    try:
+        from tools.health_check import run_health_check
+    except Exception as e:
+        return json.dumps({"erro": f"Modulo de health check indisponivel: {e}"}, ensure_ascii=False)
+
+    detalhado = bool(params.get("detalhado", False))
+
+    try:
+        report = run_health_check()
+    except Exception as e:
+        return json.dumps({
+            "erro": f"Falha ao executar diagnostico: {type(e).__name__}: {str(e)[:200]}"
+        }, ensure_ascii=False)
+
+    overall = report.get("overall", "unknown")
+    emoji_map = {
+        "healthy": "🟢",
+        "degraded": "🟡",
+        "critical": "🔴",
+        "unknown": "⚪",
+    }
+    overall_emoji = emoji_map.get(overall, "⚪")
+    alerts = report.get("alerts", [])
+    stats = report.get("stats", {})
+    checks = report.get("checks", {})
+
+    # Resposta resumida (default)
+    out = {
+        "overall": overall,
+        "overall_label": f"{overall_emoji} {overall.upper()}",
+        "resumo": report.get("summary", ""),
+        "stats": stats,
+        "alertas": [
+            {
+                "check": a.get("check"),
+                "status": a.get("status"),
+                "icone": emoji_map.get(a.get("status"), "⚪"),
+                "detalhe": a.get("detail"),
+            }
+            for a in alerts
+        ],
+        "timestamp": report.get("timestamp"),
+    }
+
+    if detalhado:
+        # Adiciona todos os 10 checks com detalhes
+        out["checks_completos"] = {
+            name: {
+                "icone": emoji_map.get(c.get("status"), "⚪"),
+                "status": c.get("status"),
+                "detalhe": c.get("detail"),
+            }
+            for name, c in checks.items()
+        }
+
+    return json.dumps(out, ensure_ascii=False, default=str)
+
+
 def _handle_detalhes_escola(params: Dict) -> str:
     escola = None
 
@@ -5789,6 +5867,7 @@ TOOL_HANDLERS = {
     # Utilitários
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
+    "diagnostico_sistema": _handle_diagnostico_sistema,
 }
 
 
@@ -5893,6 +5972,12 @@ no banco.
   (preco, timing, concorrente, orcamento, nao_prioridade, outro).
 - Qualificar escolas em lote → *operacao_lote* (acao: qualificar)
 - Gerar emails em lote → *operacao_lote* (acao: gerar_emails)
+- Checar saude do sistema → *diagnostico_sistema*
+  Ex: "ta tudo ok?" / "como esta o sistema?" / "check saude" / "algo esta estranho"
+  Retorna: overall (healthy/degraded/critical) + 10 checks (banco, bridge,
+  webhook, tools, fila, erros, quotas, pipeline config). Use quando Fernando
+  perguntar se esta tudo funcionando ou quando voce mesmo quiser verificar
+  antes de tomar uma acao grande.
 
 == REGRA CRITICA: FLUXO DE GERACAO DE EMAIL (anti-IA) ==
 Emails com "cara de IA" (genericos, com adjetivos vazios, saudacoes chatas) tem taxa de resposta PESSIMA. Por isso, o fluxo para gerar email e CONVERSACIONAL, nao automatico:
