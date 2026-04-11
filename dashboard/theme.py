@@ -204,6 +204,102 @@ h3 { font-size: 18px !important; }
     border-color: #E0E0E0;
 }
 
+/* ===== ACTION TILES (Painel home) ===== */
+/* Marker div (vazio) dentro de stMarkdown dentro de stElementContainer — usado
+   com :has() pra selecionar o PROXIMO stElementContainer (que contem o botao). */
+div[data-testid="stElementContainer"]:has(.action-tile),
+div[data-testid="stElementContainer"]:has(.action-tile-hot) {
+    margin-bottom: 0 !important;
+    height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+}
+.action-tile, .action-tile-hot {
+    display: none !important;  /* o marker em si nao renderiza */
+}
+/* Container do botao (stButton) — garante full width */
+div[data-testid="stElementContainer"]:has(.action-tile) + div[data-testid="stElementContainer"],
+div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="stElementContainer"] {
+    width: 100% !important;
+}
+/* O stElementContainer logo DEPOIS do marker vira o tile completo */
+div[data-testid="stElementContainer"]:has(.action-tile) + div[data-testid="stElementContainer"] button,
+div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="stElementContainer"] button {
+    min-height: 88px !important;
+    height: 88px !important;
+    width: 100% !important;
+    padding: 14px 16px !important;
+    text-align: left !important;
+    border: 1px solid #E0E0E0 !important;
+    border-left: 4px solid #1976D2 !important;
+    border-radius: 10px !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+    transition: all 0.15s ease !important;
+    white-space: normal !important;
+    line-height: 1.3 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+}
+div[data-testid="stElementContainer"]:has(.action-tile) + div[data-testid="stElementContainer"] button > div,
+div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="stElementContainer"] button > div {
+    align-items: flex-start !important;
+    text-align: left !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+}
+div[data-testid="stElementContainer"]:has(.action-tile) + div[data-testid="stElementContainer"] button:hover,
+div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="stElementContainer"] button:hover {
+    box-shadow: 0 4px 14px rgba(0,0,0,0.10) !important;
+    transform: translateY(-1px) !important;
+}
+div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="stElementContainer"] button {
+    background: linear-gradient(to right, #FFF8E1 0%, #FFFFFF 55%) !important;
+    border-left-width: 5px !important;
+}
+/* Icone Material dentro do button (:material/nome: gera span com data-testid=stIconMaterial) */
+div[data-testid="stElementContainer"]:has(.action-tile) + div[data-testid="stElementContainer"] button span[role="img"][aria-label*="icon"],
+div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="stElementContainer"] button span[role="img"][aria-label*="icon"] {
+    font-size: 28px !important;
+    vertical-align: middle !important;
+    margin-right: 6px !important;
+    flex-shrink: 0 !important;
+}
+/* Cores por tile (border-left + icone) — 6 variantes baseadas em COLORS */
+div[data-testid="stElementContainer"]:has(.tc-primary) + div[data-testid="stElementContainer"] button { border-left-color: #1976D2 !important; }
+div[data-testid="stElementContainer"]:has(.tc-primary) + div[data-testid="stElementContainer"] button span[role="img"][aria-label*="icon"] { color: #1976D2 !important; }
+div[data-testid="stElementContainer"]:has(.tc-secondary) + div[data-testid="stElementContainer"] button { border-left-color: #00897B !important; }
+div[data-testid="stElementContainer"]:has(.tc-secondary) + div[data-testid="stElementContainer"] button span[role="img"][aria-label*="icon"] { color: #00897B !important; }
+div[data-testid="stElementContainer"]:has(.tc-warning) + div[data-testid="stElementContainer"] button { border-left-color: #F57F17 !important; }
+div[data-testid="stElementContainer"]:has(.tc-warning) + div[data-testid="stElementContainer"] button span[role="img"][aria-label*="icon"] { color: #F57F17 !important; }
+div[data-testid="stElementContainer"]:has(.tc-success) + div[data-testid="stElementContainer"] button { border-left-color: #2E7D32 !important; }
+div[data-testid="stElementContainer"]:has(.tc-success) + div[data-testid="stElementContainer"] button span[role="img"][aria-label*="icon"] { color: #2E7D32 !important; }
+div[data-testid="stElementContainer"]:has(.tc-accent) + div[data-testid="stElementContainer"] button { border-left-color: #FF6D00 !important; }
+div[data-testid="stElementContainer"]:has(.tc-accent) + div[data-testid="stElementContainer"] button span[role="img"][aria-label*="icon"] { color: #FF6D00 !important; }
+div[data-testid="stElementContainer"]:has(.tc-info) + div[data-testid="stElementContainer"] button { border-left-color: #1565C0 !important; }
+div[data-testid="stElementContainer"]:has(.tc-info) + div[data-testid="stElementContainer"] button span[role="img"][aria-label*="icon"] { color: #1565C0 !important; }
+/* Titulo (primeira linha, strong) */
+div[data-testid="stElementContainer"]:has(.action-tile) + div[data-testid="stElementContainer"] button p strong,
+div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="stElementContainer"] button p strong {
+    font-size: 14.5px !important;
+    color: #212121 !important;
+    font-weight: 600 !important;
+}
+/* Subtitulo (segunda linha do markdown) */
+div[data-testid="stElementContainer"]:has(.action-tile) + div[data-testid="stElementContainer"] button p,
+div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="stElementContainer"] button p {
+    margin: 0 !important;
+    font-size: 12px !important;
+    color: #616161 !important;
+    font-weight: 400 !important;
+    line-height: 1.4 !important;
+    width: 100% !important;
+}
+
 /* ===== STATUS BADGES ===== */
 .badge {
     display: inline-block;
@@ -611,6 +707,57 @@ def metric_card_clickable(label: str, value, color: str = COLORS["primary"],
     delta_str = f" ({delta})" if delta else ""
     btn_label = f"{icon_emoji} {label}: {value}{delta_str}"
     return st.button(btn_label, key=key, use_container_width=True, type="secondary")
+
+
+def action_tile(
+    icon: str,
+    title: str,
+    subtitle: str = "",
+    color: str = COLORS["primary"],
+    key: str = "",
+    highlight: bool = False,
+) -> bool:
+    """Tile clicavel grande pra home/hub (1 elemento unico, sem botao separado).
+
+    Renderiza um st.button com label em markdown (:material/icon: + **title**
+    + subtitle) estilizado via CSS injetado em inject_theme() como card com
+    icone grande, borda colorida a esquerda, hover, etc.
+
+    Args:
+        icon: nome do icone Material (ex: "rocket_launch", "task_alt")
+        title: titulo em negrito (primeira linha)
+        subtitle: linha secundaria dinamica (ex: "5 pendentes")
+        color: cor do icone e borda esquerda (usar COLORS[...])
+        key: chave unica do botao
+        highlight: se True, destaca com fundo levemente amarelado (acao urgente)
+
+    Returns:
+        True quando clicado. Uso tipico:
+            if action_tile("rocket_launch", "Pipeline", "Rodar", key="t1"):
+                st.switch_page("pages/3_Pipeline.py")
+    """
+    wrapper_class = "action-tile-hot" if highlight else "action-tile"
+    # Mapeia hex color -> classe semantica pra CSS (:has seletor)
+    color_map = {
+        COLORS["primary"]: "tc-primary",
+        COLORS["secondary"]: "tc-secondary",
+        COLORS["warning"]: "tc-warning",
+        COLORS["success"]: "tc-success",
+        COLORS["accent"]: "tc-accent",
+        COLORS["info"]: "tc-info",
+    }
+    color_class = color_map.get(color, "tc-primary")
+    st.markdown(
+        f'<div class="{wrapper_class} {color_class}"></div>',
+        unsafe_allow_html=True,
+    )
+    # Label em markdown multi-linha: primeira linha com icone+titulo,
+    # segunda linha com subtitulo (separado por 2 espacos + \n = <br>)
+    if subtitle:
+        label = f":material/{icon}: **{title}**  \n{subtitle}"
+    else:
+        label = f":material/{icon}: **{title}**"
+    return st.button(label, key=key, use_container_width=True)
 
 
 def status_badge(status: str, text: Optional[str] = None):

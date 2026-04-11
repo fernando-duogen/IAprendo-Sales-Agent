@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dashboard.theme import (
-    apply_theme, metric_card, metric_card_clickable, section_header, alert_banner,
+    apply_theme, metric_card, metric_card_clickable, action_tile, section_header, alert_banner,
     COLORS, STATUS_COLORS, timeline_item,
 )
 
@@ -147,105 +147,51 @@ try:
     if unread > 0:
         alert_banner(f"<strong>{unread} notificacao(oes)</strong> nao lida(s)", "info")
 
-    # === KPI ROW ===
-    section_header("Resumo", "dashboard")
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    with k1:
-        if metric_card_clickable("Escolas", total, icon="school", color=COLORS["primary"], key="kpi_escolas"):
-            st.switch_page("pages/5_🏫_Escolas.py")
-    with k2:
-        if metric_card_clickable("Pendentes", pending, icon="pending_actions", color=COLORS["warning"],
-                     delta="acao" if pending > 0 else "", key="kpi_pendentes"):
-            st.switch_page("pages/8_✉️_Aprovacao.py")
-    with k3:
-        if metric_card_clickable("Enviados", sent, icon="send", color=COLORS["secondary"], key="kpi_enviados"):
-            st.switch_page("pages/8_✉️_Aprovacao.py")
-    with k4:
-        open_pct = f"{opened * 100 // sent}%" if sent else "0%"
-        if metric_card_clickable("Abertos", opened, icon="mark_email_read", color=COLORS["info"], delta=open_pct, key="kpi_abertos"):
-            st.switch_page("pages/9_🔄_Follow-ups.py")
-    with k5:
-        reply_pct = f"{replied * 100 // sent}%" if sent else "0%"
-        if metric_card_clickable("Respondidos", replied, icon="reply", color=COLORS["success"], delta=reply_pct, key="kpi_respondidos"):
-            st.switch_page("pages/4_🎯_CRM.py")
-    with k6:
-        if metric_card_clickable("Follow-ups", due_count, icon="autorenew", color=COLORS["accent"],
-                     delta="pendentes" if due_count > 0 else "", key="kpi_followups"):
-            st.switch_page("pages/9_🔄_Follow-ups.py")
+    # === PAINEL (grid unico 4x2 — tiles clicaveis, sem redundancia) ===
+    section_header("Painel", "dashboard")
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    reply_pct = (replied * 100 // sent) if sent else 0
 
-    # === QUICK ACTIONS (3x2 grid) ===
-    section_header("Acoes Rapidas", "bolt")
-
-    ac1, ac2, ac3 = st.columns(3)
-    with ac1:
-        st.markdown(
-            '<div class="data-card">'
-            '<span class="material-icons-outlined" style="color:#1976D2;font-size:28px">rocket_launch</span>'
-            '<h3 style="margin:8px 0 4px 0;font-size:16px!important">Pipeline</h3>'
-            '<p style="color:#757575;font-size:13px;margin:0">Executar qualificacao e gerar emails</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("Abrir Pipeline", key="goto_pipeline", use_container_width=True, type="primary"):
+    row1 = st.columns(4)
+    with row1[0]:
+        if action_tile("rocket_launch", "Pipeline", "Rodar qualificacao e geracao",
+                       color=COLORS["primary"], key="tile_pipeline"):
             st.switch_page("pages/3_📊_Pipeline.py")
-    with ac2:
-        st.markdown(
-            f'<div class="data-card">'
-            f'<span class="material-icons-outlined" style="color:#2E7D32;font-size:28px">task_alt</span>'
-            f'<h3 style="margin:8px 0 4px 0;font-size:16px!important">Fila de Aprovacao</h3>'
-            f'<p style="color:#757575;font-size:13px;margin:0">{pending} mensagem(ns) pendente(s)</p>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("Aprovar Emails", key="goto_queue", use_container_width=True):
+    with row1[1]:
+        sub_apr = f"{pending} pendente(s)" if pending > 0 else "Tudo aprovado"
+        color_apr = COLORS["warning"] if pending > 0 else COLORS["success"]
+        if action_tile("task_alt", "Aprovacao", sub_apr, color=color_apr,
+                       key="tile_aprovacao", highlight=pending > 0):
             st.switch_page("pages/8_✉️_Aprovacao.py")
-    with ac3:
-        st.markdown(
-            f'<div class="data-card">'
-            f'<span class="material-icons-outlined" style="color:#FF6D00;font-size:28px">autorenew</span>'
-            f'<h3 style="margin:8px 0 4px 0;font-size:16px!important">Follow-ups</h3>'
-            f'<p style="color:#757575;font-size:13px;margin:0">{due_count} escola(s) para follow-up</p>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("Ver Follow-ups", key="goto_fups", use_container_width=True):
+    with row1[2]:
+        sub_fup = f"{due_count} devido(s)" if due_count > 0 else "Nenhum devido"
+        color_fup = COLORS["accent"] if due_count > 0 else COLORS["primary"]
+        if action_tile("autorenew", "Follow-ups", sub_fup, color=color_fup,
+                       key="tile_followups", highlight=due_count > 0):
             st.switch_page("pages/9_🔄_Follow-ups.py")
-
-    ac4, ac5, ac6 = st.columns(3)
-    with ac4:
-        st.markdown(
-            '<div class="data-card">'
-            '<span class="material-icons-outlined" style="color:#7B1FA2;font-size:28px">view_kanban</span>'
-            '<h3 style="margin:8px 0 4px 0;font-size:16px!important">CRM</h3>'
-            '<p style="color:#757575;font-size:13px;margin:0">Pipeline visual de vendas</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("Abrir CRM", key="goto_crm", use_container_width=True):
+    with row1[3]:
+        sub_crm = f"{replied}/{sent} respondidos ({reply_pct}%)" if sent else "Sem envios ainda"
+        if action_tile("view_kanban", "CRM", sub_crm, color=COLORS["secondary"],
+                       key="tile_crm"):
             st.switch_page("pages/4_🎯_CRM.py")
-    with ac5:
-        st.markdown(
-            '<div class="data-card">'
-            '<span class="material-icons-outlined" style="color:#00897B;font-size:28px">contacts</span>'
-            '<h3 style="margin:8px 0 4px 0;font-size:16px!important">Contatos</h3>'
-            '<p style="color:#757575;font-size:13px;margin:0">Gerenciar decisores e contatos</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("Ver Contatos", key="goto_contatos", use_container_width=True):
+
+    row2 = st.columns(4)
+    with row2[0]:
+        if action_tile("school", "Escolas", f"{total} cadastradas",
+                       color=COLORS["primary"], key="tile_escolas"):
+            st.switch_page("pages/5_🏫_Escolas.py")
+    with row2[1]:
+        sub_emails = f"{sent} enviados · {opened} abertos" if sent else "Nenhum enviado"
+        if action_tile("mark_email_read", "Emails", sub_emails, color=COLORS["info"],
+                       key="tile_emails"):
+            st.switch_page("pages/8_✉️_Aprovacao.py")
+    with row2[2]:
+        if action_tile("contacts", "Contatos", "Gerenciar decisores",
+                       color=COLORS["success"], key="tile_contatos"):
             st.switch_page("pages/7_👥_Contatos.py")
-    with ac6:
-        st.markdown(
-            '<div class="data-card">'
-            '<span class="material-icons-outlined" style="color:#1565C0;font-size:28px">map</span>'
-            '<h3 style="margin:8px 0 4px 0;font-size:16px!important">Mapa</h3>'
-            '<p style="color:#757575;font-size:13px;margin:0">Visualizacao geografica das escolas</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("Ver Mapa", key="goto_mapa", use_container_width=True):
+    with row2[3]:
+        if action_tile("map", "Mapa", "Visualizacao geografica",
+                       color=COLORS["primary"], key="tile_mapa"):
             st.switch_page("pages/6_🗺️_Mapa.py")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
