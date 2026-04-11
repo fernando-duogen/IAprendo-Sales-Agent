@@ -854,6 +854,11 @@ if st.session_state.get(f"show_template_{queue_id}", False):
                             "subject": rendered["subject"],
                             "body": rendered["body"],
                         }).eq("id", queue_id).execute()
+                        # Forca o widget state a coincidir com o novo valor
+                        # — sem isso, o Streamlit ignora o value= dos widgets
+                        # Corpo/Assunto e continua mostrando o texto antigo.
+                        st.session_state[f"subj_{queue_id}"] = rendered["subject"]
+                        st.session_state[f"body_{queue_id}"] = rendered["body"]
                         st.session_state[f"show_template_{queue_id}"] = False
                         st.success("Mensagem substituida pelo template!")
                         st.rerun()
