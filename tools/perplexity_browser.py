@@ -71,7 +71,17 @@ class PerplexityBrowser:
             logger.info("Navegador Playwright iniciado")
             return True
         except Exception as e:
-            logger.error("Falha ao iniciar navegador", extra={"error": str(e)})
+            # str(e) as vezes vem vazio em exceptions do Playwright — usar
+            # repr pra garantir que sempre temos contexto util pro debug.
+            err_msg = str(e) or repr(e) or type(e).__name__
+            logger.error(
+                "Falha ao iniciar navegador",
+                extra={
+                    "error": err_msg,
+                    "error_type": type(e).__name__,
+                    "hint": "Pode ser outra instancia Chromium usando o user_data_dir. Feche navegadores de teste antigos.",
+                },
+            )
             self._enabled = False
             return False
 
