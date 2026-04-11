@@ -16,7 +16,7 @@ Usage:
     # Salvar nova assinatura
     email_signature.save_signature({
         "enabled": True,
-        "text": "Fernando Nienaber\\nIAprendo - Plataforma Educacional",
+        "text": "Fernando Teixeira\\nIAprendo - Plataforma Educacional",
         "image_url": "https://example.com/logo.png",
         "image_width": 200,
         "link_url": "https://iaprendo.com.br",

@@ -277,11 +277,14 @@ TOOLS = [
     },
     {
         "name": "diagnostico_sistema",
-        "description": "Verifica saude geral do sistema IAprendo: banco, bridge WhatsApp, "
-                       "webhook Flask, tools do IAlex, fila de aprovacao, erros recentes, "
-                       "quotas de API, pipeline config. Retorna overall (healthy/degraded/critical) "
-                       "+ detalhes por check. Use quando Fernando perguntar 'como esta o sistema', "
-                       "'tudo ok', 'check saude', 'ta tudo funcionando', ou quando algo parecer estranho.",
+        "description": "SAUDE TECNICA do sistema IAprendo. Testa componentes "
+                       "INFRAESTRUTURAIS: banco Supabase (latencia), migrations aplicadas, "
+                       "bridge WhatsApp conectado, webhook Flask, tools do IAlex consistentes, "
+                       "erros recentes nos logs, quotas de APIs externas, autonomy level. "
+                       "Use SEMPRE que Fernando perguntar 'check saude', 'ta tudo ok', 'esta "
+                       "tudo funcionando', 'como esta o sistema', 'algo estranho', 'ta rodando?'. "
+                       "NAO confundir com estatisticas_gerais — aquela mostra NUMEROS DO NEGOCIO "
+                       "(quantas escolas, fila, contatos), esta mostra SAUDE DOS COMPONENTES.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1953,6 +1956,7 @@ def _handle_enviar_email_teste(params: Dict) -> str:
             modo = f"copia do email para {escola}"
         else:
             subject = "[TESTE] Preview de email IAprendo"
+            _test_sender = settings.YOUR_NAME or "Fernando"
             body = (
                 "Oi! Este e um email de teste do IAlex.\n\n"
                 "Verifique:\n"
@@ -1961,7 +1965,7 @@ def _handle_enviar_email_teste(params: Dict) -> str:
                 "- O link de agendamento funciona?\n\n"
                 f"Link de teste: {os.getenv('HUBSPOT_MEETING_LINK', 'https://meetings.hubspot.com/fernando612')}\n\n"
                 "Se tudo estiver ok, a configuracao esta correta!\n\n"
-                "Fernando Nienaber\nIAprendo"
+                f"{_test_sender}\nIAprendo"
             )
             modo = "email generico de teste"
 
@@ -4424,15 +4428,19 @@ INDIQUE a persona escolhida no campo "reasoning" da resposta.
     # Gerar email usando OpenAI
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
     model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
-    prompt = f"""Voce e Fernando Nienaber, fundador da IAprendo. Escreva um email CURTO e HUMANO para uma escola, SEM CARA DE IA.
+    _sender_name = settings.YOUR_NAME or "Fernando"
+    _sender_first = _sender_name.split()[0] if _sender_name else "Fernando"
+    prompt = f"""Voce e {_sender_name}, fundador da IAprendo. Escreva um email CURTO e HUMANO para uma escola, SEM CARA DE IA.
 
 == REGRAS ABSOLUTAS (NAO NEGOCIAVEIS) ==
+- NUNCA use "Inteligencia Artificial", "IA", "tecnologia de IA", "LLM", "machine learning", "algoritmo", "algoritmos" no corpo. O nome IAprendo ja transmite isso. Foque em beneficio PEDAGOGICO (BNCC, desempenho, personalizacao por aluno, relatorios pra coordenacao), NAO em tecnologia.
 - NUNCA comece com "Ola [Nome], tudo bem?", "Espero que esteja bem", ou similares vazios.
 - NUNCA use adjetivos exagerados: "incrivel", "excepcional", "revolucionario", "transformador", "inovador", "disruptivo".
 - NUNCA use jargoes corporativos: "otimizar", "maximizar", "alavancar", "impulsionar", "potencializar", "empoderar", "unlocking".
 - NUNCA prometa numeros especificos de melhoria ("30% melhor", "2x mais rapido") a menos que estejam nos dados reais da escola.
 - NUNCA use emojis.
 - NUNCA escreva "IAprendo e uma plataforma incrivel que..."
+- Assine com "{_sender_first}" (so primeiro nome) + linha "IAprendo · BNCC". NUNCA use outro nome.
 - MAXIMO 5 frases no corpo (nao conte saudacao e assinatura).
 
 == COMO ESCREVER ==
@@ -4464,8 +4472,17 @@ Cargo: {contato_cargo or '-'}
 
 == ASSUNTO ==
 Maximo 60 caracteres. NUNCA use CAIXA ALTA. Use o dado concreto quando possivel.
+NUNCA use a palavra "IA" ou "Inteligencia Artificial" no assunto nem no corpo.
 Exemplos BONS: "Sobre os 625 alunos do medio no Farroupilha", "IAprendo e o Colegio Marista"
-Exemplos RUINS: "Descubra o poder da IA!!!", "Oportunidade unica para sua escola"
+Exemplos RUINS: "Descubra o poder da IA!!!", "IA que transforma sua escola", "Oportunidade unica para sua escola", "Tecnologia de IA para sua escola"
+
+== EXEMPLO DE CORPO RUIM (NUNCA FACA) ==
+"Ola diretor, temos uma solucao de IA revolucionaria que vai transformar a forma como sua escola ensina. O IAprendo usa inteligencia artificial de ponta para personalizar o aprendizado e maximizar os resultados dos alunos."
+Problema: adjetivos vazios + mencao explicita a IA + jargao corporativo + pitch generico.
+
+== EXEMPLO DE CORPO BOM ==
+"Vi que voces tem 625 alunos no Fund AF e Medio distribuidos em 22 turmas. Esse perfil costuma ganhar muito com trilhas personalizadas por aluno — e exatamente o que o IAprendo faz: alinhamento a BNCC, exercicios e resumos por aluno, e relatorios por turma pra coordenacao. Ja trabalhamos junto com o Colegio X e o Y. Faz sentido uma conversa de 15 min pra eu mostrar como funciona na pratica?"
+Por que bom: abre com dado real, conecta ao beneficio pedagogico, explica SEM mencionar IA/tecnologia, termina com pergunta curta.
 
 == REGRA DE NUMEROS (CRITICA) ==
 Os UNICOS numeros que voce pode usar no email sao os que estao na secao "DADOS QUE DEVEM APARECER NO EMAIL" acima (se houver) ou os explicitamente listados em "DADOS REAIS DO CENSO 2025". NUNCA invente numeros. NUNCA faca contas combinando dados (ex: somar matriculas). NUNCA confunda dado de escola com dado de rede. Se precisa de um numero e nao esta na lista, escreva sem numero.
@@ -5978,6 +5995,27 @@ no banco.
   webhook, tools, fila, erros, quotas, pipeline config). Use quando Fernando
   perguntar se esta tudo funcionando ou quando voce mesmo quiser verificar
   antes de tomar uma acao grande.
+
+== DESAMBIGUACAO CRITICA: saude vs estatisticas ==
+Essas duas tools parecem parecidas mas sao COMPLETAMENTE diferentes. NUNCA confunda:
+
+- "check saude" / "ta tudo ok?" / "sistema funcionando?" / "algo estranho?"
+  / "bridge ta de pe?" / "ta rodando?" / "como esta o sistema?"
+  → SEMPRE use *diagnostico_sistema*
+  (componentes TECNICOS: banco, bridge WhatsApp, webhook, erros nos logs,
+  quotas de API, migrations — infra saude)
+
+- "quantas escolas tenho?" / "qual o estado da fila?" / "quantos contatos?"
+  / "o que tenho pra fazer hoje?" / "resumo do CRM"
+  → use *estatisticas_gerais*
+  (NUMEROS do NEGOCIO: escolas no banco, fila de aprovacao, interacoes,
+  KPIs do CRM)
+
+Regra mental: "SAUDE" = componentes tecnicos/infraestrutura.
+"ESTATISTICAS" = numeros operacionais do dia-a-dia.
+
+Se em duvida, pergunte ao Fernando: "voce quer saber a saude TECNICA
+(banco, bridge, erros) ou os NUMEROS do CRM (escolas, fila)?"
 
 == REGRA CRITICA: FLUXO DE GERACAO DE EMAIL (anti-IA) ==
 Emails com "cara de IA" (genericos, com adjetivos vazios, saudacoes chatas) tem taxa de resposta PESSIMA. Por isso, o fluxo para gerar email e CONVERSACIONAL, nao automatico:

@@ -46,7 +46,7 @@ try:
             value=sig.get("text", ""),
             height=120,
             key="sig_text",
-            placeholder="Fernando Nienaber\nIAprendo - Plataforma Educacional\n(51) 99642-2564\nwww.iaprendo.com.br",
+            placeholder="Fernando Teixeira\nIAprendo - Plataforma Educacional\n(51) 99642-2564\nwww.iaprendo.com.br",
             help="Cada linha aparece separada. Use para nome, cargo, empresa, telefone, site.",
         )
         sig_image_url = st.text_input(
