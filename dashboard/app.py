@@ -186,7 +186,31 @@ try:
         if action_tile("map", "Mapa", "Visualizacao geografica",
                        color=COLORS["primary"], key="tile_mapa"):
             st.switch_page("pages/6_🗺️_Mapa.py")
-    # row2[3] intencionalmente vazia — HubSpot assumira a visao comercial quando ativado
+    with row2[3]:
+        # Tile Diagnostico — health check com cor dinamica (verde/amarelo/vermelho).
+        # Cache 30s pra nao impactar performance do Painel.
+        @st.cache_data(ttl=30, show_spinner=False)
+        def _cached_health_summary() -> dict:
+            try:
+                from tools.health_check import run_health_check
+                return run_health_check()
+            except Exception as _e:
+                return {"overall": "unknown", "summary": f"falha: {str(_e)[:40]}"}
+
+        health = _cached_health_summary()
+        overall = health.get("overall", "unknown")
+        overall_color = {
+            "healthy": COLORS["success"],
+            "degraded": COLORS["warning"],
+            "critical": COLORS["error"],
+            "unknown": COLORS["primary"],
+        }[overall]
+        health_sub = health.get("summary", "verificando...")
+        is_hot = overall in ("degraded", "critical")
+        if action_tile("health_and_safety", "Diagnostico", health_sub,
+                       color=overall_color, key="tile_diagnostico",
+                       highlight=is_hot):
+            st.switch_page("pages/2_⚙️_Configuracoes.py")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 

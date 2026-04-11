@@ -389,9 +389,163 @@ def render_memorias() -> None:
 
 
 # =============================================================================
-# TABS: Configuracoes + Memorias
+# render_diagnostico — health check consolidado do sistema
 # =============================================================================
-tab_config, tab_memorias = st.tabs(["⚙️ Configuracoes", "🧠 Memorias"])
+def render_diagnostico() -> None:
+    """Renderiza a aba Diagnostico: roda run_health_check() e mostra
+    status de todos os componentes (DB, bridge, webhook, tools, fila,
+    erros recentes, quotas de API, config)."""
+    from tools.health_check import run_health_check
+
+    st.caption(
+        "Health check consolidado: banco, bridge WhatsApp, webhook, tools do IAlex, "
+        "fila de aprovacao, erros recentes, quotas de API e configuracao. "
+        "Atualiza automaticamente a cada 30s (cache)."
+    )
+
+    # Cache 30s pra evitar reload constante
+    @st.cache_data(ttl=30, show_spinner=False)
+    def _cached_health() -> dict:
+        return run_health_check()
+
+    # Botao pra forçar refresh
+    col_refresh, col_ts = st.columns([1, 3])
+    with col_refresh:
+        if st.button("🔄 Atualizar", key="diag_refresh", use_container_width=True):
+            _cached_health.clear()
+            st.rerun()
+
+    with st.spinner("Rodando checks..."):
+        report = _cached_health()
+
+    overall = report.get("overall", "unknown")
+    color_map = {
+        "healthy": COLORS["success"],
+        "degraded": COLORS["warning"],
+        "critical": COLORS["error"],
+        "unknown": "#9E9E9E",
+    }
+    emoji_map = {"healthy": "🟢", "degraded": "🟡", "critical": "🔴", "unknown": "⚪"}
+    overall_color = color_map.get(overall, "#9E9E9E")
+    overall_emoji = emoji_map.get(overall, "⚪")
+
+    with col_ts:
+        ts = report.get("timestamp", "")[:19].replace("T", " ")
+        st.caption(f"Ultima verificacao: {ts}")
+
+    # === Overall card ===
+    st.markdown(
+        f'<div class="data-card" style="border-left:6px solid {overall_color};padding:20px">'
+        f'<div style="display:flex;align-items:center;gap:16px">'
+        f'<span style="font-size:36px">{overall_emoji}</span>'
+        f'<div>'
+        f'<div style="font-size:22px;font-weight:700;color:{overall_color}">{overall.upper()}</div>'
+        f'<div style="font-size:14px;color:#616161">{report.get("summary","")}</div>'
+        f'</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("")
+
+    # === Grid de 10 checks ===
+    checks = report.get("checks", {})
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    section_header("Checks", "fact_check")
+
+    check_labels = {
+        "database": ("Banco de dados", "storage"),
+        "schema_migrations": ("Schema/Migrations", "schema"),
+        "bridge_whatsapp": ("Bridge WhatsApp", "sms"),
+        "webhook_flask": ("Webhook Flask", "webhook"),
+        "brain_tools": ("Tools do IAlex", "smart_toy"),
+        "queue_state": ("Fila de aprovacao", "approval"),
+        "error_rate_1h": ("Erros 1h", "error"),
+        "error_rate_24h": ("Erros 24h", "history"),
+        "api_quotas": ("Quotas de API", "speed"),
+        "pipeline_config": ("Config autonomia", "security"),
+    }
+
+    # Render 2 linhas x 5 colunas
+    check_order = list(check_labels.keys())
+    for row_start in (0, 5):
+        cols = st.columns(5)
+        for i, name in enumerate(check_order[row_start:row_start + 5]):
+            with cols[i]:
+                info = check_labels.get(name, (name, "circle"))
+                label, icon = info
+                check = checks.get(name, {})
+                status = check.get("status", "unknown")
+                detail = check.get("detail", "")
+                color = color_map.get(status, "#9E9E9E")
+                emo = emoji_map.get(status, "⚪")
+                metric_card(
+                    label,
+                    f"{emo}",
+                    icon=icon,
+                    color=color,
+                    delta=detail[:40],
+                )
+
+    # === Alertas ===
+    alerts = report.get("alerts", [])
+    if alerts:
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        section_header(f"Alertas ({len(alerts)})", "warning")
+        for a in alerts:
+            icon_emoji = emoji_map.get(a.get("status", "unknown"), "⚪")
+            st.markdown(
+                f'<div class="data-card" style="border-left:4px solid {color_map.get(a.get("status"), "#9E9E9E")}">'
+                f'{icon_emoji} <strong>{a.get("check", "?")}</strong> — {a.get("detail", "")}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    # === Erros recentes (24h) ===
+    error_check = checks.get("error_rate_24h", {})
+    error_meta = error_check.get("meta", {})
+    top_errors = error_meta.get("top_errors", [])
+    if top_errors:
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        with st.expander(f"📋 Top erros 24h ({len(top_errors)} tipo(s))", expanded=False):
+            for err in top_errors:
+                last = (err.get("last_seen") or "")[:19].replace("T", " ")
+                st.markdown(
+                    f"**{err.get('count', 0)}x** — `{err.get('message', '')[:150]}`  \n"
+                    f"<span style='color:#757575;font-size:11px'>ultimo em {last}</span>",
+                    unsafe_allow_html=True,
+                )
+
+    # === Quotas de API detalhadas ===
+    api_check = checks.get("api_quotas", {})
+    api_meta = api_check.get("meta", {})
+    api_usage = api_meta.get("usage", {})
+    if api_usage:
+        with st.expander("📊 Quotas de API (24h)", expanded=False):
+            qcols = st.columns(len(api_usage))
+            for i, (api, data) in enumerate(api_usage.items()):
+                with qcols[i]:
+                    used = data.get("used", 0)
+                    limit = data.get("limit", 1)
+                    pct = data.get("pct", 0)
+                    pct_color = COLORS["success"] if pct < 80 else COLORS["warning"] if pct < 100 else COLORS["error"]
+                    metric_card(
+                        api.capitalize(),
+                        f"{used}/{limit}",
+                        icon="speed",
+                        color=pct_color,
+                        delta=f"{pct:.0f}%",
+                    )
+                    st.progress(min(pct / 100, 1.0))
+
+
+# =============================================================================
+# TABS: Configuracoes + Memorias + Diagnostico
+# =============================================================================
+tab_config, tab_memorias, tab_diag = st.tabs([
+    "⚙️ Configuracoes",
+    "🧠 Memorias",
+    "🩺 Diagnostico",
+])
 
 with tab_config:
     # Carregar config atual
@@ -1060,3 +1214,6 @@ with tab_config:
 
 with tab_memorias:
     render_memorias()
+
+with tab_diag:
+    render_diagnostico()
