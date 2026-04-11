@@ -18,13 +18,28 @@ from utils.logger import logger
 
 
 # Mapeamento de status IAprendo -> stage label do HubSpot
+#
+# IMPORTANTE: Quando voce ativar HubSpot, o pipeline de Deals no HubSpot
+# precisa ter EXATAMENTE esses stage labels criados:
+#   Prospectado, Email Enviado, Email Aberto, Respondeu, Reuniao Agendada,
+#   Proposta Enviada, Convertido, Perdido
+#
+# Se algum nao existir, update_deal_stage() loga warning e nao faz nada
+# (seguro, mas sincronia nao acontece). Use o HubSpot UI (Settings > Objects >
+# Deals > Pipelines) pra criar os stages faltantes antes de ativar.
 STAGE_MAP = {
+    # Stages automaticos (inferidos pelo sistema)
     "prospectado": "Prospectado",
-    "email_enviado": "Email Enviado",
+    "contatado": "Email Enviado",
+    "email_enviado": "Email Enviado",      # alias retrocompat
     "email_aberto": "Email Aberto",
     "respondeu": "Respondeu",
-    "reuniao_agendada": "Reuniao Agendada",
-    "convertido": "Convertido",
+    "reuniao": "Reuniao Agendada",
+    "reuniao_agendada": "Reuniao Agendada",  # alias retrocompat
+    # Stages manuais (setados por Fernando via IAlex)
+    "proposta": "Proposta Enviada",
+    "cliente": "Convertido",
+    "convertido": "Convertido",             # alias retrocompat
     "perdido": "Perdido",
 }
 

@@ -147,14 +147,12 @@ try:
     if unread > 0:
         alert_banner(f"<strong>{unread} notificacao(oes)</strong> nao lida(s)", "info")
 
-    # === PAINEL (grid unico 4x2 — tiles clicaveis, sem redundancia) ===
+    # === PAINEL (grid 4+3 tiles — sem redundancia com HubSpot futuro) ===
     section_header("Painel", "dashboard")
-
-    reply_pct = (replied * 100 // sent) if sent else 0
 
     row1 = st.columns(4)
     with row1[0]:
-        if action_tile("rocket_launch", "Pipeline", "Rodar qualificacao e geracao",
+        if action_tile("rocket_launch", "Pipeline", "Execucao + pipeline comercial",
                        color=COLORS["primary"], key="tile_pipeline"):
             st.switch_page("pages/3_📊_Pipeline.py")
     with row1[1]:
@@ -170,29 +168,25 @@ try:
                        key="tile_followups", highlight=due_count > 0):
             st.switch_page("pages/9_🔄_Follow-ups.py")
     with row1[3]:
-        sub_crm = f"{replied}/{sent} respondidos ({reply_pct}%)" if sent else "Sem envios ainda"
-        if action_tile("view_kanban", "CRM", sub_crm, color=COLORS["secondary"],
-                       key="tile_crm"):
-            st.switch_page("pages/4_🎯_CRM.py")
-
-    row2 = st.columns(4)
-    with row2[0]:
         if action_tile("school", "Escolas", f"{total} cadastradas",
                        color=COLORS["primary"], key="tile_escolas"):
             st.switch_page("pages/5_🏫_Escolas.py")
-    with row2[1]:
+
+    row2 = st.columns(4)
+    with row2[0]:
         sub_emails = f"{sent} enviados · {opened} abertos" if sent else "Nenhum enviado"
         if action_tile("mark_email_read", "Emails", sub_emails, color=COLORS["info"],
                        key="tile_emails"):
             st.switch_page("pages/8_✉️_Aprovacao.py")
-    with row2[2]:
+    with row2[1]:
         if action_tile("contacts", "Contatos", "Gerenciar decisores",
                        color=COLORS["success"], key="tile_contatos"):
             st.switch_page("pages/7_👥_Contatos.py")
-    with row2[3]:
+    with row2[2]:
         if action_tile("map", "Mapa", "Visualizacao geografica",
                        color=COLORS["primary"], key="tile_mapa"):
             st.switch_page("pages/6_🗺️_Mapa.py")
+    # row2[3] intencionalmente vazia — HubSpot assumira a visao comercial quando ativado
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -257,4 +251,4 @@ except Exception as e:
     st.markdown("Use o **menu lateral** para navegar entre as paginas.")
 
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
-st.caption("Fluxo: Importar \u2192 Pipeline \u2192 Aprovar \u2192 Enviar \u2192 Acompanhar no CRM")
+st.caption("Fluxo: Importar \u2192 Pipeline \u2192 Aprovar \u2192 Enviar \u2192 Acompanhar via pipeline comercial + IAlex")

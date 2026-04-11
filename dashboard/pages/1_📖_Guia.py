@@ -339,7 +339,7 @@ _Dica: fale naturalmente, como com um colega. Nao precisa de comandos exatos._""
         "PASSO 1": "pages/11_📥_Importar.py",
         "PASSO 2": "pages/3_📊_Pipeline.py",
         "PASSO 3": "pages/8_✉️_Aprovacao.py",
-        "PASSO 4": "pages/4_🎯_CRM.py",
+        "PASSO 4": "pages/3_📊_Pipeline.py",
         "PASSO 5": "pages/2_⚙️_Configuracoes.py",
         "PASSO 6": "pages/2_⚙️_Configuracoes.py",
     }
@@ -519,8 +519,7 @@ with tab7:
     menu_items = [
         ("🏠 Painel", "KPIs, acoes rapidas, busca global, atividade recente", "app.py"),
         ("⚙️ Configuracoes", "Autonomia, pipeline, follow-ups, persona, multichannel", "pages/2_⚙️_Configuracoes.py"),
-        ("📊 Pipeline", "Executar etapas: qualificar, enriquecer, contatos, emails", "pages/3_📊_Pipeline.py"),
-        ("🎯 CRM", "Pipeline visual Kanban de vendas", "pages/4_🎯_CRM.py"),
+        ("📊 Pipeline", "Execucao tecnica + pipeline comercial (kanban de stages)", "pages/3_📊_Pipeline.py"),
         ("🏫 Escolas", "Gerenciar escolas: editar, excluir, historico", "pages/5_🏫_Escolas.py"),
         ("🗺️ Mapa", "Visualizacao geografica + explorar CSV completo", "pages/6_🗺️_Mapa.py"),
         ("👥 Contatos", "Lista e hierarquia de decisores por escola", "pages/7_👥_Contatos.py"),

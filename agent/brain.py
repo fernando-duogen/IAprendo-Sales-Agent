@@ -688,6 +688,56 @@ TOOLS = [
         }
     },
     {
+        "name": "registrar_proposta_enviada",
+        "description": "Registra que Fernando enviou proposta comercial pra uma escola. "
+                       "Move commercial_stage='proposta', grava valor mensal proposto e data. "
+                       "Use quando Fernando disser 'mandei proposta pro X', 'enviei orcamento', "
+                       "'passei valor pro X', etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {"type": "string", "description": "Nome da escola"},
+                "escola_id": {"type": "string", "description": "ID da escola (UUID)"},
+                "valor_mensal": {"type": "number", "description": "Valor mensal proposto em R$ (ex: 12000 para R$12 mil)"},
+                "data": {"type": "string", "description": "Data do envio (YYYY-MM-DD). Default: hoje"},
+                "observacoes": {"type": "string", "description": "Notas extras sobre a proposta (prazo, condicoes, etc)"}
+            },
+            "required": ["valor_mensal"]
+        }
+    },
+    {
+        "name": "marcar_cliente_ganho",
+        "description": "Marca escola como cliente fechado (deal ganho). Move commercial_stage='cliente', "
+                       "grava valor mensal fechado e data. Use quando Fernando disser 'fechei com X', "
+                       "'ganhamos o X', 'X virou cliente', 'assinou contrato'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {"type": "string", "description": "Nome da escola"},
+                "escola_id": {"type": "string", "description": "ID da escola (UUID)"},
+                "valor_mensal_fechado": {"type": "number", "description": "Valor mensal fechado em R$"},
+                "data": {"type": "string", "description": "Data do fechamento (YYYY-MM-DD). Default: hoje"}
+            },
+            "required": ["valor_mensal_fechado"]
+        }
+    },
+    {
+        "name": "marcar_perdido",
+        "description": "Marca escola como lead perdido (deal lost). Move commercial_stage='perdido', "
+                       "grava motivo em texto livre (uma IA secundaria classifica automaticamente em "
+                       "categoria enum). Use quando Fernando disser 'perdi o X', 'X nao fechou', "
+                       "'escolheu concorrente', 'desistiu'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {"type": "string", "description": "Nome da escola"},
+                "escola_id": {"type": "string", "description": "ID da escola (UUID)"},
+                "motivo": {"type": "string", "description": "Motivo livre descrito por Fernando (ex: 'foi pra concorrencia com preco menor')"}
+            },
+            "required": ["motivo"]
+        }
+    },
+    {
         "name": "operacao_lote",
         "description": "Executa operacoes em lote em multiplas escolas de uma vez. "
                        "Pode: importar N escolas de uma cidade, qualificar todas as raw, gerar emails em lote.",
@@ -2380,6 +2430,247 @@ def _handle_registrar_reuniao(params: Dict) -> str:
         return json.dumps({"erro": "Falha ao registrar reuniao."})
     except Exception as e:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _resolve_company_by_name_or_id(params: Dict) -> tuple:
+    """Helper: busca company_id + nome pelos params. Retorna (company_id, nome, erro_json).
+
+    erro_json eh None quando encontrou; caso contrario eh string JSON com erro.
+    """
+    company_id = params.get("escola_id")
+    escola_nome = params.get("escola_nome", "")
+    if not company_id and escola_nome:
+        r = db.client.table("companies").select("id,name").ilike(
+            "name", f"%{escola_nome}%"
+        ).limit(1).execute()
+        if r.data:
+            company_id = r.data[0]["id"]
+            escola_nome = r.data[0]["name"]
+        else:
+            return None, escola_nome, json.dumps({
+                "erro": f"Escola '{escola_nome}' nao encontrada no banco."
+            }, ensure_ascii=False)
+    if not company_id:
+        return None, escola_nome, json.dumps({
+            "erro": "Informe o nome ou ID da escola."
+        }, ensure_ascii=False)
+    # Se veio escola_id mas nao escola_nome, busca o nome pra retornar nas msgs
+    if not escola_nome:
+        try:
+            r = db.client.table("companies").select("name").eq("id", company_id).single().execute()
+            escola_nome = r.data.get("name", "") if r.data else ""
+        except Exception:
+            pass
+    return company_id, escola_nome, None
+
+
+def _handle_registrar_proposta_enviada(params: Dict) -> str:
+    """Registra proposta enviada pra escola. Seta commercial_stage='proposta'."""
+    company_id, escola_nome, err = _resolve_company_by_name_or_id(params)
+    if err:
+        return err
+
+    valor_mensal = params.get("valor_mensal")
+    if not valor_mensal or valor_mensal <= 0:
+        return json.dumps({"erro": "Informe valor_mensal (R$) da proposta."}, ensure_ascii=False)
+
+    data_str = params.get("data") or datetime.now().strftime("%Y-%m-%d")
+    observacoes = (params.get("observacoes") or "").strip()
+
+    try:
+        db.update_company(company_id, {
+            "commercial_stage": "proposta",
+            "valor_mensal_proposto": float(valor_mensal),
+            "data_proposta": f"{data_str}T12:00:00",
+        })
+
+        # Interaction
+        try:
+            db.insert_interaction({
+                "company_id": company_id,
+                "type": "proposal_sent",
+                "channel": "manual",
+                "subject": f"Proposta R$ {valor_mensal:.0f}/mes enviada",
+                "content": observacoes or f"Proposta comercial enviada em {data_str}",
+            })
+        except Exception as e:
+            logger.debug(f"insert_interaction skip: {e}")
+
+        # Memoria
+        try:
+            from integrations.memory import memory
+            mem_content = (
+                f"Proposta enviada em {data_str}: R$ {valor_mensal:.0f}/mes."
+                + (f" {observacoes[:200]}" if observacoes else "")
+                + " Lead em estagio de decisao — priorizar follow-up."
+            )
+            memory.remember(
+                content=mem_content,
+                scope="company",
+                scope_id=company_id,
+                category="insight",
+                importance=8,
+                source="auto",
+            )
+        except Exception as e:
+            logger.debug(f"memory.remember skip: {e}")
+
+        # HubSpot (no-op se desabilitado)
+        try:
+            from integrations.hubspot_sync import HubSpotSync
+            HubSpotSync().update_deal_stage(company_id, "Proposta Enviada")
+        except Exception as e:
+            logger.debug(f"hubspot update_deal_stage skip: {e}")
+
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": f"Proposta registrada para {escola_nome}: R$ {valor_mensal:.0f}/mes ({data_str})",
+            "escola": escola_nome,
+            "valor_mensal": valor_mensal,
+            "data": data_str,
+            "proximo_passo": "Escola movida para estagio 'proposta' no Pipeline. Follow-up sugerido em 7 dias.",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao registrar proposta: {str(e)[:200]}"}, ensure_ascii=False)
+
+
+def _handle_marcar_cliente_ganho(params: Dict) -> str:
+    """Marca escola como cliente fechado. Seta commercial_stage='cliente'."""
+    company_id, escola_nome, err = _resolve_company_by_name_or_id(params)
+    if err:
+        return err
+
+    valor_fechado = params.get("valor_mensal_fechado")
+    if not valor_fechado or valor_fechado <= 0:
+        return json.dumps({"erro": "Informe valor_mensal_fechado (R$)."}, ensure_ascii=False)
+
+    data_str = params.get("data") or datetime.now().strftime("%Y-%m-%d")
+
+    try:
+        db.update_company(company_id, {
+            "commercial_stage": "cliente",
+            "valor_mensal_fechado": float(valor_fechado),
+            "data_fechamento": f"{data_str}T12:00:00",
+        })
+
+        try:
+            db.insert_interaction({
+                "company_id": company_id,
+                "type": "deal_won",
+                "channel": "manual",
+                "subject": f"CLIENTE FECHADO R$ {valor_fechado:.0f}/mes",
+                "content": f"Deal ganho em {data_str}",
+            })
+        except Exception as e:
+            logger.debug(f"insert_interaction skip: {e}")
+
+        try:
+            from integrations.memory import memory
+            mem_content = (
+                f"CLIENTE FECHADO em {data_str}: R$ {valor_fechado:.0f}/mes. "
+                f"Deal ganho — acompanhar onboarding e satisfacao."
+            )
+            memory.remember(
+                content=mem_content,
+                scope="company",
+                scope_id=company_id,
+                category="insight",
+                importance=10,
+                source="auto",
+            )
+        except Exception as e:
+            logger.debug(f"memory.remember skip: {e}")
+
+        try:
+            from integrations.hubspot_sync import HubSpotSync
+            HubSpotSync().update_deal_stage(company_id, "Convertido")
+        except Exception as e:
+            logger.debug(f"hubspot update_deal_stage skip: {e}")
+
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": f"PARABENS! {escola_nome} virou cliente — R$ {valor_fechado:.0f}/mes fechado em {data_str}",
+            "escola": escola_nome,
+            "valor_fechado": valor_fechado,
+            "data": data_str,
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao marcar cliente: {str(e)[:200]}"}, ensure_ascii=False)
+
+
+def _handle_marcar_perdido(params: Dict) -> str:
+    """Marca escola como lead perdido. Classifica motivo via Haiku."""
+    company_id, escola_nome, err = _resolve_company_by_name_or_id(params)
+    if err:
+        return err
+
+    motivo = (params.get("motivo") or "").strip()
+    if not motivo or len(motivo) < 3:
+        return json.dumps({"erro": "Informe o motivo da perda (texto livre)."}, ensure_ascii=False)
+
+    data_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Classificar via IA secundaria
+    try:
+        from tools.perda_classifier import classificar_motivo_perda
+        categoria = classificar_motivo_perda(motivo)
+    except Exception as e:
+        logger.warning(f"classificar_motivo_perda falhou: {e}")
+        categoria = "outro"
+
+    try:
+        db.update_company(company_id, {
+            "commercial_stage": "perdido",
+            "motivo_perda_texto": motivo,
+            "motivo_perda_categoria": categoria,
+            "data_fechamento": f"{data_str}T12:00:00",
+        })
+
+        try:
+            db.insert_interaction({
+                "company_id": company_id,
+                "type": "deal_lost",
+                "channel": "manual",
+                "subject": f"Perdido ({categoria})",
+                "content": motivo[:1000],
+            })
+        except Exception as e:
+            logger.debug(f"insert_interaction skip: {e}")
+
+        try:
+            from integrations.memory import memory
+            mem_content = (
+                f"Deal perdido em {data_str}. Motivo: {motivo[:250]} "
+                f"[categoria classificada: {categoria}]. "
+                f"Evitar abordar de novo por 90 dias."
+            )
+            memory.remember(
+                content=mem_content,
+                scope="company",
+                scope_id=company_id,
+                category="warning",
+                importance=7,
+                source="auto",
+            )
+        except Exception as e:
+            logger.debug(f"memory.remember skip: {e}")
+
+        try:
+            from integrations.hubspot_sync import HubSpotSync
+            HubSpotSync().update_deal_stage(company_id, "Perdido")
+        except Exception as e:
+            logger.debug(f"hubspot update_deal_stage skip: {e}")
+
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": f"{escola_nome} marcada como perdida. Motivo classificado como: {categoria}",
+            "escola": escola_nome,
+            "motivo_texto": motivo,
+            "motivo_categoria": categoria,
+            "data": data_str,
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao marcar perdido: {str(e)[:200]}"}, ensure_ascii=False)
 
 
 def _handle_operacao_lote(params: Dict) -> str:
@@ -5387,6 +5678,9 @@ TOOL_HANDLERS = {
     "melhor_horario": _handle_melhor_horario,
     # Reuniões e interações
     "registrar_reuniao": _handle_registrar_reuniao,
+    "registrar_proposta_enviada": _handle_registrar_proposta_enviada,
+    "marcar_cliente_ganho": _handle_marcar_cliente_ganho,
+    "marcar_perdido": _handle_marcar_perdido,
     "consultar_interacoes": _handle_consultar_interacoes,
     # HubSpot e integrações
     "sincronizar_hubspot": _handle_sincronizar_hubspot,
@@ -5521,6 +5815,14 @@ no banco.
 
 *Reunioes e gestao:*
 - Registrar visita/reuniao → *registrar_reuniao*
+- Registrar proposta enviada → *registrar_proposta_enviada*
+  Ex: "mandei proposta pro Marista Rosario, 15 mil por mes" ou "enviei orcamento pro Anchieta, R$ 12k/mes, vence em 2 semanas"
+- Marcar cliente fechado (ganho) → *marcar_cliente_ganho*
+  Ex: "fechei o Colegio La Salle, 18 mil mensais" ou "ganhamos o Adventista, R$ 20k/mes"
+- Marcar lead perdido → *marcar_perdido*
+  Ex: "perdi o Anchieta, foi pra concorrencia" ou "Farroupilha desistiu, achou caro"
+  O motivo eh texto livre — uma IA secundaria classifica automaticamente em categoria
+  (preco, timing, concorrente, orcamento, nao_prioridade, outro).
 - Qualificar escolas em lote → *operacao_lote* (acao: qualificar)
 - Gerar emails em lote → *operacao_lote* (acao: gerar_emails)
 

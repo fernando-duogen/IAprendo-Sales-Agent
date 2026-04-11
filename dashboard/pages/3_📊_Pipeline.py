@@ -500,6 +500,194 @@ else:
     )
 
 # ======================================================================
+# ZONA 2: PIPELINE COMERCIAL (kanban de stages reais)
+# ======================================================================
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+section_header("Pipeline Comercial", "view_kanban")
+
+COMMERCIAL_STAGES = [
+    {"key": "prospectado", "label": "Prospectado", "color": COLORS["primary"], "desc": "Novo lead"},
+    {"key": "contatado", "label": "Contatado", "color": COLORS["info"], "desc": "Email/WhatsApp enviado"},
+    {"key": "respondeu", "label": "Respondeu", "color": COLORS["secondary"], "desc": "Lead engajado"},
+    {"key": "reuniao", "label": "Reuniao", "color": COLORS["warning"], "desc": "Meeting realizada"},
+    {"key": "proposta", "label": "Proposta", "color": COLORS["accent"], "desc": "Orcamento enviado"},
+    {"key": "cliente", "label": "Cliente", "color": COLORS["success"], "desc": "Deal fechado"},
+]
+
+try:
+    from dashboard.theme import kanban_card
+
+    # Carrega companies com stage + valores comerciais.
+    # Se migration 013 nao foi aplicada ainda, cai pro SELECT basico (sem os
+    # campos novos) e trata tudo como None — pipeline comercial ainda renderiza
+    # via inferencia automatica.
+    _migration_013_ok = True
+    try:
+        comm_companies = db.client.table("companies").select(
+            "id,name,city,qualification_score,commercial_stage,valor_mensal_proposto,"
+            "valor_mensal_fechado,motivo_perda_texto,motivo_perda_categoria,data_fechamento,"
+            "matriculas_fund_af,matriculas_medio,nivel_tecnologico,status"
+        ).execute().data or []
+    except Exception as _migration_err:
+        if "commercial_stage" in str(_migration_err) or "42703" in str(_migration_err):
+            _migration_013_ok = False
+            comm_companies = db.client.table("companies").select(
+                "id,name,city,qualification_score,matriculas_fund_af,matriculas_medio,"
+                "nivel_tecnologico,status"
+            ).execute().data or []
+            alert_banner(
+                "Migration 013 ainda nao aplicada — pipeline comercial em modo read-only "
+                "(inferencia automatica). Rode <code>database/migrations/APLICAR-013-COMMERCIAL-STAGES.sql</code> "
+                "no Supabase SQL Editor pra habilitar campos Proposta/Cliente/Perdido.",
+                "warning",
+            )
+        else:
+            raise
+
+    # Carrega meetings e emails pra inferencia
+    _meetings = db.client.table("meetings").select("company_id").execute().data or []
+    _meeting_set = {m["company_id"] for m in _meetings if m.get("company_id")}
+
+    _sent_emails = db.client.table("approval_queue").select(
+        "company_id,replied_at"
+    ).eq("status", "sent").execute().data or []
+    _email_map = {}
+    for _e in _sent_emails:
+        cid = _e.get("company_id")
+        if not cid:
+            continue
+        entry = _email_map.setdefault(cid, {"sent": False, "replied": False})
+        entry["sent"] = True
+        if _e.get("replied_at"):
+            entry["replied"] = True
+
+    def _infer_stage(comp):
+        """Prioridade: commercial_stage manual > inferencia automatica."""
+        manual = comp.get("commercial_stage")
+        if manual:
+            return manual
+        cid = comp["id"]
+        if cid in _meeting_set:
+            return "reuniao"
+        if _email_map.get(cid, {}).get("replied"):
+            return "respondeu"
+        if cid in _email_map:
+            return "contatado"
+        if comp.get("status") in ("raw", "qualified", "enriched", "filtered"):
+            return "prospectado"
+        return None  # fora do pipeline comercial
+
+    # Classifica escolas por stage
+    stage_buckets = {s["key"]: [] for s in COMMERCIAL_STAGES}
+    perdidos = []
+    for _c in comm_companies:
+        stage = _infer_stage(_c)
+        if stage == "perdido":
+            perdidos.append(_c)
+        elif stage in stage_buckets:
+            stage_buckets[stage].append(_c)
+
+    # KPI row: counts + MRR
+    mrr_potencial = sum(
+        float(c.get("valor_mensal_proposto") or 0) for c in stage_buckets["proposta"]
+    )
+    mrr_ativo = sum(
+        float(c.get("valor_mensal_fechado") or 0) for c in stage_buckets["cliente"]
+    )
+    total_fechados = len(stage_buckets["cliente"])
+    total_perdidos = len(perdidos)
+    win_rate = (
+        (total_fechados / (total_fechados + total_perdidos) * 100)
+        if (total_fechados + total_perdidos) > 0
+        else 0
+    )
+
+    mc1, mc2, mc3 = st.columns(3)
+    with mc1:
+        metric_card("MRR Potencial", f"R$ {mrr_potencial:,.0f}".replace(",", "."),
+                    icon="pending", color=COLORS["accent"],
+                    delta=f"{len(stage_buckets['proposta'])} proposta(s)")
+    with mc2:
+        metric_card("MRR Ativo", f"R$ {mrr_ativo:,.0f}".replace(",", "."),
+                    icon="payments", color=COLORS["success"],
+                    delta=f"{total_fechados} cliente(s)")
+    with mc3:
+        metric_card("Win Rate", f"{win_rate:.0f}%",
+                    icon="emoji_events", color=COLORS["primary"],
+                    delta=f"{total_fechados}/{total_fechados + total_perdidos} decisoes")
+
+    # KPI row: contagem por stage
+    st.markdown("")
+    kanban_header_cols = st.columns(len(COMMERCIAL_STAGES))
+    for i, stage in enumerate(COMMERCIAL_STAGES):
+        with kanban_header_cols[i]:
+            count = len(stage_buckets[stage["key"]])
+            st.markdown(
+                f'<p style="background:{stage["color"]}12;border-left:4px solid {stage["color"]};'
+                f'padding:10px 12px;border-radius:8px;margin-bottom:8px">'
+                f'<strong style="font-size:13px">{stage["label"]}</strong>'
+                f' <span style="font-size:11px;color:{stage["color"]};font-weight:700">({count})</span><br/>'
+                f'<span style="font-size:10px;color:#9E9E9E">{stage["desc"]}</span></p>',
+                unsafe_allow_html=True,
+            )
+            items = stage_buckets[stage["key"]]
+            if not items:
+                st.caption("—")
+                continue
+            # Mostra ate 6 cards ordenados por score desc
+            for comp in sorted(items, key=lambda x: x.get("qualification_score") or 0, reverse=True)[:6]:
+                score = int(comp.get("qualification_score") or 0)
+                name = (comp.get("name") or "?")[:28]
+                alvo_ = int((comp.get("matriculas_fund_af") or 0) + (comp.get("matriculas_medio") or 0))
+                tech = comp.get("nivel_tecnologico") or ""
+
+                # Subtitle especifico por stage (valores comerciais)
+                sub = ""
+                if stage["key"] == "proposta" and comp.get("valor_mensal_proposto"):
+                    sub = f"R$ {float(comp['valor_mensal_proposto']):,.0f}/mes".replace(",", ".")
+                elif stage["key"] == "cliente" and comp.get("valor_mensal_fechado"):
+                    sub = f"R$ {float(comp['valor_mensal_fechado']):,.0f}/mes".replace(",", ".")
+
+                st.markdown(
+                    kanban_card(
+                        name=name,
+                        subtitle=sub,
+                        score=score,
+                        color=stage["color"],
+                        alvo=alvo_,
+                        nivel_tech=tech,
+                    ),
+                    unsafe_allow_html=True,
+                )
+            if len(items) > 6:
+                st.caption(f"+ {len(items) - 6} mais")
+
+    # Secao de perdidos colapsada
+    if perdidos:
+        with st.expander(f"Leads perdidos ({len(perdidos)})", expanded=False):
+            for p in sorted(perdidos, key=lambda x: (x.get("data_fechamento") or ""), reverse=True)[:15]:
+                data_str = (p.get("data_fechamento") or "")[:10]
+                categoria = p.get("motivo_perda_categoria") or "—"
+                motivo_txt = (p.get("motivo_perda_texto") or "")[:120]
+                st.markdown(
+                    f"**{p.get('name', '?')}** — {data_str} · "
+                    f"<span style='background:#FFCDD2;color:#B71C1C;padding:2px 8px;"
+                    f"border-radius:10px;font-size:11px;font-weight:600'>{categoria}</span>"
+                    f"<br/><span style='color:#757575;font-size:12px'>{motivo_txt}</span>",
+                    unsafe_allow_html=True,
+                )
+
+    # Dica de uso
+    st.caption(
+        "💡 Os stages Proposta/Cliente/Perdido sao preenchidos pelo IAlex via WhatsApp: "
+        "\"mandei proposta pro Marista, R$ 15k/mes\" · "
+        "\"fechei o Anchieta, R$ 18k/mes\" · "
+        "\"perdi o Adventista, foi pra concorrencia\""
+    )
+except Exception as _e:
+    st.warning(f"Erro ao carregar pipeline comercial: {_e}")
+
+# ======================================================================
 # SYSTEM SECTION
 # ======================================================================
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
