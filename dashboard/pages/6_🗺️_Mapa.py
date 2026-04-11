@@ -518,6 +518,15 @@ elif tipo_viz == "Hexagonos":
         auto_highlight=True,
     )
     layers.append(hex_layer)
+    # HexagonLayer agrega multiplas escolas — tooltip precisa usar campos
+    # agregados do PyDeck, nao campos por-linha como {name} ou {status}.
+    # Disponivel: {elevationValue} (soma de get_elevation_weight, no caso alvo),
+    # {colorValue}, {points} (array de objetos originais dentro do hex).
+    tooltip_html = (
+        "<b>Regiao agregada</b><br/>"
+        "Alunos alvo (soma): {elevationValue}<br/>"
+        "Escolas neste hexagono: {points.length}"
+    )
     st.caption(
         f"Hexagonos 3D agregando {int(df_map['alvo'].sum()):,} alunos alvo em regioes de ~800m. "
         "Altura e cor = densidade de alvo.".replace(",", ".")
