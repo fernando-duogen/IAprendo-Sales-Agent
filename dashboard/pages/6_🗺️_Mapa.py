@@ -503,11 +503,19 @@ elif tipo_viz == "Mapa de calor":
     )
 
 elif tipo_viz == "Hexagonos":
+    # PyDeck HexagonLayer agrega pontos. No tooltip temos 2 "metricas"
+    # principais: elevationValue (soma do peso de elevacao) e colorValue
+    # (soma do peso de cor). Usamos:
+    #   - get_elevation_weight="alvo" -> elevationValue = soma de alvo
+    #   - get_color_weight=1          -> colorValue    = contagem de escolas
     hex_layer = pdk.Layer(
         "HexagonLayer",
         data=df_map,
         get_position=["lon", "lat"],
         get_elevation_weight="alvo",
+        elevation_aggregation="SUM",
+        get_color_weight=1,
+        color_aggregation="SUM",
         elevation_scale=0.5,
         elevation_range=[0, 3000],
         radius=800,
@@ -518,14 +526,13 @@ elif tipo_viz == "Hexagonos":
         auto_highlight=True,
     )
     layers.append(hex_layer)
-    # HexagonLayer agrega multiplas escolas — tooltip precisa usar campos
-    # agregados do PyDeck, nao campos por-linha como {name} ou {status}.
-    # Disponivel: {elevationValue} (soma de get_elevation_weight, no caso alvo),
-    # {colorValue}, {points} (array de objetos originais dentro do hex).
+    # Tooltip: {points.length} nao funciona (PyDeck nao faz acesso aninhado
+    # via dot notation). Usamos {colorValue} como contagem de escolas porque
+    # configuramos get_color_weight=1 + SUM acima.
     tooltip_html = (
         "<b>Regiao agregada</b><br/>"
         "Alunos alvo (soma): {elevationValue}<br/>"
-        "Escolas neste hexagono: {points.length}"
+        "Escolas neste hexagono: {colorValue}"
     )
     st.caption(
         f"Hexagonos 3D agregando {int(df_map['alvo'].sum()):,} alunos alvo em regioes de ~800m. "
