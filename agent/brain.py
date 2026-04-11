@@ -4770,6 +4770,7 @@ def _handle_enriquecer_contatos(params: Dict) -> str:
             )
             # Salvar no banco
             salvos = 0
+            falhas_insert = 0
             for c in contatos_raw:
                 try:
                     db.insert_contact({
@@ -4782,8 +4783,14 @@ def _handle_enriquecer_contatos(params: Dict) -> str:
                         "confidence_score": c.get("confidence_score", 30),
                     })
                     salvos += 1
-                except Exception:
-                    pass
+                except Exception as _e:
+                    # Log em vez de silent fail — facilita debug quando contatos
+                    # do Perplexity nao sao salvos (duplicate email, constraint, etc)
+                    falhas_insert += 1
+                    logger.debug(
+                        f"enriquecer_contatos Perplexity: falha ao inserir contato: {_e}",
+                        extra={"contato": c.get("full_name", "?"), "email": c.get("email", "")},
+                    )
             return json.dumps({
                 "fonte": "perplexity",
                 "escola": escola.get("name"),
