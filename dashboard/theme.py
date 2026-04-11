@@ -308,9 +308,25 @@ div[data-testid="stElementContainer"]:has(.kanban-click) {
 }
 .kanban-click { display: none !important; }
 
+/* Quando kanban cards estao dentro de um expander "Ver mais N", o
+   stExpanderDetails tem padding: 10px 16px por padrao, eating 32px
+   horizontais. Em colunas estreitas (88px) isso deixa os cards com
+   ~54px — distorcendo o layout. Reduz o padding pra recuperar a
+   largura e alinhar com os top 6 cards visiveis acima. */
+[data-testid="stExpander"]:has(.kanban-click) [data-testid="stExpanderDetails"] {
+    padding: 8px 2px !important;
+}
+[data-testid="stExpander"]:has(.kanban-click) summary {
+    padding: 8px 10px !important;
+}
+
+div[data-testid="stElementContainer"]:has(.kanban-click) + div[data-testid="stElementContainer"] {
+    width: 100% !important;
+}
 div[data-testid="stElementContainer"]:has(.kanban-click) + div[data-testid="stElementContainer"] button {
     min-height: 64px !important;
     height: auto !important;
+    width: 100% !important;
     padding: 10px 12px !important;
     text-align: left !important;
     border: 1px solid #E0E0E0 !important;
@@ -965,7 +981,10 @@ def kanban_card_clickable(
     if subtitle:
         meta_parts.append(subtitle)
     meta = " \u00b7 ".join(meta_parts) if meta_parts else "\u00a0"
-    label = f"**{name[:30]}**  \n{meta}"
+    # Strip nome antes do ** pra evitar space-before-closing-delim (markdown
+    # nao renderiza "**text **" como bold — exige que nao haja espaco antes).
+    name_clean = (name or "?")[:30].rstrip()
+    label = f"**{name_clean}**  \n{meta}"
     return st.button(label, key=key, use_container_width=True)
 
 

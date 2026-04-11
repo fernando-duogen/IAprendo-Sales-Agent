@@ -759,7 +759,7 @@ def render_kanban_comercial():
                 # Helper pra computar meta de cada escola
                 def _card_meta(comp, stage_key=stage["key"]):
                     score = int(comp.get("qualification_score") or 0)
-                    name = (comp.get("name") or "?")[:28]
+                    name = ((comp.get("name") or "?")[:28]).rstrip()
                     alvo_ = int((comp.get("matriculas_fund_af") or 0) + (comp.get("matriculas_medio") or 0))
                     tech = comp.get("nivel_tecnologico") or ""
                     sub = ""

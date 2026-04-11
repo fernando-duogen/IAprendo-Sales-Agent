@@ -578,7 +578,16 @@ class DiscoveryEngine:
 
         logger.info("Enrich signals", extra={"company_id": company_id, "school_name": name})
 
-        # Buscar sinais via DuckDuckGo + GPT (mesmo pipeline do discover)
+        # Schema usado nas 2 tentativas de extracao (DuckDuckGo + Perplexity)
+        schema = (
+            'Array JSON. Cada item: {"tipo": "ranking|premio|noticia|expansao|reconhecimento", '
+            '"titulo": "string descrevendo o sinal", '
+            '"ano": numero_ou_null, '
+            '"fonte_url": "URL_ou_null"}. '
+            'Se o texto nao contem sinais relevantes, retorne [].'
+        )
+
+        # === Tentativa 1: DuckDuckGo snippets + GPT ===
         queries = [
             f'"{name}" {city} premio ranking educacao',
             f'"{name}" {city} noticias destaque',
@@ -588,41 +597,58 @@ class DiscoveryEngine:
             s = self._search_web(q, max_results=8)
             if s:
                 all_snippets.append(s)
-        web_context = "\n\n".join(all_snippets)
+        ddg_context = "\n\n".join(all_snippets)
 
-        if not web_context or len(web_context.strip()) < 20:
-            # Fallback Perplexity
-            prompt = (
-                f"Pesquise sobre a escola '{name}' em {city}/{state}. "
-                f"Quero saber: rankings educacionais, premios recebidos, noticias "
-                f"importantes, expansoes ou reconhecimentos (2023-2026)."
-            )
-            web_context = self._ask_perplexity(prompt, timeout=60)
+        signals = []
+        fonte_usada = None
+        if ddg_context and len(ddg_context.strip()) >= 20:
+            signals = self._text_to_json_via_llm(ddg_context, schema) or []
+            fonte_usada = "duckduckgo"
+            logger.info("enrich_signals DuckDuckGo extraiu N sinais",
+                        extra={"company_id": company_id, "count": len(signals)})
 
-        if not web_context or len(web_context.strip()) < 20:
-            return {
-                "company_id": company_id, "escola": name,
-                "sinais_adicionados": 0, "preview": [],
-                "erros": ["Nenhuma fonte retornou dados"],
-            }
-
-        # GPT extrai sinais estruturados do contexto web
-        schema = (
-            'Array JSON. Cada item: {"tipo": "ranking|premio|noticia|expansao|reconhecimento", '
-            '"titulo": "string descrevendo o sinal", '
-            '"ano": numero_ou_null, '
-            '"fonte_url": "URL_ou_null"}. '
-            'Se o texto nao contem sinais relevantes, retorne [].'
-        )
-        signals = self._text_to_json_via_llm(web_context, schema)
+        # === Tentativa 2: Perplexity (fallback se DuckDuckGo falhou OU nao
+        # extraiu sinais). Isso garante que leads sem informacao publica
+        # recebam um esforco adicional via busca generativa. ===
+        if not signals:
+            try:
+                from tools.perplexity_browser import perplexity_browser
+                if perplexity_browser.is_available():
+                    logger.info("enrich_signals fallback pra Perplexity",
+                                extra={"company_id": company_id, "school": name})
+                    prompt = (
+                        f"Pesquise sobre a escola '{name}' em {city}/{state}. "
+                        f"Quero saber: rankings educacionais, premios recebidos, noticias "
+                        f"importantes, expansoes ou reconhecimentos (2023-2026). "
+                        f"Liste ate 5 sinais concretos com ano e fonte se possivel."
+                    )
+                    plex_context = self._ask_perplexity(prompt, timeout=90)
+                    if plex_context and len(plex_context.strip()) >= 20:
+                        signals = self._text_to_json_via_llm(plex_context, schema) or []
+                        fonte_usada = "perplexity"
+                        logger.info("enrich_signals Perplexity extraiu N sinais",
+                                    extra={"company_id": company_id, "count": len(signals)})
+                else:
+                    logger.warning("Perplexity nao disponivel — fallback pulado")
+            except Exception as e:
+                logger.warning(f"enrich_signals Perplexity falhou: {e}")
 
         if not signals:
+            # Mensagem honesta — diz o que REALMENTE aconteceu
+            if fonte_usada == "duckduckgo":
+                erro_msg = "DuckDuckGo retornou contexto mas nenhum sinal estruturado (ranking/premio/noticia) foi extraido"
+            elif fonte_usada == "perplexity":
+                erro_msg = "Perplexity respondeu mas nenhum sinal estruturado foi extraido"
+            elif ddg_context:
+                erro_msg = "Contexto web insuficiente + Perplexity indisponivel"
+            else:
+                erro_msg = "Nenhuma fonte retornou dados (DuckDuckGo sem resultados, Perplexity indisponivel)"
             return {
                 "company_id": company_id,
                 "escola": name,
                 "sinais_adicionados": 0,
                 "preview": [],
-                "erros": ["Perplexity nao retornou sinais ou resposta invalida"],
+                "erros": [erro_msg],
             }
 
         added = 0
