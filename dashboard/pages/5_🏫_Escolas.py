@@ -1,7 +1,9 @@
-"""Pagina 3 - Gestao de Escolas: tabela com edicao inline e detalhe Material Design."""
+"""Pagina 5 - Gestao de Escolas: tabela com edicao inline, detalhe Material
+Design e aba Redes (escolas agrupadas por CNPJ mantenedora)."""
 import streamlit as st
 import pandas as pd
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
@@ -14,6 +16,7 @@ from dashboard.theme import (
     score_color,
 )
 from utils.fit_score import calcular_fit_score, fit_emoji, fit_cor_hex
+from utils.rede_name import resolver_nome_rede, set_rede_override, has_rede_overrides_table
 
 apply_theme_no_config()
 
@@ -64,6 +67,290 @@ def go_to_detail(company_id: str) -> None:
 
 def go_to_list() -> None:
     st.session_state.escola_detail_id = None
+
+
+def render_redes_view() -> None:
+    """Renderiza a aba Redes: agrupa escolas por cnpj_mantenedora, mostra
+    KPIs, grafico top 10, e expanders por rede com metricas + unidades +
+    botao de correcao manual de nome (override).
+
+    Migrado de dashboard/pages/14_🔗_Redes.py (deletada) e integrado como
+    aba da pagina Escolas porque as duas funcionalidades sao irmas.
+    """
+    try:
+        import plotly.express as px
+    except Exception:
+        alert_banner("plotly nao instalado — instale com 'pip install plotly'.", "error")
+        return
+
+    # Carrega escolas com mantenedora
+    try:
+        r = db.client.table("companies").select(
+            "id,name,city,state,bairro,status,qualification_score,"
+            "cnpj_mantenedora,cnpj_escola,categoria_privada,"
+            "total_matriculas,matriculas_fund_af,matriculas_medio,"
+            "total_docentes,qt_coordenadores,total_turmas,nivel_tecnologico,fonte_dados"
+        ).not_.is_("cnpj_mantenedora", "null").execute()
+    except Exception as e:
+        alert_banner(f"Erro ao carregar escolas: {e}", "error")
+        return
+
+    grupos = defaultdict(list)
+    for e in r.data or []:
+        cnpj = e.get("cnpj_mantenedora")
+        if cnpj:
+            grupos[cnpj].append(e)
+
+    if not grupos:
+        alert_banner(
+            "Nenhuma escola com CNPJ de mantenedora encontrada. Rode o update_existing_schools.py "
+            "para preencher os dados do Censo 2025.",
+            "info",
+        )
+        return
+
+    # Aviso se migration 014 ainda nao foi aplicada
+    if not has_rede_overrides_table():
+        alert_banner(
+            "Migration 014 nao aplicada — correcao manual de nome de rede indisponivel. "
+            "Rode <code>database/migrations/APLICAR-014-REDE-OVERRIDES.sql</code> no Supabase SQL Editor.",
+            "warning",
+        )
+
+    # Build redes summary
+    redes = []
+    for cnpj, escolas in grupos.items():
+        if len(escolas) < 2:
+            continue
+        alvo_total = sum(
+            int((e.get("matriculas_fund_af") or 0) + (e.get("matriculas_medio") or 0))
+            for e in escolas
+        )
+        total_alunos = sum(int(e.get("total_matriculas") or 0) for e in escolas)
+        docentes = sum(int(e.get("total_docentes") or 0) for e in escolas)
+        coord = sum(int(e.get("qt_coordenadores") or 0) for e in escolas)
+        turmas = sum(int(e.get("total_turmas") or 0) for e in escolas)
+        scores = [e.get("qualification_score") for e in escolas if e.get("qualification_score")]
+        score_medio = round(sum(scores) / len(scores), 1) if scores else 0
+        cidades = sorted(set(e.get("city") or "" for e in escolas))
+        ufs = sorted(set(e.get("state") or "" for e in escolas))
+
+        tech_counts = defaultdict(int)
+        for e in escolas:
+            t = e.get("nivel_tecnologico") or "Sem dado"
+            tech_counts[t] += 1
+        tech_predom = max(tech_counts.items(), key=lambda x: x[1])[0]
+
+        redes.append({
+            "cnpj": cnpj,
+            "nome_rede": resolver_nome_rede(cnpj, escolas),
+            "unidades": len(escolas),
+            "alunos_alvo": alvo_total,
+            "total_alunos": total_alunos,
+            "docentes": docentes,
+            "coordenadores": coord,
+            "turmas": turmas,
+            "score_medio": score_medio,
+            "cidades": cidades,
+            "ufs": ufs,
+            "tech_predom": tech_predom,
+            "escolas": escolas,
+        })
+
+    singletons_cnpjs = [cnpj for cnpj, esc in grupos.items() if len(esc) == 1]
+    n_singletons = len(singletons_cnpjs)
+
+    # Metricas topo
+    total_escolas_em_rede = sum(r["unidades"] for r in redes)
+    total_alvo_rede = sum(r["alunos_alvo"] for r in redes)
+
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    with mc1:
+        metric_card("Redes identificadas", len(redes), COLORS["primary"], icon="hub")
+    with mc2:
+        metric_card("Escolas em rede", f"{total_escolas_em_rede}",
+                    COLORS["accent"], icon="account_tree")
+    with mc3:
+        metric_card("Alunos alvo (redes)",
+                    f"{total_alvo_rede:,}".replace(",", "."),
+                    COLORS["info"], icon="groups")
+    with mc4:
+        metric_card("Escolas independentes", n_singletons,
+                    COLORS["secondary"], icon="domain_disabled")
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # Filtros
+    fc1, fc2 = st.columns([2, 1])
+    with fc1:
+        ordenar_por = st.selectbox(
+            "Ordenar por",
+            ["Alunos alvo (maior)", "Unidades (mais)", "Score medio (maior)", "Nome da rede"],
+            key="redes_ordenar",
+        )
+    with fc2:
+        min_unid = st.number_input(
+            "Minimo de unidades", min_value=2, max_value=20, value=2, step=1,
+            key="redes_min_unid",
+        )
+
+    ordem_map = {
+        "Alunos alvo (maior)": lambda r: -r["alunos_alvo"],
+        "Unidades (mais)": lambda r: -r["unidades"],
+        "Score medio (maior)": lambda r: -r["score_medio"],
+        "Nome da rede": lambda r: r["nome_rede"],
+    }
+    redes_filt = [r for r in redes if r["unidades"] >= min_unid]
+    redes_filt.sort(key=ordem_map[ordenar_por])
+
+    # Grafico Top 10
+    section_header("Top redes por alunos alvo", "leaderboard")
+    top10 = redes_filt[:10]
+    if top10:
+        df_top = pd.DataFrame([{
+            "Rede": r["nome_rede"],
+            "Unidades": r["unidades"],
+            "Alunos alvo": r["alunos_alvo"],
+            "Score medio": r["score_medio"],
+            "Tech": r["tech_predom"],
+        } for r in top10])
+        fig = px.bar(
+            df_top, y="Rede", x="Alunos alvo", orientation="h", color="Tech",
+            color_discrete_map={
+                "Alto": COLORS["success"], "Medio": COLORS["warning"],
+                "Médio": COLORS["warning"], "Baixo": COLORS["error"],
+                "Sem dado": "#bdbdbd",
+            },
+            text="Alunos alvo", hover_data=["Unidades", "Score medio"], height=420,
+        )
+        fig.update_traces(textposition="outside", cliponaxis=False)
+        fig.update_layout(
+            yaxis=dict(autorange="reversed", title=""),
+            xaxis_title="Alunos alvo (Fund AF + Medio)",
+            margin=dict(l=0, r=60, t=10, b=0), plot_bgcolor="white",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # Cards das redes
+    section_header(f"Detalhes das {len(redes_filt)} redes", "account_tree")
+    if not redes_filt:
+        alert_banner("Nenhuma rede encontrada com os filtros atuais.", "info")
+        return
+
+    for rede in redes_filt:
+        with st.expander(
+            f"🏫 **{rede['nome_rede']}** · {rede['unidades']} unidades · "
+            f"{rede['alunos_alvo']:,} alunos alvo · score {rede['score_medio']}".replace(",", "."),
+            expanded=(rede == redes_filt[0]),
+        ):
+            # Metricas da rede
+            rm1, rm2, rm3, rm4 = st.columns(4)
+            with rm1:
+                metric_card("Unidades", rede["unidades"], COLORS["primary"], icon="domain")
+            with rm2:
+                metric_card("Alunos alvo",
+                            f"{rede['alunos_alvo']:,}".replace(",", "."),
+                            COLORS["accent"], icon="track_changes")
+            with rm3:
+                metric_card("Docentes totais",
+                            f"{rede['docentes']:,}".replace(",", "."),
+                            COLORS["info"], icon="record_voice_over")
+            with rm4:
+                metric_card("Coordenadores", rede["coordenadores"],
+                            COLORS["secondary"], icon="supervisor_account")
+
+            # Metadata
+            cnpj_display = rede["cnpj"]
+            cidades_str = ", ".join(rede["cidades"])
+            ufs_str = ", ".join(rede["ufs"])
+            st.caption(
+                f"**CNPJ mantenedora:** {cnpj_display} · **Cidades:** {cidades_str} · "
+                f"**UFs:** {ufs_str} · **Nivel tec predominante:** {rede['tech_predom']}"
+            )
+
+            # Correcao de nome (override manual) — so se migration aplicada
+            if has_rede_overrides_table():
+                corr_key = f"corrigir_rede_{rede['cnpj']}"
+                if corr_key not in st.session_state:
+                    st.session_state[corr_key] = False
+                cc1, cc2 = st.columns([3, 1])
+                with cc1:
+                    if st.session_state[corr_key]:
+                        novo_nome = st.text_input(
+                            "Nome oficial da rede",
+                            value=rede["nome_rede"],
+                            key=f"novo_nome_{rede['cnpj']}",
+                            help="Ex: 'Rede ICM', 'Rede Marista', 'La Salle'",
+                        )
+                    else:
+                        st.caption(f"Nome atual: **{rede['nome_rede']}** (heuristico se nao ha override)")
+                with cc2:
+                    if not st.session_state[corr_key]:
+                        if st.button("✏️ Corrigir nome", key=f"btn_corr_{rede['cnpj']}",
+                                     use_container_width=True):
+                            st.session_state[corr_key] = True
+                            st.rerun()
+                    else:
+                        if st.button("Salvar", key=f"btn_save_{rede['cnpj']}",
+                                     type="primary", use_container_width=True):
+                            novo = st.session_state.get(f"novo_nome_{rede['cnpj']}", "").strip()
+                            if novo and len(novo) >= 2:
+                                if set_rede_override(rede["cnpj"], novo):
+                                    st.toast(f"Nome da rede atualizado para '{novo}'")
+                                    st.session_state[corr_key] = False
+                                    st.rerun()
+                                else:
+                                    st.error("Falha ao salvar — verifique os logs")
+                            else:
+                                st.warning("Nome deve ter pelo menos 2 caracteres")
+
+            # Tabela das unidades
+            df_unid = pd.DataFrame([{
+                "Escola": e["name"][:50],
+                "Cidade": e.get("city") or "",
+                "UF": e.get("state") or "",
+                "Bairro": e.get("bairro") or "",
+                "Alvo": int((e.get("matriculas_fund_af") or 0) + (e.get("matriculas_medio") or 0)),
+                "Fund AF": int(e.get("matriculas_fund_af") or 0),
+                "Medio": int(e.get("matriculas_medio") or 0),
+                "Tech": e.get("nivel_tecnologico") or "-",
+                "Score": e.get("qualification_score") or 0,
+                "Status": e.get("status") or "",
+                "id": e["id"],
+            } for e in sorted(rede["escolas"], key=lambda x: (x.get("qualification_score") or 0), reverse=True)])
+
+            st.dataframe(
+                df_unid[["Escola", "Cidade", "Bairro", "Alvo", "Fund AF", "Medio", "Tech", "Score", "Status"]],
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "Alvo": st.column_config.NumberColumn("Alvo", help="Fund AF + Medio"),
+                    "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                },
+            )
+
+            # Quick action: abrir unidade no detalhe
+            ac1, ac2 = st.columns([2, 1])
+            with ac1:
+                escola_sel = st.selectbox(
+                    "Abrir unidade:", df_unid["Escola"].tolist(),
+                    key=f"sel_{rede['cnpj']}", label_visibility="collapsed",
+                )
+            with ac2:
+                if st.button("Ver detalhe", key=f"btn_{rede['cnpj']}",
+                              icon=":material/open_in_new:", use_container_width=True):
+                    sel_id = df_unid[df_unid["Escola"] == escola_sel]["id"].iloc[0]
+                    st.session_state["escola_detail_id"] = sel_id
+                    st.rerun()
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.info(
+        "💡 **Dica de venda em rede:** abordar a mantenedora permite negociar uma unica vez "
+        "e fechar varias unidades simultaneamente. Para redes grandes vale tentar contato direto "
+        "com a coordenacao nacional/regional. Pergunte ao IAlex 'me mostra a rede X'."
+    )
 
 
 # ===========================================================================
@@ -729,291 +1016,296 @@ if st.session_state.escola_detail_id:
 # MODO LISTA (tabela com data_editor)
 # ===========================================================================
 else:
-    section_header("Escolas", "school")
+    tab_lista, tab_redes = st.tabs(["📋 Lista", "🔗 Redes"])
+    with tab_lista:
+        section_header("Escolas", "school")
 
-    # Buscar dados — inclui campos ricos do Censo 2025
-    try:
-        result = db.client.table("companies").select(
-            "id, name, city, state, bairro, status, qualification_score, "
-            "school_size, admin_dependency, admin_category, categoria_privada, "
-            "inep_code, created_at, fonte_dados, "
-            "matriculas_fund_af, matriculas_medio, total_docentes, "
-            "qt_coordenadores, nivel_tecnologico"
-        ).order("created_at", desc=True).limit(1000).execute()
-        rows = result.data or []
-    except Exception as e:
-        st.error(f"Erro ao carregar escolas: {e}")
-        st.stop()
+        # Buscar dados — inclui campos ricos do Censo 2025
+        try:
+            result = db.client.table("companies").select(
+                "id, name, city, state, bairro, status, qualification_score, "
+                "school_size, admin_dependency, admin_category, categoria_privada, "
+                "inep_code, created_at, fonte_dados, "
+                "matriculas_fund_af, matriculas_medio, total_docentes, "
+                "qt_coordenadores, nivel_tecnologico"
+            ).order("created_at", desc=True).limit(1000).execute()
+            rows = result.data or []
+        except Exception as e:
+            st.error(f"Erro ao carregar escolas: {e}")
+            st.stop()
 
-    if not rows:
-        alert_banner("Nenhuma escola importada. Use '1 - Importar Escolas' para comecar.", "info")
-        st.stop()
+        if not rows:
+            alert_banner("Nenhuma escola importada. Use '1 - Importar Escolas' para comecar.", "info")
+            st.stop()
 
-    df = pd.DataFrame(rows)
+        df = pd.DataFrame(rows)
 
-    # Preparar colunas para exibicao
-    df["Status"] = df["status"].map(lambda x: STATUS_PT.get(x, x))
-    df["Score"] = df["qualification_score"].fillna(0).astype(int)
-    df["Porte"] = df["school_size"].fillna("").map(lambda x: PORTE_SHORT.get(x.strip(), x[:15] if x else ""))
-    df["Tipo"] = df["admin_dependency"].fillna("")
-    df["UF"] = df["state"].fillna("")
-    df["Bairro"] = df["bairro"].fillna("")
-    df["Fund AF"] = df["matriculas_fund_af"].fillna(0).astype(int)
-    df["Medio"] = df["matriculas_medio"].fillna(0).astype(int)
-    df["Coord"] = df["qt_coordenadores"].fillna(0).astype(int)
-    df["Tech"] = df["nivel_tecnologico"].fillna("-")
-    df["Fonte"] = df["fonte_dados"].fillna("-").map(
-        lambda x: {"censo_2025": "Censo 2025", "catalogo_inep": "Catalogo INEP"}.get(x, "-")
-    )
-    df["Importado"] = pd.to_datetime(df["created_at"]).dt.strftime("%d/%m/%Y")
+        # Preparar colunas para exibicao
+        df["Status"] = df["status"].map(lambda x: STATUS_PT.get(x, x))
+        df["Score"] = df["qualification_score"].fillna(0).astype(int)
+        df["Porte"] = df["school_size"].fillna("").map(lambda x: PORTE_SHORT.get(x.strip(), x[:15] if x else ""))
+        df["Tipo"] = df["admin_dependency"].fillna("")
+        df["UF"] = df["state"].fillna("")
+        df["Bairro"] = df["bairro"].fillna("")
+        df["Fund AF"] = df["matriculas_fund_af"].fillna(0).astype(int)
+        df["Medio"] = df["matriculas_medio"].fillna(0).astype(int)
+        df["Coord"] = df["qt_coordenadores"].fillna(0).astype(int)
+        df["Tech"] = df["nivel_tecnologico"].fillna("-")
+        df["Fonte"] = df["fonte_dados"].fillna("-").map(
+            lambda x: {"censo_2025": "Censo 2025", "catalogo_inep": "Catalogo INEP"}.get(x, "-")
+        )
+        df["Importado"] = pd.to_datetime(df["created_at"]).dt.strftime("%d/%m/%Y")
 
-    # Fit Score IAprendo (calculado em tempo real)
-    def _calc_fit(row):
-        fit = calcular_fit_score(row.to_dict())
-        return fit["score"] if fit["score"] is not None else 0
-    df["Fit"] = df.apply(_calc_fit, axis=1).astype(int)
+        # Fit Score IAprendo (calculado em tempo real)
+        def _calc_fit(row):
+            fit = calcular_fit_score(row.to_dict())
+            return fit["score"] if fit["score"] is not None else 0
+        df["Fit"] = df.apply(_calc_fit, axis=1).astype(int)
 
-    # --- Filtros inline (barra horizontal) ---
-    st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
-    fc1, fc2, fc3, fc4 = st.columns([3, 2, 2, 2])
-    with fc1:
-        search = st.text_input("Buscar", placeholder="Nome da escola...", label_visibility="collapsed",
-                               key="search_escola")
-    with fc2:
-        all_statuses_pt = sorted(df["Status"].unique().tolist())
-        sel_status = st.multiselect("Status", all_statuses_pt, default=all_statuses_pt,
-                                    label_visibility="collapsed", placeholder="Filtrar status...")
-    with fc3:
-        all_types = sorted([t for t in df["Tipo"].dropna().unique().tolist() if t])
-        sel_type = st.multiselect("Tipo", all_types, default=[], label_visibility="collapsed",
-                                  placeholder="Filtrar tipo...")
-    with fc4:
-        score_range = st.slider("Score", 0, 100, (0, 100), label_visibility="collapsed")
+        # --- Filtros inline (barra horizontal) ---
+        st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
+        fc1, fc2, fc3, fc4 = st.columns([3, 2, 2, 2])
+        with fc1:
+            search = st.text_input("Buscar", placeholder="Nome da escola...", label_visibility="collapsed",
+                                   key="search_escola")
+        with fc2:
+            all_statuses_pt = sorted(df["Status"].unique().tolist())
+            sel_status = st.multiselect("Status", all_statuses_pt, default=all_statuses_pt,
+                                        label_visibility="collapsed", placeholder="Filtrar status...")
+        with fc3:
+            all_types = sorted([t for t in df["Tipo"].dropna().unique().tolist() if t])
+            sel_type = st.multiselect("Tipo", all_types, default=[], label_visibility="collapsed",
+                                      placeholder="Filtrar tipo...")
+        with fc4:
+            score_range = st.slider("Score", 0, 100, (0, 100), label_visibility="collapsed")
 
-    # Segunda linha: filtros dos dados ricos do Censo
-    fc5, fc6, fc7, fc8, fc9 = st.columns([2, 2, 2, 2, 2])
-    with fc5:
-        tech_options = ["Alto", "Medio", "Baixo"]
-        sel_tech = st.multiselect("Tech", tech_options, default=[],
-                                   label_visibility="collapsed", placeholder="Nivel tec...")
-    with fc6:
-        fonte_options = ["Censo 2025", "Catalogo INEP"]
-        sel_fonte = st.multiselect("Fonte", fonte_options, default=[],
-                                    label_visibility="collapsed", placeholder="Fonte dos dados...")
-    with fc7:
-        min_fund = st.number_input("Min Fund AF", min_value=0, max_value=5000, value=0, step=50,
-                                    label_visibility="collapsed", placeholder="Min Fund AF")
-    with fc8:
-        min_medio = st.number_input("Min Medio", min_value=0, max_value=5000, value=0, step=50,
-                                     label_visibility="collapsed", placeholder="Min Medio")
-    with fc9:
-        min_fit = st.number_input("Min Fit", min_value=0, max_value=100, value=0, step=5,
-                                   label_visibility="collapsed", placeholder="Min Fit IAprendo",
-                                   help="Fit IAprendo minimo (0-100)")
-    st.markdown('</div>', unsafe_allow_html=True)
+        # Segunda linha: filtros dos dados ricos do Censo
+        fc5, fc6, fc7, fc8, fc9 = st.columns([2, 2, 2, 2, 2])
+        with fc5:
+            tech_options = ["Alto", "Medio", "Baixo"]
+            sel_tech = st.multiselect("Tech", tech_options, default=[],
+                                       label_visibility="collapsed", placeholder="Nivel tec...")
+        with fc6:
+            fonte_options = ["Censo 2025", "Catalogo INEP"]
+            sel_fonte = st.multiselect("Fonte", fonte_options, default=[],
+                                        label_visibility="collapsed", placeholder="Fonte dos dados...")
+        with fc7:
+            min_fund = st.number_input("Min Fund AF", min_value=0, max_value=5000, value=0, step=50,
+                                        label_visibility="collapsed", placeholder="Min Fund AF")
+        with fc8:
+            min_medio = st.number_input("Min Medio", min_value=0, max_value=5000, value=0, step=50,
+                                         label_visibility="collapsed", placeholder="Min Medio")
+        with fc9:
+            min_fit = st.number_input("Min Fit", min_value=0, max_value=100, value=0, step=5,
+                                       label_visibility="collapsed", placeholder="Min Fit IAprendo",
+                                       help="Fit IAprendo minimo (0-100)")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Aplicar filtros
-    df_f = df.copy()
-    if sel_status:
-        df_f = df_f[df_f["Status"].isin(sel_status)]
-    if sel_type:
-        df_f = df_f[df_f["Tipo"].isin(sel_type)]
-    df_f = df_f[(df_f["Score"] >= score_range[0]) & (df_f["Score"] <= score_range[1])]
-    if search:
-        df_f = df_f[df_f["name"].str.contains(search, case=False, na=False)]
-    if sel_tech:
-        df_f = df_f[df_f["Tech"].isin(sel_tech)]
-    if sel_fonte:
-        df_f = df_f[df_f["Fonte"].isin(sel_fonte)]
-    if min_fund > 0:
-        df_f = df_f[df_f["Fund AF"] >= min_fund]
-    if min_medio > 0:
-        df_f = df_f[df_f["Medio"] >= min_medio]
-    if min_fit > 0:
-        df_f = df_f[df_f["Fit"] >= min_fit]
+        # Aplicar filtros
+        df_f = df.copy()
+        if sel_status:
+            df_f = df_f[df_f["Status"].isin(sel_status)]
+        if sel_type:
+            df_f = df_f[df_f["Tipo"].isin(sel_type)]
+        df_f = df_f[(df_f["Score"] >= score_range[0]) & (df_f["Score"] <= score_range[1])]
+        if search:
+            df_f = df_f[df_f["name"].str.contains(search, case=False, na=False)]
+        if sel_tech:
+            df_f = df_f[df_f["Tech"].isin(sel_tech)]
+        if sel_fonte:
+            df_f = df_f[df_f["Fonte"].isin(sel_fonte)]
+        if min_fund > 0:
+            df_f = df_f[df_f["Fund AF"] >= min_fund]
+        if min_medio > 0:
+            df_f = df_f[df_f["Medio"] >= min_medio]
+        if min_fit > 0:
+            df_f = df_f[df_f["Fit"] >= min_fit]
 
-    # --- Metricas ---
-    avg = df["Score"].replace(0, pd.NA).dropna().mean()
-    total_alvo = int((df["Fund AF"] + df["Medio"]).sum())
-    mc1, mc2, mc3, mc4 = st.columns(4)
-    with mc1:
-        metric_card("Total", len(df), COLORS["primary"], icon="domain")
-    with mc2:
-        metric_card("Filtradas", len(df_f), COLORS["secondary"], icon="filter_alt")
-    with mc3:
-        metric_card("Alunos Alvo", f"{total_alvo:,}".replace(",", "."), COLORS["info"], icon="groups")
-    with mc4:
-        metric_card("Score Medio", f"{avg:.0f}" if pd.notna(avg) else "N/A", COLORS["success"], icon="analytics")
+        # --- Metricas ---
+        avg = df["Score"].replace(0, pd.NA).dropna().mean()
+        total_alvo = int((df["Fund AF"] + df["Medio"]).sum())
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        with mc1:
+            metric_card("Total", len(df), COLORS["primary"], icon="domain")
+        with mc2:
+            metric_card("Filtradas", len(df_f), COLORS["secondary"], icon="filter_alt")
+        with mc3:
+            metric_card("Alunos Alvo", f"{total_alvo:,}".replace(",", "."), COLORS["info"], icon="groups")
+        with mc4:
+            metric_card("Score Medio", f"{avg:.0f}" if pd.notna(avg) else "N/A", COLORS["success"], icon="analytics")
 
-    st.markdown("")
+        st.markdown("")
 
-    # --- Mensagem de feedback ---
-    if st.session_state.escola_msg:
-        msg_type, msg_text = st.session_state.escola_msg
-        if msg_type == "success":
-            alert_banner(msg_text, "success")
-        elif msg_type == "error":
-            alert_banner(msg_text, "error")
-        elif msg_type == "info":
-            alert_banner(msg_text, "info")
-        st.session_state.escola_msg = None
+        # --- Mensagem de feedback ---
+        if st.session_state.escola_msg:
+            msg_type, msg_text = st.session_state.escola_msg
+            if msg_type == "success":
+                alert_banner(msg_text, "success")
+            elif msg_type == "error":
+                alert_banner(msg_text, "error")
+            elif msg_type == "info":
+                alert_banner(msg_text, "info")
+            st.session_state.escola_msg = None
 
-    # --- Tabela interativa com selecao por clique ---
-    table_cols = ["name", "city", "UF", "Bairro", "Tipo", "Fund AF", "Medio", "Tech", "Coord", "Fit", "Score", "Status"]
-    col_config = {
-        "name": st.column_config.TextColumn("Escola", width="large"),
-        "city": st.column_config.TextColumn("Cidade", width="small"),
-        "UF": st.column_config.TextColumn("UF", width="small", disabled=True),
-        "Bairro": st.column_config.TextColumn("Bairro", width="small", disabled=True),
-        "Tipo": st.column_config.TextColumn("Tipo", width="small", disabled=True),
-        "Fund AF": st.column_config.NumberColumn(
-            "Fund AF", width="small", disabled=True,
-            help="Matriculas no Ensino Fundamental Anos Finais (6o-9o) — alvo IAprendo",
-        ),
-        "Medio": st.column_config.NumberColumn(
-            "Medio", width="small", disabled=True,
-            help="Matriculas no Ensino Medio (1o-3o) — alvo IAprendo",
-        ),
-        "Tech": st.column_config.TextColumn(
-            "Tech", width="small", disabled=True,
-            help="Nivel tecnologico da escola (Alto/Medio/Baixo)",
-        ),
-        "Coord": st.column_config.NumberColumn(
-            "Coord", width="small", disabled=True,
-            help="Quantidade de coordenadores pedagogicos",
-        ),
-        "Fit": st.column_config.ProgressColumn(
-            "Fit", min_value=0, max_value=100, width="small",
-            help="Fit IAprendo: 0-100, deterministico, baseado em alvo×tech×coord×categoria",
-        ),
-        "Score": st.column_config.NumberColumn("Score", min_value=0, max_value=100, width="small"),
-        "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
-    }
+        # --- Tabela interativa com selecao por clique ---
+        table_cols = ["name", "city", "UF", "Bairro", "Tipo", "Fund AF", "Medio", "Tech", "Coord", "Fit", "Score", "Status"]
+        col_config = {
+            "name": st.column_config.TextColumn("Escola", width="large"),
+            "city": st.column_config.TextColumn("Cidade", width="small"),
+            "UF": st.column_config.TextColumn("UF", width="small", disabled=True),
+            "Bairro": st.column_config.TextColumn("Bairro", width="small", disabled=True),
+            "Tipo": st.column_config.TextColumn("Tipo", width="small", disabled=True),
+            "Fund AF": st.column_config.NumberColumn(
+                "Fund AF", width="small", disabled=True,
+                help="Matriculas no Ensino Fundamental Anos Finais (6o-9o) — alvo IAprendo",
+            ),
+            "Medio": st.column_config.NumberColumn(
+                "Medio", width="small", disabled=True,
+                help="Matriculas no Ensino Medio (1o-3o) — alvo IAprendo",
+            ),
+            "Tech": st.column_config.TextColumn(
+                "Tech", width="small", disabled=True,
+                help="Nivel tecnologico da escola (Alto/Medio/Baixo)",
+            ),
+            "Coord": st.column_config.NumberColumn(
+                "Coord", width="small", disabled=True,
+                help="Quantidade de coordenadores pedagogicos",
+            ),
+            "Fit": st.column_config.ProgressColumn(
+                "Fit", min_value=0, max_value=100, width="small",
+                help="Fit IAprendo: 0-100, deterministico, baseado em alvo×tech×coord×categoria",
+            ),
+            "Score": st.column_config.NumberColumn("Score", min_value=0, max_value=100, width="small"),
+            "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
+        }
 
-    st.caption("Clique em uma linha para ver acoes. Edite Status e Score diretamente na tabela.")
+        st.caption("Clique em uma linha para ver acoes. Edite Status e Score diretamente na tabela.")
 
-    df_f_reset = df_f.reset_index(drop=True)
-    edited_df = st.data_editor(
-        df_f_reset[table_cols],
-        use_container_width=True,
-        hide_index=True,
-        column_config=col_config,
-        num_rows="fixed",
-        key="escola_table",
-        on_change=None,
-    )
+        df_f_reset = df_f.reset_index(drop=True)
+        edited_df = st.data_editor(
+            df_f_reset[table_cols],
+            use_container_width=True,
+            hide_index=True,
+            column_config=col_config,
+            num_rows="fixed",
+            key="escola_table",
+            on_change=None,
+        )
 
-    # Detect inline edits and save them
-    if edited_df is not None:
-        for idx_row in range(min(len(df_f_reset), len(edited_df))):
-            orig_status = df_f_reset.iloc[idx_row]["Status"]
-            orig_score = df_f_reset.iloc[idx_row]["Score"]
-            new_status = edited_df.iloc[idx_row]["Status"]
-            new_score = edited_df.iloc[idx_row]["Score"]
-            if new_status != orig_status or new_score != orig_score:
-                cid = df_f_reset.iloc[idx_row]["id"]
-                updates = {}
-                if new_status != orig_status:
-                    updates["status"] = PT_TO_EN.get(new_status, "raw")
-                if new_score != orig_score:
-                    updates["qualification_score"] = int(new_score)
-                if updates:
-                    db.update_company(cid, updates)
+        # Detect inline edits and save them
+        if edited_df is not None:
+            for idx_row in range(min(len(df_f_reset), len(edited_df))):
+                orig_status = df_f_reset.iloc[idx_row]["Status"]
+                orig_score = df_f_reset.iloc[idx_row]["Score"]
+                new_status = edited_df.iloc[idx_row]["Status"]
+                new_score = edited_df.iloc[idx_row]["Score"]
+                if new_status != orig_status or new_score != orig_score:
+                    cid = df_f_reset.iloc[idx_row]["id"]
+                    updates = {}
+                    if new_status != orig_status:
+                        updates["status"] = PT_TO_EN.get(new_status, "raw")
+                    if new_score != orig_score:
+                        updates["qualification_score"] = int(new_score)
+                    if updates:
+                        db.update_company(cid, updates)
 
-    # --- Barra de acoes rapidas (logo abaixo da tabela) ---
-    st.markdown(
-        '<p style="font-size:12px;font-weight:600;color:#757575;text-transform:uppercase;'
-        'letter-spacing:0.5px;margin-top:12px;margin-bottom:4px">Acoes rapidas</p>',
-        unsafe_allow_html=True,
-    )
+        # --- Barra de acoes rapidas (logo abaixo da tabela) ---
+        st.markdown(
+            '<p style="font-size:12px;font-weight:600;color:#757575;text-transform:uppercase;'
+            'letter-spacing:0.5px;margin-top:12px;margin-bottom:4px">Acoes rapidas</p>',
+            unsafe_allow_html=True,
+        )
 
-    escola_options = df_f_reset[["id", "name"]].values.tolist()
-    if escola_options:
-        escola_names = [row[1] for row in escola_options]
-        # Linha 1: Seletor + Ver detalhes
-        ac_row1_1, ac_row1_2 = st.columns([4, 1])
-        with ac_row1_1:
-            selected_escola_idx = st.selectbox(
-                "Escola:", range(len(escola_names)),
-                format_func=lambda i: escola_names[i],
-                label_visibility="collapsed",
-                placeholder="Selecione uma escola...",
-            )
-        with ac_row1_2:
-            if st.button("Ver detalhes", type="primary", icon=":material/open_in_new:",
-                          use_container_width=True):
-                go_to_detail(escola_options[selected_escola_idx][0])
-                st.rerun()
-        # Linha 2: Alterar status + Excluir
-        ac_row2_1, ac_row2_2, ac_row2_3 = st.columns([2, 1, 1])
-        with ac_row2_1:
-            new_st = st.selectbox("Alterar status para:", list(STATUS_PT.values()), key="quick_st",
-                                   label_visibility="collapsed")
-        with ac_row2_2:
-            if st.button("Alterar status", icon=":material/edit:", use_container_width=True):
-                cid = escola_options[selected_escola_idx][0]
-                new_en = PT_TO_EN.get(new_st, "raw")
-                db.reset_company_status(cid, new_en)
-                st.toast(f"Status alterado para {new_st}!")
-                st.rerun()
-        with ac_row2_3:
-            if st.button("Excluir escola", icon=":material/delete:", use_container_width=True):
-                st.session_state["confirm_single_delete"] = escola_options[selected_escola_idx]
-
-    # Confirmacao de exclusao individual
-    if st.session_state.get("confirm_single_delete"):
-        del_id, del_name = st.session_state["confirm_single_delete"]
-        alert_banner(f"Confirma exclusao de <strong>{del_name}</strong> e todos os dados?", "error")
-        cd1, cd2 = st.columns(2)
-        with cd1:
-            if st.button("Sim, excluir", type="primary", key="confirm_del_single"):
-                db.delete_company(del_id)
-                st.session_state.escola_msg = ("success", f"{del_name} excluida.")
-                st.session_state.pop("confirm_single_delete", None)
-                st.rerun()
-        with cd2:
-            if st.button("Cancelar", key="cancel_del_single"):
-                st.session_state.pop("confirm_single_delete", None)
-                st.rerun()
-
-    # --- Acoes em massa ---
-    with st.expander("Acoes em massa (todas as filtradas)"):
-        am_col1, am_col2, am_col3 = st.columns(3)
-        with am_col1:
-            new_status_pt = st.selectbox("Novo status:", list(STATUS_PT.values()), key="bulk_st")
-        with am_col2:
-            if st.button(f"Alterar {len(df_f)} escolas", icon=":material/edit:", use_container_width=True):
-                new_en = PT_TO_EN.get(new_status_pt, "raw")
-                for cid in df_f["id"].tolist():
+        escola_options = df_f_reset[["id", "name"]].values.tolist()
+        if escola_options:
+            escola_names = [row[1] for row in escola_options]
+            # Linha 1: Seletor + Ver detalhes
+            ac_row1_1, ac_row1_2 = st.columns([4, 1])
+            with ac_row1_1:
+                selected_escola_idx = st.selectbox(
+                    "Escola:", range(len(escola_names)),
+                    format_func=lambda i: escola_names[i],
+                    label_visibility="collapsed",
+                    placeholder="Selecione uma escola...",
+                )
+            with ac_row1_2:
+                if st.button("Ver detalhes", type="primary", icon=":material/open_in_new:",
+                              use_container_width=True):
+                    go_to_detail(escola_options[selected_escola_idx][0])
+                    st.rerun()
+            # Linha 2: Alterar status + Excluir
+            ac_row2_1, ac_row2_2, ac_row2_3 = st.columns([2, 1, 1])
+            with ac_row2_1:
+                new_st = st.selectbox("Alterar status para:", list(STATUS_PT.values()), key="quick_st",
+                                       label_visibility="collapsed")
+            with ac_row2_2:
+                if st.button("Alterar status", icon=":material/edit:", use_container_width=True):
+                    cid = escola_options[selected_escola_idx][0]
+                    new_en = PT_TO_EN.get(new_st, "raw")
                     db.reset_company_status(cid, new_en)
-                st.session_state.escola_msg = ("success", f"Status de {len(df_f)} escolas alterado.")
-                st.rerun()
-        with am_col3:
-            if st.button(f"Excluir {len(df_f)} escolas", icon=":material/delete_forever:",
-                          use_container_width=True):
-                st.session_state["confirm_bulk_delete"] = df_f["id"].tolist()
+                    st.toast(f"Status alterado para {new_st}!")
+                    st.rerun()
+            with ac_row2_3:
+                if st.button("Excluir escola", icon=":material/delete:", use_container_width=True):
+                    st.session_state["confirm_single_delete"] = escola_options[selected_escola_idx]
 
-        if st.session_state.get("confirm_bulk_delete"):
-            ids_to_del = st.session_state["confirm_bulk_delete"]
-            alert_banner(f"Confirma exclusao de {len(ids_to_del)} escolas e todos os dados?", "error")
+        # Confirmacao de exclusao individual
+        if st.session_state.get("confirm_single_delete"):
+            del_id, del_name = st.session_state["confirm_single_delete"]
+            alert_banner(f"Confirma exclusao de <strong>{del_name}</strong> e todos os dados?", "error")
             cd1, cd2 = st.columns(2)
             with cd1:
-                if st.button("Sim, excluir tudo", type="primary"):
-                    deleted = db.bulk_delete_companies(ids_to_del)
-                    st.session_state.escola_msg = ("success", f"{deleted} escolas excluidas.")
-                    st.session_state.pop("confirm_bulk_delete", None)
+                if st.button("Sim, excluir", type="primary", key="confirm_del_single"):
+                    db.delete_company(del_id)
+                    st.session_state.escola_msg = ("success", f"{del_name} excluida.")
+                    st.session_state.pop("confirm_single_delete", None)
                     st.rerun()
             with cd2:
-                if st.button("Cancelar", key="cancel_del"):
-                    st.session_state.pop("confirm_bulk_delete", None)
+                if st.button("Cancelar", key="cancel_del_single"):
+                    st.session_state.pop("confirm_single_delete", None)
                     st.rerun()
 
-    # --- Exportar ---
-    st.divider()
-    csv_cols = [c for c in [
-        "name", "city", "UF", "Bairro", "inep_code", "Tipo", "Porte",
-        "Fund AF", "Medio", "Tech", "Coord", "Fonte",
-        "Status", "Score", "Fit",
-    ] if c in df_f.columns]
-    csv = df_f[csv_cols].to_csv(index=False)
-    st.download_button("Exportar CSV", csv, "escolas.csv", "text/csv", icon=":material/download:")
+        # --- Acoes em massa ---
+        with st.expander("Acoes em massa (todas as filtradas)"):
+            am_col1, am_col2, am_col3 = st.columns(3)
+            with am_col1:
+                new_status_pt = st.selectbox("Novo status:", list(STATUS_PT.values()), key="bulk_st")
+            with am_col2:
+                if st.button(f"Alterar {len(df_f)} escolas", icon=":material/edit:", use_container_width=True):
+                    new_en = PT_TO_EN.get(new_status_pt, "raw")
+                    for cid in df_f["id"].tolist():
+                        db.reset_company_status(cid, new_en)
+                    st.session_state.escola_msg = ("success", f"Status de {len(df_f)} escolas alterado.")
+                    st.rerun()
+            with am_col3:
+                if st.button(f"Excluir {len(df_f)} escolas", icon=":material/delete_forever:",
+                              use_container_width=True):
+                    st.session_state["confirm_bulk_delete"] = df_f["id"].tolist()
+
+            if st.session_state.get("confirm_bulk_delete"):
+                ids_to_del = st.session_state["confirm_bulk_delete"]
+                alert_banner(f"Confirma exclusao de {len(ids_to_del)} escolas e todos os dados?", "error")
+                cd1, cd2 = st.columns(2)
+                with cd1:
+                    if st.button("Sim, excluir tudo", type="primary"):
+                        deleted = db.bulk_delete_companies(ids_to_del)
+                        st.session_state.escola_msg = ("success", f"{deleted} escolas excluidas.")
+                        st.session_state.pop("confirm_bulk_delete", None)
+                        st.rerun()
+                with cd2:
+                    if st.button("Cancelar", key="cancel_del"):
+                        st.session_state.pop("confirm_bulk_delete", None)
+                        st.rerun()
+
+        # --- Exportar ---
+        st.divider()
+        csv_cols = [c for c in [
+            "name", "city", "UF", "Bairro", "inep_code", "Tipo", "Porte",
+            "Fund AF", "Medio", "Tech", "Coord", "Fonte",
+            "Status", "Score", "Fit",
+        ] if c in df_f.columns]
+        csv = df_f[csv_cols].to_csv(index=False)
+        st.download_button("Exportar CSV", csv, "escolas.csv", "text/csv", icon=":material/download:")
+
+    with tab_redes:
+        render_redes_view()

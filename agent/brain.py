@@ -3238,14 +3238,42 @@ def _derivar_nome_rede(escolas: List[Dict]) -> str:
     Estrategia: encontrar a SUBSEQUENCIA MAIS LONGA comum no comeco dos
     nomes das escolas (ignorando palavras genericas). Ex: 'COL MARISTA X',
     'COL MARISTA Y' -> 'Marista'. 'COL LA SALLE X' -> 'La Salle'.
+
+    Limitacao: e HEURISTICA — se os nomes das escolas compartilham termos
+    religiosos/comuns (Mae, Deus, Jesus), esses podem virar nome da rede.
+    Pra correcoes manuais, use utils/rede_name.resolver_nome_rede que
+    consulta a tabela rede_overrides antes de cair aqui.
     """
-    STOPWORDS = {"COLEGIO", "ESCOLA", "COL", "ESC", "EEF", "EEM", "EMEF",
-                 "INSTITUTO", "CENTRO", "DE", "DA", "DO", "DAS", "DOS", "E",
-                 "ENSINO", "MEDIO", "FUNDAMENTAL", "EDUCACAO", "BASICA",
-                 "ANOS", "FINAIS", "INICIAIS", "EST", "MUN", "MEI", "INF",
-                 "ENS", "FUND", "MED", "PROFISSIONAL", "PROF", "TECNICA",
-                 "TEC", "MUNICIPAL", "ESTADUAL", "FEDERAL", "PRIVADA",
-                 "SEM", "COM"}
+    STOPWORDS = {
+        # Tipo de escola
+        "COLEGIO", "ESCOLA", "COL", "ESC", "EEF", "EEM", "EMEF",
+        "INSTITUTO", "CENTRO", "ESCOLINHA", "ESC", "UNIDADE", "UNID",
+        # Nivel de ensino
+        "ENSINO", "MEDIO", "FUNDAMENTAL", "EDUCACAO", "BASICA", "INFANTIL",
+        "ANOS", "FINAIS", "INICIAIS", "EST", "MUN", "MEI", "INF",
+        "ENS", "FUND", "MED", "PROFISSIONAL", "PROF", "TECNICA", "TEC",
+        # Dependencia administrativa
+        "MUNICIPAL", "ESTADUAL", "FEDERAL", "PRIVADA", "PARTICULAR",
+        # Conectores
+        "DE", "DA", "DO", "DAS", "DOS", "E", "SEM", "COM", "EM", "PARA",
+        # Termos religiosos/sacros que compartilham muitos nomes de escola —
+        # se nao excluirmos, viram "nome de rede" em falsos positivos.
+        # Ex: "Colegio Nossa Senhora Mae de Deus" -> rede "Mae" (erro).
+        "MAE", "PAI", "FILHOS", "FILHO", "FAMILIA", "SAGRADA", "SAGRADO",
+        "SANTA", "SANTO", "SANTAS", "SANTOS", "SAO", "SA",
+        "NOSSA", "NOSSO", "SENHOR", "SENHORA",
+        "DEUS", "JESUS", "CRISTO", "ANJO", "ANJOS", "ESPIRITO",
+        "IMACULADA", "CORACAO", "CONCEICAO", "APARECIDA",
+        "LA",  # comum em "La Salle" mas sozinho nao e nome
+        "NOVO", "NOVA", "VELHO", "VELHA", "GRANDE", "PEQUENO", "PEQUENA",
+    }
+
+    # Blocklist adicional — palavras que NUNCA devem ser nome de rede
+    # mesmo se sobreviverem ao filtro stopword. Protege contra ambiguidades.
+    BLOCKLIST_NOME_REDE = {
+        "MAE", "PAI", "DEUS", "JESUS", "CRISTO", "ANJO", "SANTA", "SANTO",
+        "NOSSA", "SENHORA", "APARECIDA",
+    }
 
     def limpar_nome(nome: str) -> list:
         """Remove TODAS as stopwords (nao so do inicio) e retorna lista."""
@@ -3255,6 +3283,10 @@ def _derivar_nome_rede(escolas: List[Dict]) -> str:
     nomes_limpos = [limpar_nome(e.get("name") or "") for e in escolas]
     nomes_limpos = [n for n in nomes_limpos if n]
     if not nomes_limpos:
+        # Fallback pra CNPJ raiz se disponivel
+        cnpj = next((e.get("cnpj_mantenedora") for e in escolas if e.get("cnpj_mantenedora")), "")
+        if cnpj:
+            return f"Rede CNPJ {cnpj[:8]}"
         return "Rede sem nome"
 
     # Encontrar prefixo comum (sequencia de palavras)
@@ -3267,24 +3299,31 @@ def _derivar_nome_rede(escolas: List[Dict]) -> str:
         else:
             break
 
+    def _candidato_aceitavel(nome: str) -> bool:
+        """Valida se o nome derivado e aceitavel pra ser usado como nome de rede."""
+        if not nome or len(nome) < 3:
+            return False
+        if nome.upper() in BLOCKLIST_NOME_REDE:
+            return False
+        return True
+
     if prefixo:
-        # Palavras incompletas/genericas — forca pegar a segunda palavra tambem
-        INCOMPLETAS = {"LA", "SAO", "SANTA", "SANTO", "DA", "DO", "NOSSA",
-                       "NOSSO", "SENHOR", "SENHORA"}
-        if len(prefixo) == 1 and prefixo[0] in INCOMPLETAS:
-            # Tenta pegar a palavra mais comum na POSICAO 1 (segunda palavra)
-            from collections import Counter
-            segundas = [n[1] for n in nomes_limpos if len(n) > 1]
-            if segundas:
-                seg = Counter(segundas).most_common(1)[0][0]
-                return f"{prefixo[0].title()} {seg.title()}"
-        return " ".join(p.title() for p in prefixo)
+        candidato = " ".join(p.title() for p in prefixo)
+        if _candidato_aceitavel(candidato):
+            return candidato
 
     # Fallback: palavra mais comum entre as primeiras nao-stopword
     from collections import Counter
     primeiros = [n[0] for n in nomes_limpos if n]
     if primeiros:
-        return Counter(primeiros).most_common(1)[0][0].title()
+        mais_comum = Counter(primeiros).most_common(1)[0][0]
+        if _candidato_aceitavel(mais_comum):
+            return mais_comum.title()
+
+    # Sem candidato bom — cair pro CNPJ raiz pra evitar nome enganoso
+    cnpj = next((e.get("cnpj_mantenedora") for e in escolas if e.get("cnpj_mantenedora")), "")
+    if cnpj:
+        return f"Rede CNPJ {cnpj[:8]}"
     return "Rede sem nome"
 
 
@@ -3323,9 +3362,11 @@ def _handle_listar_redes_educacionais(params: Dict) -> str:
         cidades = sorted(set(e.get("city") or "" for e in escolas))
         ufs = sorted(set(e.get("state") or "" for e in escolas))
 
+        # Resolve nome usando override manual antes de cair na heuristica
+        from utils.rede_name import resolver_nome_rede
         redes.append({
             "cnpj_mantenedora": cnpj,
-            "nome_rede": _derivar_nome_rede(escolas),
+            "nome_rede": resolver_nome_rede(cnpj, escolas),
             "unidades": len(escolas),
             "alunos_alvo": alvo_total,
             "total_alunos": total_alunos,

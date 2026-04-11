@@ -569,56 +569,132 @@ def render_descoberta():
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # ==================================================================
-    # Buscar sinais em lote (novo: aceita multiplas escolas)
+    # Buscar sinais em lote — tabela filtravel com checkboxes
     # ==================================================================
     section_header("Buscar sinais (rankings, premios, noticias)", "psychology")
     st.caption(
-        "Pesquisa rankings, premios e reconhecimentos de uma ou mais escolas. "
-        "Resultados sao salvos como memorias e usados automaticamente nos proximos emails."
+        "Filtre, selecione multiplas escolas e roda em lote. Resultados sao "
+        "salvos como memorias e usados automaticamente nos proximos emails."
     )
 
-    sinais_opts_map = {}
-    for c in all_companies:
-        sinais_opts_map[f"{c.get('name', '?')[:60]} — {c.get('city','?')}"] = c["id"]
+    # --- Filtros horizontais ---
+    flt_cols = st.columns([3, 2, 2, 2, 2])
+    with flt_cols[0]:
+        sig_search = st.text_input(
+            "Buscar por nome",
+            placeholder="Digite parte do nome...",
+            key="sig_search",
+            label_visibility="collapsed",
+        )
+    with flt_cols[1]:
+        sig_cidades = sorted({(c.get("city") or "").strip() for c in all_companies if c.get("city")})
+        sig_cidade_sel = st.multiselect(
+            "Cidade",
+            options=sig_cidades,
+            key="sig_cidade",
+            placeholder="Cidade...",
+            label_visibility="collapsed",
+        )
+    with flt_cols[2]:
+        sig_tipos = sorted({
+            (c.get("admin_dependency") or "").strip()
+            for c in all_companies if c.get("admin_dependency")
+        })
+        sig_tipo_sel = st.multiselect(
+            "Tipo",
+            options=sig_tipos,
+            key="sig_tipo",
+            placeholder="Tipo...",
+            label_visibility="collapsed",
+        )
+    with flt_cols[3]:
+        sig_score_min = st.slider("Score min", 0, 100, 0, key="sig_score_min")
+    with flt_cols[4]:
+        sig_fit_min = st.slider("Fit min", 0, 100, 0, key="sig_fit_min")
 
-    sinais_selected = st.multiselect(
-        "Escolas para buscar sinais",
-        options=list(sinais_opts_map.keys()),
-        key="discovery_sinais_multi",
-        placeholder="Digite pra buscar...",
-        help="Multipla selecao. O processo roda sequencial, uma por vez.",
-    )
+    # --- Filtrar lista ---
+    def _passa_filtro_sig(c):
+        if sig_search and sig_search.lower() not in (c.get("name") or "").lower():
+            return False
+        if sig_cidade_sel and c.get("city") not in sig_cidade_sel:
+            return False
+        if sig_tipo_sel and c.get("admin_dependency") not in sig_tipo_sel:
+            return False
+        if sig_score_min > 0 and (c.get("qualification_score") or 0) < sig_score_min:
+            return False
+        if sig_fit_min > 0 and (c.get("_fit") or 0) < sig_fit_min:
+            return False
+        return True
 
-    if st.button(
-        f"🔍 Buscar sinais ({len(sinais_selected)} selecionada(s))",
-        disabled=len(sinais_selected) == 0,
-        type="primary",
-        key="btn_buscar_sinais_lote",
-    ):
-        total_sinais = 0
-        erros_lote = []
-        with st.spinner(f"Buscando sinais de {len(sinais_selected)} escola(s)... pode levar alguns minutos"):
-            for label in sinais_selected:
-                cid = sinais_opts_map[label]
-                try:
-                    result = discovery_engine.enrich_signals(cid)
-                    n = result.get("sinais_adicionados", 0)
-                    total_sinais += n
-                    if n > 0:
-                        st.markdown(f"- ✅ **{label}**: {n} sinal(is)")
-                        for preview in result.get("preview", [])[:3]:
-                            st.markdown(f"    - {preview}")
-                    else:
-                        st.markdown(f"- ⚪ **{label}**: nenhum sinal encontrado")
-                    if result.get("erros"):
-                        erros_lote.extend(result["erros"])
-                except Exception as e:
-                    erros_lote.append(f"{label}: {e}")
-        if total_sinais > 0:
-            st.success(f"✅ Total: {total_sinais} sinal(is) em {len(sinais_selected)} escola(s)")
-        if erros_lote:
-            for err in erros_lote[:5]:
-                st.warning(f"⚠️ {err}")
+    filtered_sig = [c for c in all_companies if _passa_filtro_sig(c)]
+
+    # --- Tabela com checkbox ---
+    if not filtered_sig:
+        alert_banner("Nenhuma escola corresponde aos filtros.", "info")
+    else:
+        df_sig = pd.DataFrame([{
+            "Sel": False,
+            "Escola": (c.get("name") or "?")[:50],
+            "Cidade": c.get("city") or "",
+            "Score": int(c.get("qualification_score") or 0),
+            "Fit": int(c.get("_fit") or 0),
+            "Alvo": int((c.get("matriculas_fund_af") or 0) + (c.get("matriculas_medio") or 0)),
+            "Tech": c.get("nivel_tecnologico") or "-",
+            "Tipo": (c.get("admin_dependency") or "")[:15],
+            "id": c["id"],
+        } for c in sorted(filtered_sig, key=lambda x: (x.get("_fit") or 0), reverse=True)])
+
+        edited_sig = st.data_editor(
+            df_sig[["Sel", "Escola", "Cidade", "Score", "Fit", "Alvo", "Tech", "Tipo"]],
+            use_container_width=True,
+            hide_index=True,
+            height=350,
+            column_config={
+                "Sel": st.column_config.CheckboxColumn("✓", default=False, width="small"),
+                "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+                "Fit": st.column_config.ProgressColumn("Fit", min_value=0, max_value=100, format="%d"),
+                "Alvo": st.column_config.NumberColumn("Alvo", width="small"),
+                "Tech": st.column_config.TextColumn("Tech", width="small"),
+            },
+            disabled=["Escola", "Cidade", "Score", "Fit", "Alvo", "Tech", "Tipo"],
+            key="sig_data_editor",
+        )
+
+        # Contar selecionados
+        sel_mask = edited_sig["Sel"] == True
+        n_selected = int(sel_mask.sum())
+        selected_sig_ids = [df_sig.iloc[i]["id"] for i in edited_sig[sel_mask].index]
+        selected_sig_names = [df_sig.iloc[i]["Escola"] for i in edited_sig[sel_mask].index]
+
+        if st.button(
+            f"🔍 Buscar sinais ({n_selected} selecionada(s))",
+            disabled=n_selected == 0,
+            type="primary",
+            key="btn_buscar_sinais_lote",
+        ):
+            total_sinais = 0
+            erros_lote = []
+            with st.spinner(f"Buscando sinais de {n_selected} escola(s)... pode levar alguns minutos"):
+                for cid, cname in zip(selected_sig_ids, selected_sig_names):
+                    try:
+                        result = discovery_engine.enrich_signals(cid)
+                        n = result.get("sinais_adicionados", 0)
+                        total_sinais += n
+                        if n > 0:
+                            st.markdown(f"- ✅ **{cname}**: {n} sinal(is)")
+                            for preview in result.get("preview", [])[:3]:
+                                st.markdown(f"    - {preview}")
+                        else:
+                            st.markdown(f"- ⚪ **{cname}**: nenhum sinal encontrado")
+                        if result.get("erros"):
+                            erros_lote.extend(result["erros"])
+                    except Exception as e:
+                        erros_lote.append(f"{cname}: {e}")
+            if total_sinais > 0:
+                st.success(f"✅ Total: {total_sinais} sinal(is) em {n_selected} escola(s)")
+            if erros_lote:
+                for err in erros_lote[:5]:
+                    st.warning(f"⚠️ {err}")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     st.info(
