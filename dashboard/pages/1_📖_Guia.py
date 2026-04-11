@@ -486,7 +486,7 @@ with tab6:
         ("Pipeline automatico", "Roda sozinho no horario configurado", "schedule"),
         ("Follow-ups comportamentais", "4 tipos: hot_click, curious_open, silent_open, revival", "psychology"),
         ("Modo de Autonomia", "3 niveis com confirmacao dupla para full-auto", "security"),
-        ("Inteligencia de escolas", "Enriquece escolas com dados web (rankings, premios, noticias)", "explore"),
+        ("Descoberta de sinais", "Enriquece escolas com dados web (rankings, premios, noticias) — aba Descoberta no Pipeline", "explore"),
         ("Persona adaptativa", "IA adapta tom por tipo de escola (4 personas)", "face"),
         ("Calendario inteligente", "Envia no melhor horario (tracking + feriados + fase letiva)", "event"),
         ("Outlook Calendar", "Detecta reunioes, briefing pre-reuniao, pede resumo pos", "calendar_month"),
@@ -527,7 +527,6 @@ with tab7:
         ("🔄 Follow-ups", "Metricas, timeline, deducao de emails", "pages/9_🔄_Follow-ups.py"),
         ("📝 Templates", "Assinatura de email + templates de mensagem e follow-up", "pages/10_📝_Templates.py"),
         ("📥 Importar", "Filtrar e importar escolas do CSV do MEC", "pages/11_📥_Importar.py"),
-        ("🔍 Inteligencia", "Enriquecer escolas com dados web (rankings, premios)", "pages/12_🔍_Discovery.py"),
     ]
 
     for nome, desc, page_path in menu_items:
@@ -559,7 +558,7 @@ with tab8:
 | **Segunda** | Revisar resumo do IAlex | WhatsApp | 2 min |
 | **Terca** | Aprovar emails da fila | ✉️ Aprovacao | 10 min |
 | **Quarta** | Verificar respostas + sinais | WhatsApp / CRM | 5 min |
-| **Quinta** | Enriquecer escolas com dados web | 🔍 Inteligencia | 5 min |
+| **Quinta** | Enriquecer escolas com dados web | 📊 Pipeline > Descoberta | 5 min |
 | **Sexta** | Checar relatorio semanal | WhatsApp | 3 min |
 | **Total** | | | **~25 min/sem** |
 """)
@@ -642,7 +641,7 @@ with tab9:
 | Problema | Solucao |
 |---|---|
 | CSV nao encontrado | Baixe do MEC e salve em `data/raw/escolas_brasil.csv` |
-| Discovery sem resultados | Tente outra cidade ou keyword |
+| Descoberta sem resultados | Tente outra cidade ou keyword na aba Descoberta do Pipeline |
 | Email nao chegou | Verifique spam. Envie teste para Gmail pessoal |
 | IAlex nao responde | Reinicie: `venv/Scripts/python.exe agent/webhook_server.py` |
 | Pipeline nao roda auto | Mude para Semi-Auto em ⚙️ Configuracoes |

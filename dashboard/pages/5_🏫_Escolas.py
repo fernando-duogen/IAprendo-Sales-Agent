@@ -81,10 +81,36 @@ if st.session_state.escola_detail_id:
     # --- Breadcrumb ---
     breadcrumb(["Escolas", company.get("name", "Detalhe")])
 
-    # --- Voltar ---
-    if st.button("Voltar a lista", icon=":material/arrow_back:"):
-        go_to_list()
-        st.rerun()
+    # --- Voltar + acoes rapidas no header ---
+    header_cols = st.columns([1, 1, 2])
+    with header_cols[0]:
+        if st.button("Voltar a lista", icon=":material/arrow_back:",
+                     use_container_width=True, key="escola_back"):
+            go_to_list()
+            st.rerun()
+    with header_cols[1]:
+        if st.button("Buscar sinais", icon=":material/psychology:",
+                     use_container_width=True, key="escola_buscar_sinais",
+                     help="Pesquisa rankings, premios e noticias via web. Salva como memorias."):
+            try:
+                from tools.discovery_engine import discovery_engine
+                with st.spinner(f"Buscando sinais de {company.get('name', '?')}..."):
+                    sinais_result = discovery_engine.enrich_signals(company_id)
+                n_sinais = sinais_result.get("sinais_adicionados", 0)
+                if n_sinais > 0:
+                    st.session_state.escola_msg = (
+                        "success",
+                        f"{n_sinais} sinal(is) adicionado(s). Veja nas memorias da escola.",
+                    )
+                else:
+                    st.session_state.escola_msg = (
+                        "info",
+                        "Nenhum sinal novo encontrado.",
+                    )
+                st.rerun()
+            except Exception as e:
+                st.session_state.escola_msg = ("error", f"Erro ao buscar sinais: {e}")
+                st.rerun()
 
     # --- Mensagem de feedback ---
     if st.session_state.escola_msg:
@@ -93,6 +119,8 @@ if st.session_state.escola_detail_id:
             alert_banner(msg_text, "success")
         elif msg_type == "error":
             alert_banner(msg_text, "error")
+        elif msg_type == "info":
+            alert_banner(msg_text, "info")
         st.session_state.escola_msg = None
 
     # --- Cabecalho com card e metricas ---
@@ -826,6 +854,8 @@ else:
             alert_banner(msg_text, "success")
         elif msg_type == "error":
             alert_banner(msg_text, "error")
+        elif msg_type == "info":
+            alert_banner(msg_text, "info")
         st.session_state.escola_msg = None
 
     # --- Tabela interativa com selecao por clique ---
