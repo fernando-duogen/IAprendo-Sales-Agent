@@ -3247,7 +3247,7 @@ def _derivar_nome_rede(escolas: List[Dict]) -> str:
     STOPWORDS = {
         # Tipo de escola
         "COLEGIO", "ESCOLA", "COL", "ESC", "EEF", "EEM", "EMEF",
-        "INSTITUTO", "CENTRO", "ESCOLINHA", "ESC", "UNIDADE", "UNID",
+        "INSTITUTO", "CENTRO", "ESCOLINHA", "UNIDADE", "UNID",
         # Nivel de ensino
         "ENSINO", "MEDIO", "FUNDAMENTAL", "EDUCACAO", "BASICA", "INFANTIL",
         "ANOS", "FINAIS", "INICIAIS", "EST", "MUN", "MEI", "INF",
@@ -3256,23 +3256,30 @@ def _derivar_nome_rede(escolas: List[Dict]) -> str:
         "MUNICIPAL", "ESTADUAL", "FEDERAL", "PRIVADA", "PARTICULAR",
         # Conectores
         "DE", "DA", "DO", "DAS", "DOS", "E", "SEM", "COM", "EM", "PARA",
-        # Termos religiosos/sacros que compartilham muitos nomes de escola —
-        # se nao excluirmos, viram "nome de rede" em falsos positivos.
-        # Ex: "Colegio Nossa Senhora Mae de Deus" -> rede "Mae" (erro).
-        "MAE", "PAI", "FILHOS", "FILHO", "FAMILIA", "SAGRADA", "SAGRADO",
-        "SANTA", "SANTO", "SANTAS", "SANTOS", "SAO", "SA",
-        "NOSSA", "NOSSO", "SENHOR", "SENHORA",
+        # Termos religiosos AMBIGUOS que aparecem isolados em nomes
+        # de escolas mas nao sao nomes de rede por conta propria.
+        # Ex: "Col Nossa Senhora Mae de Deus" -> rede "Mae" (antigo bug).
+        # IMPORTANTE: NAO incluir NOSSA, SENHORA, SANTA, SAO, LA aqui —
+        # esses sao prefixos legitimos (La Salle, Nossa Senhora da Gloria,
+        # Santa Doroteia). Esses vao pra INCOMPLETAS logo abaixo.
+        "MAE", "PAI", "FILHO", "FILHOS",
         "DEUS", "JESUS", "CRISTO", "ANJO", "ANJOS", "ESPIRITO",
-        "IMACULADA", "CORACAO", "CONCEICAO", "APARECIDA",
-        "LA",  # comum em "La Salle" mas sozinho nao e nome
-        "NOVO", "NOVA", "VELHO", "VELHA", "GRANDE", "PEQUENO", "PEQUENA",
     }
 
-    # Blocklist adicional — palavras que NUNCA devem ser nome de rede
-    # mesmo se sobreviverem ao filtro stopword. Protege contra ambiguidades.
+    # Prefixos incompletos — palavras que sozinhas nao identificam a rede,
+    # mas combinadas com a palavra seguinte formam o nome correto.
+    # Ex: "LA" + "SALLE" -> "La Salle"
+    # Ex: "NOSSA" + "SENHORA" + "GLORIA" -> "Nossa Senhora Gloria"
+    INCOMPLETAS = {
+        "LA", "SAO", "SANTA", "SANTO", "NOSSA", "NOSSO",
+        "SENHOR", "SENHORA", "IMACULADA", "SAGRADA", "SAGRADO",
+        "DOM", "DONA",
+    }
+
+    # Blocklist final — palavras que NUNCA devem virar nome de rede
+    # mesmo depois de passar pelo filtro. Backstop contra edge cases.
     BLOCKLIST_NOME_REDE = {
-        "MAE", "PAI", "DEUS", "JESUS", "CRISTO", "ANJO", "SANTA", "SANTO",
-        "NOSSA", "SENHORA", "APARECIDA",
+        "MAE", "PAI", "DEUS", "JESUS", "CRISTO", "ANJO", "ESPIRITO",
     }
 
     def limpar_nome(nome: str) -> list:
@@ -3283,13 +3290,13 @@ def _derivar_nome_rede(escolas: List[Dict]) -> str:
     nomes_limpos = [limpar_nome(e.get("name") or "") for e in escolas]
     nomes_limpos = [n for n in nomes_limpos if n]
     if not nomes_limpos:
-        # Fallback pra CNPJ raiz se disponivel
         cnpj = next((e.get("cnpj_mantenedora") for e in escolas if e.get("cnpj_mantenedora")), "")
         if cnpj:
             return f"Rede CNPJ {cnpj[:8]}"
         return "Rede sem nome"
 
-    # Encontrar prefixo comum (sequencia de palavras)
+    # Encontrar prefixo comum (sequencia de palavras identicas entre todas
+    # as escolas da rede, comecando pela primeira posicao nao-stopword)
     prefixo = []
     primeiro = nomes_limpos[0]
     for i in range(min(len(n) for n in nomes_limpos)):
@@ -3303,9 +3310,22 @@ def _derivar_nome_rede(escolas: List[Dict]) -> str:
         """Valida se o nome derivado e aceitavel pra ser usado como nome de rede."""
         if not nome or len(nome) < 3:
             return False
-        if nome.upper() in BLOCKLIST_NOME_REDE:
-            return False
+        # Rejeita palavras isoladas da blocklist (Mae, Deus, Jesus, etc.)
+        for palavra in nome.upper().split():
+            if palavra in BLOCKLIST_NOME_REDE:
+                return False
         return True
+
+    # Se o prefixo comeca com uma palavra INCOMPLETA (La, Nossa, Santa, etc),
+    # tenta juntar com a proxima palavra mais comum pra formar um nome util.
+    if prefixo and prefixo[0] in INCOMPLETAS and len(prefixo) < 2:
+        from collections import Counter
+        segundas = [n[1] for n in nomes_limpos if len(n) > 1]
+        if segundas:
+            seg = Counter(segundas).most_common(1)[0][0]
+            candidato = f"{prefixo[0].title()} {seg.title()}"
+            if _candidato_aceitavel(candidato):
+                return candidato
 
     if prefixo:
         candidato = " ".join(p.title() for p in prefixo)
