@@ -1,0 +1,380 @@
+"""
+Health check consolidado do sistema IAprendo.
+
+Ponto unico de verificacao de saude. Usado por:
+- Tool do IAlex `diagnostico_sistema` (on-demand via WhatsApp)
+- Dashboard Configuracoes > aba Diagnostico (visual)
+- Dashboard Painel > tile Diagnostico (at-a-glance com cor)
+
+Design:
+- Cada check e isolado em _check_X() -> Dict[status, detail, meta]
+- Se um check crasha, ele captura e retorna status=unknown
+- Overall = pior status entre todos
+- Safe pra chamar em qualquer contexto (dashboard, IAlex, script)
+
+Status codes:
+- healthy  : tudo normal
+- degraded : anomalia menor, sistema funcional
+- critical : problema que bloqueia uso normal
+- unknown  : check nao conseguiu determinar
+"""
+from __future__ import annotations
+
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List
+
+import requests
+
+from utils.logger import logger
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+STATUS_ORDER = {"healthy": 0, "unknown": 1, "degraded": 2, "critical": 3}
+
+
+def _worst(statuses: List[str]) -> str:
+    """Retorna o pior status de uma lista."""
+    if not statuses:
+        return "unknown"
+    return max(statuses, key=lambda s: STATUS_ORDER.get(s, 1))
+
+
+def _safe_check(name: str, fn) -> Dict[str, Any]:
+    """Wrap um check pra nunca crashar — retorna unknown em qualquer erro."""
+    try:
+        r = fn()
+        if not isinstance(r, dict) or "status" not in r:
+            return {"status": "unknown", "detail": "check retornou formato invalido"}
+        return r
+    except Exception as e:
+        logger.debug(f"Health check '{name}' crashou: {e}")
+        return {"status": "unknown", "detail": f"check crashou: {type(e).__name__}: {str(e)[:100]}"}
+
+
+# ============================================================================
+# Checks individuais
+# ============================================================================
+
+def _check_database() -> Dict[str, Any]:
+    """Ping Supabase e mede latencia."""
+    from database.supabase_client import db
+    start = time.time()
+    r = db.client.table("companies").select("id").limit(1).execute()
+    elapsed_ms = int((time.time() - start) * 1000)
+    if not hasattr(r, "data"):
+        return {"status": "critical", "detail": "Supabase nao retornou objeto valido"}
+    if elapsed_ms > 2000:
+        return {"status": "degraded", "detail": f"latencia alta: {elapsed_ms}ms"}
+    return {"status": "healthy", "detail": f"Supabase respondeu em {elapsed_ms}ms", "meta": {"latency_ms": elapsed_ms}}
+
+
+def _check_schema_migrations() -> Dict[str, Any]:
+    """Verifica se colunas criticas das ultimas migrations estao presentes."""
+    from database.supabase_client import db
+    critical = [
+        ("companies", "commercial_stage"),        # 013
+        ("companies", "valor_mensal_proposto"),    # 013
+        ("companies", "cnpj_mantenedora"),         # 010
+        ("companies", "matriculas_fund_af"),       # 010
+        ("contacts", "phone_whatsapp"),            # power_map
+        ("approval_queue", "delivered_at"),        # 012
+        ("approval_queue", "channel"),             # channels
+        ("rede_overrides", "nome_oficial"),        # 014
+        ("conversation_memory", "content"),
+    ]
+    missing = []
+    for table, col in critical:
+        try:
+            db.client.table(table).select(col).limit(1).execute()
+        except Exception as e:
+            err = str(e)
+            if "42703" in err or "42P01" in err or "does not exist" in err.lower():
+                missing.append(f"{table}.{col}")
+    if missing:
+        return {
+            "status": "critical",
+            "detail": f"{len(missing)} coluna(s)/tabela(s) faltando",
+            "meta": {"missing": missing},
+        }
+    return {"status": "healthy", "detail": f"{len(critical)}/{len(critical)} colunas criticas presentes"}
+
+
+def _check_bridge_whatsapp() -> Dict[str, Any]:
+    """Checa bridge Baileys (porta 8090)."""
+    try:
+        r = requests.get("http://localhost:8090/status", timeout=3)
+        if r.status_code != 200:
+            return {"status": "critical", "detail": f"bridge HTTP {r.status_code}"}
+        data = r.json()
+        if not data.get("connected"):
+            return {
+                "status": "degraded",
+                "detail": "bridge rodando mas WhatsApp desconectado — re-parear em /pair",
+            }
+        return {"status": "healthy", "detail": "bridge conectado ao WhatsApp"}
+    except requests.exceptions.ConnectionError:
+        return {"status": "critical", "detail": "bridge nao esta rodando (porta 8090)"}
+    except Exception as e:
+        return {"status": "unknown", "detail": f"erro ao checar bridge: {e}"}
+
+
+def _check_webhook_flask() -> Dict[str, Any]:
+    """Checa webhook Flask do IAlex (porta 5001)."""
+    try:
+        r = requests.get("http://localhost:5001/health", timeout=3)
+        if r.status_code != 200:
+            return {"status": "critical", "detail": f"webhook HTTP {r.status_code}"}
+        return {"status": "healthy", "detail": "webhook respondendo"}
+    except requests.exceptions.ConnectionError:
+        return {"status": "critical", "detail": "webhook nao esta rodando (porta 5001)"}
+    except Exception as e:
+        return {"status": "unknown", "detail": f"erro ao checar webhook: {e}"}
+
+
+def _check_brain_tools() -> Dict[str, Any]:
+    """Verifica consistencia TOOLS vs TOOL_HANDLERS."""
+    from agent import brain
+    schemas = {t["name"] for t in brain.TOOLS if isinstance(t, dict) and "name" in t}
+    handlers = set(brain.TOOL_HANDLERS.keys())
+    missing_handlers = schemas - handlers
+    missing_schemas = handlers - schemas
+    if missing_handlers or missing_schemas:
+        return {
+            "status": "critical",
+            "detail": f"inconsistencia: {len(missing_handlers)} sem handler, {len(missing_schemas)} sem schema",
+            "meta": {
+                "missing_handlers": list(missing_handlers),
+                "missing_schemas": list(missing_schemas),
+            },
+        }
+    return {"status": "healthy", "detail": f"{len(handlers)} tools consistentes"}
+
+
+def _check_queue_state() -> Dict[str, Any]:
+    """Fila de aprovacao: pending count + stuck items."""
+    from database.supabase_client import db
+    from datetime import timedelta
+
+    pending = db.client.table("approval_queue").select("id", count="exact").eq("status", "pending").execute()
+    pending_count = pending.count or 0
+
+    # Stuck: em pending ha mais de 7 dias
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    stuck = db.client.table("approval_queue").select("id", count="exact").eq("status", "pending").lt("created_at", cutoff).execute()
+    stuck_count = stuck.count or 0
+
+    if stuck_count > 0:
+        return {
+            "status": "degraded",
+            "detail": f"{pending_count} pendente(s), {stuck_count} stuck (>7 dias)",
+            "meta": {"pending": pending_count, "stuck": stuck_count},
+        }
+    if pending_count > 100:
+        return {
+            "status": "degraded",
+            "detail": f"fila grande: {pending_count} pendente(s)",
+            "meta": {"pending": pending_count},
+        }
+    return {
+        "status": "healthy",
+        "detail": f"{pending_count} pendente(s), sem stuck",
+        "meta": {"pending": pending_count, "stuck": 0},
+    }
+
+
+def _check_error_rate_1h() -> Dict[str, Any]:
+    """Verifica tipos distintos de erros na ultima hora.
+    Conta GRUPOS (mensagens normalizadas), nao ocorrencias brutas — porque
+    um erro recorrente e 1 problema, nao 200.
+    """
+    from tools.log_parser import parse_recent_errors
+    r = parse_recent_errors(hours=1, top_n=5)
+    if "error" in r:
+        return {"status": "unknown", "detail": r["error"]}
+    total = r.get("in_window", 0)
+    groups = len(r.get("top_errors", []))
+    if total == 0:
+        return {"status": "healthy", "detail": "0 erros na ultima 1h", "meta": r}
+    if groups >= 5 or total > 100:
+        return {
+            "status": "critical",
+            "detail": f"{total} erros ({groups} tipo(s) distintos) na ultima 1h",
+            "meta": r,
+        }
+    if groups >= 3 or total > 20:
+        return {
+            "status": "degraded",
+            "detail": f"{total} erros ({groups} tipo(s)) na ultima 1h",
+            "meta": r,
+        }
+    return {
+        "status": "healthy",
+        "detail": f"{total} erro(s) ({groups} tipo(s)) na ultima 1h",
+        "meta": r,
+    }
+
+
+def _check_error_rate_24h() -> Dict[str, Any]:
+    """Verifica tipos distintos de erros nas ultimas 24h.
+    Mesma logica do 1h: conta tipos agrupados pra evitar que um unico
+    bug recorrente gere ruido de 'N erros' inflacionado.
+    """
+    from tools.log_parser import parse_recent_errors
+    r = parse_recent_errors(hours=24, top_n=5)
+    if "error" in r:
+        return {"status": "unknown", "detail": r["error"]}
+    total = r.get("in_window", 0)
+    groups = len(r.get("top_errors", []))
+    if total == 0:
+        return {"status": "healthy", "detail": "0 erros em 24h", "meta": r}
+    if groups >= 8 or total > 500:
+        return {
+            "status": "critical",
+            "detail": f"{total} erros ({groups} tipo(s) distintos) em 24h",
+            "meta": r,
+        }
+    if groups >= 5 or total > 100:
+        return {
+            "status": "degraded",
+            "detail": f"{total} erros ({groups} tipo(s)) em 24h",
+            "meta": r,
+        }
+    return {
+        "status": "healthy",
+        "detail": f"{total} erro(s) ({groups} tipo(s)) em 24h",
+        "meta": r,
+    }
+
+
+def _check_api_quotas() -> Dict[str, Any]:
+    """Verifica uso de APIs pagas vs limites."""
+    from database.supabase_client import db
+    from datetime import timedelta
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    # Limites estimados (planos gratuitos)
+    limits = {
+        "apollo": 60,
+        "hunter": 25,
+        "snov": 50,
+        "brevo": 300,
+    }
+    usage = {}
+    alerts: List[str] = []
+    status = "healthy"
+    for api_name, limit in limits.items():
+        try:
+            used = db.count_api_usage_since(api_name, cutoff) or 0
+        except Exception:
+            used = 0
+        pct = (used / limit * 100) if limit > 0 else 0
+        usage[api_name] = {"used": used, "limit": limit, "pct": round(pct, 1)}
+        if pct >= 100:
+            alerts.append(f"{api_name} 100% ({used}/{limit})")
+            status = "critical"
+        elif pct >= 80:
+            alerts.append(f"{api_name} {pct:.0f}% ({used}/{limit})")
+            if status == "healthy":
+                status = "degraded"
+
+    if status == "healthy":
+        detail = "todas APIs abaixo de 80% do limite"
+    else:
+        detail = "; ".join(alerts)
+    return {"status": status, "detail": detail, "meta": {"usage": usage}}
+
+
+def _check_pipeline_config() -> Dict[str, Any]:
+    """Verifica config de autonomia e pipeline automatico."""
+    try:
+        from integrations.pipeline_config import pipeline_config
+        cfg = pipeline_config.get_config()
+        level = cfg.get("autonomy_level", "semi_auto")
+        if level == "full_auto":
+            return {
+                "status": "degraded",
+                "detail": "modo full_auto — supervisao recomendada",
+                "meta": {"autonomy_level": level},
+            }
+        return {
+            "status": "healthy",
+            "detail": f"autonomia: {level}",
+            "meta": {"autonomy_level": level},
+        }
+    except Exception as e:
+        return {"status": "unknown", "detail": f"pipeline_config indisponivel: {e}"}
+
+
+# ============================================================================
+# Orchestration
+# ============================================================================
+
+def run_health_check() -> Dict[str, Any]:
+    """Executa todos os checks e retorna relatorio consolidado.
+
+    Returns:
+        Dict com campos overall, timestamp, checks (dict de resultados),
+        summary (string curta), alerts (lista achatada dos problemas).
+    """
+    checks_order = [
+        ("database", _check_database),
+        ("schema_migrations", _check_schema_migrations),
+        ("bridge_whatsapp", _check_bridge_whatsapp),
+        ("webhook_flask", _check_webhook_flask),
+        ("brain_tools", _check_brain_tools),
+        ("queue_state", _check_queue_state),
+        ("error_rate_1h", _check_error_rate_1h),
+        ("error_rate_24h", _check_error_rate_24h),
+        ("api_quotas", _check_api_quotas),
+        ("pipeline_config", _check_pipeline_config),
+    ]
+
+    results: Dict[str, Any] = {}
+    statuses: List[str] = []
+    alerts: List[Dict[str, str]] = []
+
+    for name, fn in checks_order:
+        r = _safe_check(name, fn)
+        results[name] = r
+        statuses.append(r.get("status", "unknown"))
+        if r.get("status") in ("degraded", "critical"):
+            alerts.append({
+                "check": name,
+                "status": r["status"],
+                "detail": r.get("detail", ""),
+            })
+
+    overall = _worst(statuses)
+
+    # Summary curta pra UI
+    n_crit = sum(1 for s in statuses if s == "critical")
+    n_deg = sum(1 for s in statuses if s == "degraded")
+    n_unk = sum(1 for s in statuses if s == "unknown")
+    n_ok = sum(1 for s in statuses if s == "healthy")
+    if overall == "healthy":
+        summary = "sistema saudavel"
+    elif overall == "critical":
+        summary = f"{n_crit} critico(s), {n_deg} degradado(s)"
+    elif overall == "degraded":
+        summary = f"{n_deg} alerta(s) menor(es)"
+    else:
+        summary = f"{n_unk} check(s) indeterminado(s)"
+
+    return {
+        "overall": overall,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": results,
+        "summary": summary,
+        "alerts": alerts,
+        "stats": {
+            "healthy": n_ok,
+            "degraded": n_deg,
+            "critical": n_crit,
+            "unknown": n_unk,
+            "total": len(statuses),
+        },
+    }
