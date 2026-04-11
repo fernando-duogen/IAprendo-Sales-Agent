@@ -300,6 +300,59 @@ div[data-testid="stElementContainer"]:has(.action-tile-hot) + div[data-testid="s
     width: 100% !important;
 }
 
+/* ===== KANBAN CARDS CLICAVEIS (usado no Pipeline Comercial) ===== */
+div[data-testid="stElementContainer"]:has(.kanban-click) {
+    margin-bottom: -38px !important;
+    height: 0 !important;
+    overflow: visible !important;
+}
+.kanban-click { display: none !important; }
+
+div[data-testid="stElementContainer"]:has(.kanban-click) + div[data-testid="stElementContainer"] button {
+    min-height: 64px !important;
+    height: auto !important;
+    padding: 10px 12px !important;
+    text-align: left !important;
+    border: 1px solid #E0E0E0 !important;
+    border-left: 4px solid #1976D2 !important;
+    border-radius: 10px !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    white-space: normal !important;
+    line-height: 1.3 !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    margin-bottom: 6px !important;
+    transition: all 0.15s ease !important;
+}
+div[data-testid="stElementContainer"]:has(.kanban-click) + div[data-testid="stElementContainer"] button > div {
+    align-items: flex-start !important;
+    text-align: left !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
+}
+div[data-testid="stElementContainer"]:has(.kanban-click) + div[data-testid="stElementContainer"] button:hover {
+    box-shadow: 0 3px 8px rgba(0,0,0,0.10) !important;
+    transform: translateY(-1px) !important;
+    border-color: #BBDEFB !important;
+}
+div[data-testid="stElementContainer"]:has(.kanban-click) + div[data-testid="stElementContainer"] button p strong {
+    font-size: 12.5px !important;
+    color: #212121 !important;
+    font-weight: 600 !important;
+    display: block !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+div[data-testid="stElementContainer"]:has(.kanban-click) + div[data-testid="stElementContainer"] button p {
+    font-size: 11px !important;
+    color: #757575 !important;
+    margin: 0 !important;
+    line-height: 1.35 !important;
+}
+
 /* ===== STATUS BADGES ===== */
 .badge {
     display: inline-block;
@@ -869,6 +922,51 @@ def kanban_card(
         f'text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">{subtitle}</span>'
         f'{score_html}{alvo_html}{tech_html}</p>'
     )
+
+
+def kanban_card_clickable(
+    name: str,
+    score: int = 0,
+    alvo: int = 0,
+    nivel_tech: str = "",
+    color: str = COLORS["primary"],
+    key: str = "",
+    subtitle: str = "",
+) -> bool:
+    """Card clicavel pro kanban comercial. Retorna True quando clicado.
+
+    Usa marker div (`.kanban-click`) + CSS :has() pra estilizar o
+    stButton adjacente como um card visual. Pattern espelhado do
+    action_tile no Painel home.
+
+    Args:
+        name: Nome da escola (truncado em 30 chars no label).
+        score: Score IA (0-100).
+        alvo: Matriculas Fund AF + Medio.
+        nivel_tech: Nivel tecnologico (Alto/Medio/Baixo).
+        color: Cor do stage (usada no header da coluna, nao no card em si).
+        key: Chave unica do botao.
+        subtitle: Linha extra (ex: valor R$/mes pra stage proposta/cliente).
+
+    Returns:
+        True quando clicado.
+    """
+    st.markdown(
+        '<div class="kanban-click"></div>',
+        unsafe_allow_html=True,
+    )
+    meta_parts = []
+    if score:
+        meta_parts.append(f"Score {score}")
+    if alvo:
+        meta_parts.append(f"{alvo} alunos")
+    if nivel_tech and nivel_tech != "-":
+        meta_parts.append(nivel_tech)
+    if subtitle:
+        meta_parts.append(subtitle)
+    meta = " \u00b7 ".join(meta_parts) if meta_parts else "\u00a0"
+    label = f"**{name[:30]}**  \n{meta}"
+    return st.button(label, key=key, use_container_width=True)
 
 
 def timeline_item(date: str, title: str, detail: str = "", color: str = COLORS["primary"]):

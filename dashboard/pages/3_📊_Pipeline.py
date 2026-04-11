@@ -380,73 +380,75 @@ def render_execucao():
         if dry_run:
             alert_banner("Nenhuma acao real sera executada", "warning")
 
-    # Pipeline steps as cards
+    # Pipeline steps as cards — cascata (cada botao roda TODAS as etapas
+    # anteriores + a sua). Garante que Top N por Fit (em qualquer status)
+    # consiga ir direto pra Buscar contatos ou Gerar emails.
+    sel_total = len(selected_ids)
+    no_selection = sel_total == 0
+
+    def _cascade(step_name: str, step_list: list, extra_kwargs: dict = None):
+        """Executa run_pipeline com a cascata de steps ate step_name."""
+        from workflows.daily_pipeline import run_pipeline
+        kwargs = {
+            "qualify_limit": sel_total,
+            "enrich_limit": sel_total,
+            "write_limit": sel_total,
+            "send_approved": False,
+            "dry_run": dry_run,
+            "write_mode": write_mode,
+            "company_ids": selected_ids,
+            "steps": step_list,
+        }
+        if extra_kwargs:
+            kwargs.update(extra_kwargs)
+        with st.spinner(f"Executando cascata ate '{step_name}' em {sel_total} escola(s)..."):
+            report = run_pipeline(**kwargs)
+        # Toast com resumo por etapa
+        parts = []
+        for s in step_list:
+            r = report.get("steps", {}).get(s, {})
+            out = r.get("output", 0)
+            parts.append(f"{s}:{out}")
+        st.toast(f"Cascata: {' | '.join(parts)}")
+        with st.expander("Ver relatorio da execucao", expanded=False):
+            st.json(report)
+        st.rerun()
+
     pc1, pc2, pc3, pc4, pc5 = st.columns(5)
 
     with pc1:
         metric_card("Qualificar", raw_count, icon="grading", color=STATUS_COLORS["raw"])
-        if st.button("Qualificar", disabled=(raw_count == 0), key="btn_qualify",
-                      use_container_width=True, type="primary"):
-            from workflows.daily_pipeline import run_pipeline
-            with st.spinner(f"Qualificando {raw_count} escolas..."):
-                report = run_pipeline(
-                    qualify_limit=raw_count, enrich_limit=0, write_limit=0,
-                    send_approved=False, dry_run=dry_run,
-                    company_ids=selected_ids, steps=["qualify"],
-                )
-            result = report.get("steps", {}).get("qualify", {})
-            st.toast(f"{result.get('output', 0)} escolas qualificadas!")
-            st.rerun()
+        if st.button("Qualificar", disabled=no_selection, key="btn_qualify",
+                      use_container_width=True, type="primary",
+                      help="Roda qualify na selecao (so processa schools em status raw)"):
+            _cascade("qualify", ["qualify"])
 
     with pc2:
         metric_card("Enriquecer", qualified_count, icon="auto_fix_high", color=STATUS_COLORS["qualified"])
-        if st.button("Enriquecer", disabled=(qualified_count == 0), key="btn_enrich",
-                      use_container_width=True, type="primary"):
-            from workflows.daily_pipeline import run_pipeline
-            with st.spinner(f"Enriquecendo {qualified_count} escolas..."):
-                report = run_pipeline(
-                    qualify_limit=0, enrich_limit=qualified_count, write_limit=0,
-                    send_approved=False, dry_run=dry_run,
-                    company_ids=selected_ids, steps=["enrich"],
-                )
-            result = report.get("steps", {}).get("enrich", {})
-            st.toast(f"{result.get('output', 0)} escolas enriquecidas!")
-            st.rerun()
+        if st.button("Enriquecer", disabled=no_selection, key="btn_enrich",
+                      use_container_width=True, type="primary",
+                      help="Cascata: qualify -> enrich. Qualifica raw e enriquece qualified."):
+            _cascade("enrich", ["qualify", "enrich"])
 
     with pc3:
         metric_card("Contatos", enriched_count, icon="person_search", color=STATUS_COLORS["enriched"])
-        if st.button("Buscar", disabled=(enriched_count == 0), key="btn_contacts",
-                      use_container_width=True, type="primary"):
-            from workflows.daily_pipeline import run_pipeline
-            with st.spinner(f"Buscando contatos de {enriched_count} escolas..."):
-                report = run_pipeline(
-                    qualify_limit=0, enrich_limit=enriched_count, write_limit=0,
-                    send_approved=False, dry_run=dry_run,
-                    company_ids=selected_ids, steps=["contacts"],
-                )
-            result = report.get("steps", {}).get("contacts", {})
-            st.toast(f"{result.get('output', 0)} contatos encontrados!")
-            st.rerun()
+        if st.button("Buscar", disabled=no_selection, key="btn_contacts",
+                      use_container_width=True, type="primary",
+                      help="Cascata: qualify -> enrich -> contacts. Processa tudo ate busca de decisores."):
+            _cascade("contacts", ["qualify", "enrich", "contacts"])
 
     with pc4:
         metric_card("Emails", contactable_count, icon="edit_note", color=STATUS_COLORS["contacted"])
-        if st.button("Gerar", disabled=(contactable_count == 0), key="btn_write",
-                      use_container_width=True, type="primary"):
-            from workflows.daily_pipeline import run_pipeline
-            with st.spinner(f"Gerando emails para {contactable_count} escolas..."):
-                report = run_pipeline(
-                    qualify_limit=0, enrich_limit=0, write_limit=contactable_count,
-                    send_approved=False, dry_run=dry_run, write_mode=write_mode,
-                    company_ids=selected_ids, steps=["write"],
-                )
-            result = report.get("steps", {}).get("write", {})
-            st.toast(f"{result.get('output', 0)} emails gerados!")
-            st.rerun()
+        if st.button("Gerar", disabled=no_selection, key="btn_write",
+                      use_container_width=True, type="primary",
+                      help="Cascata: qualify -> enrich -> contacts -> write. Gera emails pra fila de aprovacao."):
+            _cascade("write", ["qualify", "enrich", "contacts", "write"])
 
     with pc5:
         metric_card("Enviar", approved_count, icon="send", color=STATUS_COLORS["approved"])
         if st.button("Enviar", disabled=(approved_count == 0), key="btn_send",
-                      use_container_width=True, type="primary"):
+                      use_container_width=True, type="primary",
+                      help="Envia emails ja aprovados (independente da selecao)."):
             from workflows.daily_pipeline import run_pipeline
             with st.spinner("Enviando emails aprovados..."):
                 report = run_pipeline(
@@ -627,7 +629,7 @@ def render_descoberta():
 
 def render_kanban_comercial():
     """Aba Pipeline Comercial: kanban de stages reais (zona 2 do commit anterior)."""
-    from dashboard.theme import kanban_card
+    from dashboard.theme import kanban_card_clickable
 
     section_header("Pipeline Comercial", "view_kanban")
 
@@ -753,31 +755,52 @@ def render_kanban_comercial():
                 if not items:
                     st.caption("—")
                     continue
-                for comp in sorted(items, key=lambda x: x.get("qualification_score") or 0, reverse=True)[:6]:
+
+                # Helper pra computar meta de cada escola
+                def _card_meta(comp, stage_key=stage["key"]):
                     score = int(comp.get("qualification_score") or 0)
                     name = (comp.get("name") or "?")[:28]
                     alvo_ = int((comp.get("matriculas_fund_af") or 0) + (comp.get("matriculas_medio") or 0))
                     tech = comp.get("nivel_tecnologico") or ""
-
                     sub = ""
-                    if stage["key"] == "proposta" and comp.get("valor_mensal_proposto"):
+                    if stage_key == "proposta" and comp.get("valor_mensal_proposto"):
                         sub = f"R$ {float(comp['valor_mensal_proposto']):,.0f}/mes".replace(",", ".")
-                    elif stage["key"] == "cliente" and comp.get("valor_mensal_fechado"):
+                    elif stage_key == "cliente" and comp.get("valor_mensal_fechado"):
                         sub = f"R$ {float(comp['valor_mensal_fechado']):,.0f}/mes".replace(",", ".")
+                    return score, name, alvo_, tech, sub
 
-                    st.markdown(
-                        kanban_card(
-                            name=name,
-                            subtitle=sub,
-                            score=score,
-                            color=stage["color"],
-                            alvo=alvo_,
-                            nivel_tech=tech,
-                        ),
-                        unsafe_allow_html=True,
-                    )
-                if len(items) > 6:
-                    st.caption(f"+ {len(items) - 6} mais")
+                # Top 6 cards visiveis (clicaveis)
+                sorted_items = sorted(items, key=lambda x: x.get("qualification_score") or 0, reverse=True)
+                for comp in sorted_items[:6]:
+                    score, name, alvo_, tech, sub = _card_meta(comp)
+                    if kanban_card_clickable(
+                        name=name,
+                        score=score,
+                        alvo=alvo_,
+                        nivel_tech=tech,
+                        color=stage["color"],
+                        key=f"kanban_{stage['key']}_{comp['id']}",
+                        subtitle=sub,
+                    ):
+                        st.session_state["escola_detail_id"] = comp["id"]
+                        st.switch_page("pages/5_🏫_Escolas.py")
+
+                # Expander com os restantes (clicaveis tambem)
+                if len(sorted_items) > 6:
+                    with st.expander(f"Ver mais {len(sorted_items) - 6}", expanded=False):
+                        for comp in sorted_items[6:]:
+                            score, name, alvo_, tech, sub = _card_meta(comp)
+                            if kanban_card_clickable(
+                                name=name,
+                                score=score,
+                                alvo=alvo_,
+                                nivel_tech=tech,
+                                color=stage["color"],
+                                key=f"kanban_exp_{stage['key']}_{comp['id']}",
+                                subtitle=sub,
+                            ):
+                                st.session_state["escola_detail_id"] = comp["id"]
+                                st.switch_page("pages/5_🏫_Escolas.py")
 
         # Secao de perdidos colapsada
         if perdidos:
