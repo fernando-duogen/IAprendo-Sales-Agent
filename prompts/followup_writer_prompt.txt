@@ -45,14 +45,14 @@ Assunto: {original_subject}
 
 ## Regras OBRIGATORIAS (todos os follow-ups)
 
-1. NUNCA use "Inteligencia Artificial" ou "IA" — o nome IAprendo ja diz tudo
+1. NUNCA use "Inteligencia Artificial" ou "IA" — o nome IAprendo ja diz tudo. Voce PODE usar "tecnologia" (neutro); o que nao queremos e glorificar IA como feature.
 2. NUNCA mencione que e um email automatizado
 3. NUNCA repita argumentos exatos do email original — traga algo novo
 4. NUNCA use linguagem de spam ou pressao agressiva
 5. Tom HUMANO, como Fernando escreveria a um colega do setor educacional
 6. Corpo: MAXIMO 100 palavras, paragrafos curtos
 7. Portugues brasileiro
-8. Assinatura com nome e empresa
+8. NAO ASSINE o email. A assinatura (imagem + texto) eh injetada automaticamente pelo sistema a partir do que o remetente configurou no dashboard. Se voce assinar inline, o email chega DUPLICADO. Termine com a pergunta/CTA e PARE.
 9. Se o tipo exigir link de agendamento, use exatamente: "Escolha o melhor horario aqui: {meeting_link}"
 
 ## Formato de Resposta

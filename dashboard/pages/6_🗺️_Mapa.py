@@ -503,19 +503,16 @@ elif tipo_viz == "Mapa de calor":
     )
 
 elif tipo_viz == "Hexagonos":
-    # PyDeck HexagonLayer agrega pontos. No tooltip temos 2 "metricas"
-    # principais: elevationValue (soma do peso de elevacao) e colorValue
-    # (soma do peso de cor). Usamos:
-    #   - get_elevation_weight="alvo" -> elevationValue = soma de alvo
-    #   - get_color_weight=1          -> colorValue    = contagem de escolas
+    # Config original (commit 5ae0cee) — funcionava visualmente.
+    # Tentativas de adicionar get_color_weight pra exibir contagem no tooltip
+    # quebraram a renderizacao (deck.gl nao mostrava nenhum hexagono), entao
+    # voltamos ao minimo: so elevation_weight=alvo. O tooltip mostra apenas
+    # a soma de alvos, sem contagem de escolas.
     hex_layer = pdk.Layer(
         "HexagonLayer",
         data=df_map,
         get_position=["lon", "lat"],
         get_elevation_weight="alvo",
-        elevation_aggregation="SUM",
-        get_color_weight=1,
-        color_aggregation="SUM",
         elevation_scale=0.5,
         elevation_range=[0, 3000],
         radius=800,
@@ -526,13 +523,12 @@ elif tipo_viz == "Hexagonos":
         auto_highlight=True,
     )
     layers.append(hex_layer)
-    # Tooltip: {points.length} nao funciona (PyDeck nao faz acesso aninhado
-    # via dot notation). Usamos {colorValue} como contagem de escolas porque
-    # configuramos get_color_weight=1 + SUM acima.
+    # Tooltip so com elevationValue (soma de alvo). Contagem de escolas nao
+    # eh exposta via tooltip nativo do PyDeck sem get_color_weight — e isso
+    # quebra o rendering, entao abrimos mao.
     tooltip_html = (
         "<b>Regiao agregada</b><br/>"
-        "Alunos alvo (soma): {elevationValue}<br/>"
-        "Escolas neste hexagono: {colorValue}"
+        "Alunos alvo (soma): {elevationValue}"
     )
     st.caption(
         f"Hexagonos 3D agregando {int(df_map['alvo'].sum()):,} alunos alvo em regioes de ~800m. "
@@ -590,7 +586,7 @@ deck = pdk.Deck(
     map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
 )
 
-st.pydeck_chart(deck)
+st.pydeck_chart(deck, key=f"mapa_deck_{tipo_viz}")
 
 # --- Tabela de dados com selecao ---
 st.markdown('<hr class="divider">', unsafe_allow_html=True)

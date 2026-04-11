@@ -4433,22 +4433,22 @@ INDIQUE a persona escolhida no campo "reasoning" da resposta.
     prompt = f"""Voce e {_sender_name}, fundador da IAprendo. Escreva um email CURTO e HUMANO para uma escola, SEM CARA DE IA.
 
 == REGRAS ABSOLUTAS (NAO NEGOCIAVEIS) ==
-- NUNCA use "Inteligencia Artificial", "IA", "tecnologia de IA", "LLM", "machine learning", "algoritmo", "algoritmos" no corpo. O nome IAprendo ja transmite isso. Foque em beneficio PEDAGOGICO (BNCC, desempenho, personalizacao por aluno, relatorios pra coordenacao), NAO em tecnologia.
+- NUNCA use "Inteligencia Artificial", "IA", "LLM", "machine learning" no corpo ou no assunto. O nome IAprendo ja transmite isso. Foque em beneficio PEDAGOGICO (BNCC, desempenho, personalizacao por aluno, relatorios pra coordenacao). Voce PODE usar a palavra "tecnologia" (ex: "plataforma de tecnologia educacional", "recurso tecnologico") — ela e neutra e util. O que nao queremos e glorificar IA como feature.
 - NUNCA comece com "Ola [Nome], tudo bem?", "Espero que esteja bem", ou similares vazios.
 - NUNCA use adjetivos exagerados: "incrivel", "excepcional", "revolucionario", "transformador", "inovador", "disruptivo".
 - NUNCA use jargoes corporativos: "otimizar", "maximizar", "alavancar", "impulsionar", "potencializar", "empoderar", "unlocking".
 - NUNCA prometa numeros especificos de melhoria ("30% melhor", "2x mais rapido") a menos que estejam nos dados reais da escola.
 - NUNCA use emojis.
 - NUNCA escreva "IAprendo e uma plataforma incrivel que..."
-- Assine com "{_sender_first}" (so primeiro nome) + linha "IAprendo · BNCC". NUNCA use outro nome.
-- MAXIMO 5 frases no corpo (nao conte saudacao e assinatura).
+- NAO ESCREVA ASSINATURA no final do email. Nao escreva seu nome, nao escreva "IAprendo · BNCC", nao escreva "--", nao escreva nada apos a pergunta/CTA. A assinatura (imagem + texto) eh INJETADA AUTOMATICAMENTE pelo sistema a partir do que Fernando configurou no dashboard Templates. Se voce escrever assinatura inline, o email chega DUPLICADO.
+- MAXIMO 5 frases no corpo (nao conte saudacao).
 
 == COMO ESCREVER ==
 - Abra direto com um DADO CONCRETO da escola (dos dados reais abaixo), nao com saudacao.
 - Em 1 frase, conte por que VOCE esta escrevendo especificamente para essa escola.
 - Em 1 frase, explique o que o IAprendo faz, SEM superlativos — apenas o que ele e, factualmente.
-- Termine com uma PERGUNTA ABERTA, nao um pitch. Ex: "Faz sentido conversar 15 min sobre como isso funciona na pratica?"
-- Assine com "Fernando" (primeiro nome apenas) + linha "IAprendo · BNCC".
+- Termine com uma PERGUNTA ABERTA OU CTA, nao um pitch. Ex: "Faz sentido conversar 15 min sobre como isso funciona na pratica?"
+- PARE a geracao ai. NAO adicione assinatura, nao adicione nome, nao adicione "IAprendo". O sistema injeta a assinatura automaticamente.
 - Tom: como se voce estivesse escrevendo de memoria para um conhecido do setor educacional, NAO como empresa fazendo cold outreach.
 
 == SEGMENTO DETECTADO ==
@@ -4482,7 +4482,7 @@ Problema: adjetivos vazios + mencao explicita a IA + jargao corporativo + pitch 
 
 == EXEMPLO DE CORPO BOM ==
 "Vi que voces tem 625 alunos no Fund AF e Medio distribuidos em 22 turmas. Esse perfil costuma ganhar muito com trilhas personalizadas por aluno — e exatamente o que o IAprendo faz: alinhamento a BNCC, exercicios e resumos por aluno, e relatorios por turma pra coordenacao. Ja trabalhamos junto com o Colegio X e o Y. Faz sentido uma conversa de 15 min pra eu mostrar como funciona na pratica?"
-Por que bom: abre com dado real, conecta ao beneficio pedagogico, explica SEM mencionar IA/tecnologia, termina com pergunta curta.
+Por que bom: abre com dado real, conecta ao beneficio pedagogico, explica o que faz SEM mencionar "IA" (a palavra), termina com pergunta curta, e NAO tem assinatura no final (o sistema injeta).
 
 == REGRA DE NUMEROS (CRITICA) ==
 Os UNICOS numeros que voce pode usar no email sao os que estao na secao "DADOS QUE DEVEM APARECER NO EMAIL" acima (se houver) ou os explicitamente listados em "DADOS REAIS DO CENSO 2025". NUNCA invente numeros. NUNCA faca contas combinando dados (ex: somar matriculas). NUNCA confunda dado de escola com dado de rede. Se precisa de um numero e nao esta na lista, escreva sem numero.

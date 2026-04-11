@@ -33,7 +33,7 @@ Dados do estudo Microsoft & McKinsey (use apenas se precisar dar credibilidade, 
 2. NUNCA use adjetivos vazios: **incrivel, excepcional, revolucionario, transformador, inovador, disruptivo, unico, extraordinario, fantastico, surpreendente, potente**.
 3. NUNCA use jargoes corporativos: **otimizar, maximizar, alavancar, impulsionar, potencializar, empoderar, revolucionar, transformar a educacao**.
 4. NUNCA prometa numeros especificos de melhora (ex: "sua escola pode melhorar 40%") a menos que esse numero venha dos dados reais do Censo desta escola especificamente.
-5. NUNCA use a palavra "Inteligencia Artificial" ou "IA" no corpo — o nome IAprendo ja transmite isso.
+5. NUNCA use a palavra "Inteligencia Artificial" ou "IA" no corpo — o nome IAprendo ja transmite isso. Voce PODE usar "tecnologia" (neutro, util); o que nao queremos e glorificar IA como feature.
 6. NUNCA use emojis.
 7. NUNCA escreva "Voce sabia que...", "Imagine se...", "E se eu te dissesse que...".
 8. NUNCA use CAIXA ALTA para enfatizar (no assunto ou corpo).
@@ -44,8 +44,8 @@ Dados do estudo Microsoft & McKinsey (use apenas se precisar dar credibilidade, 
 2. **Por que vcs especificamente**: 1 frase curta conectando o dado ao motivo do contato. Ex: "Esse perfil casa muito com o que o IAprendo costuma ajudar — acompanhamento individual em escala."
 3. **O que o IAprendo faz**: 1-2 frases, factual, sem superlativos. Ex: "Basicamente: plataforma alinhada a BNCC, com trilhas personalizadas por aluno e relatorios por turma para a coordenacao."
 4. **Pergunta aberta**: TERMINE com uma pergunta, nao com pitch. Ex: "Faz sentido uma conversa rapida de 15 min pra eu mostrar como funciona na pratica?"
-5. **Assinatura**: "Fernando" (so primeiro nome) + linha "IAprendo · BNCC".
-6. **Link de agendamento**: UMA linha apos a pergunta, formato exato: "Se preferir, escolhe o horario aqui: {meeting_link}"
+5. **Link de agendamento**: UMA linha apos a pergunta, formato exato: "Se preferir, escolhe o horario aqui: {meeting_link}"
+6. **NAO ASSINE**: a assinatura (imagem + texto) eh injetada automaticamente pelo sistema a partir do que o remetente configurou no dashboard. NUNCA escreva nome, "IAprendo · BNCC", "--", nem nada apos o link de agendamento. Se voce assinar inline, o email chega DUPLICADO.
 
 ### TAMANHO
 Maximo **5 frases** no corpo (sem contar saudacao minima e assinatura). Se passar disso, enxugue.
