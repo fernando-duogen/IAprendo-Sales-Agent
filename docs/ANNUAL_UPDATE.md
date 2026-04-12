@@ -2,7 +2,151 @@
 
 > **Público-alvo:** quem for rodar essa atualização no ano seguinte (você mesmo, outro operador, ou um Claude que venha depois). Este documento descreve passo a passo o que fazer quando a INEP publicar novos microdados.
 >
-> **Última atualização:** 2026-04-11 (cobertura atual: Censo 2020-2025, ENEM 2024)
+> **Última atualização:** 2026-04-12 (cobertura atual: Censo 2020-2025, ENEM 2024)
+
+---
+
+## 🗺️ Como construímos a base (Abril 2026)
+
+A base atual foi montada em **8 etapas** ao longo de 2 sessões de trabalho. Esta seção documenta o caminho completo para que, no futuro, você saiba exatamente de onde cada dado veio.
+
+### Etapa 1 — Catálogo de Escolas INEP (base inicial, ~185k escolas)
+
+**O que fizemos:** Baixamos o Catálogo oficial de Escolas do INEP, que lista TODAS as escolas ativas do Brasil com dados cadastrais básicos (nome, endereço, INEP, telefone, dependência, porte, etapas de ensino).
+
+**Arquivo gerado:** `data/raw/escolas_brasil.csv` (82 MB, ~185k linhas)
+**Script usado:** `database/migrations/import_schools.py` — aplica 4 filtros ICP (funcionamento, localização, nível de ensino, tipo) e importa para `companies`
+**Resultado:** ~1.500 escolas para Porto Alegre/RS importadas no CRM com `status='raw'`
+
+### Etapa 2 — Censo Escolar 2025 (dados ricos, ~180k escolas)
+
+**O que fizemos:** Baixamos os microdados do Censo Escolar 2025 da INEP. Esse Censo veio em formato **multi-tabela** (6 arquivos CSV separados: Escola, Matrícula, Docente, Turma, Gestor, Curso Técnico). A Etapa 1 tinha só dados cadastrais; o Censo trouxe dados ricos: matrículas por etapa, número de docentes, tecnologia (internet, labs, devices), infraestrutura (biblioteca, quadra).
+
+**Arquivos fonte:** `data/raw/Censo_2025/dados/Tabela_Escola_2025.csv` + 5 outros (total ~445 MB)
+**Pipeline:** Cowork session processou os 6 CSVs, fez JOIN por CO_ENTIDADE, e gerou `data/raw/escolas_brasil_crm.csv` (77 MB, 180.5k escolas, 77 colunas)
+**Guia de colunas:** `docs/GUIA_BASE_ESCOLAS_CRM.md` — documenta cada um dos 77 campos em 9 blocos
+**Script de update:** `database/migrations/update_existing_schools.py` — atualiza `companies` com os dados ricos do Censo
+**Migration aplicada:** `APLICAR-010-NOVA-BASE-2025.sql` (adiciona 219+ colunas em companies)
+
+### Etapa 3 — Merge Censo + Catálogo (base unificada, ~184.8k escolas)
+
+**O que fizemos:** Nem todas as escolas estavam nas duas bases. ~4.200 escolas ativas existiam no Catálogo INEP mas NÃO no Censo 2025 (escolas muito novas ou que não reportaram o censo). Fizemos um merge inteligente para ter a base mais completa possível.
+
+**Script:** `database/migrations/merge_catalogo_inep.py`
+**Entrada:** `escolas_brasil_crm.csv` (180.5k do Censo) + `escolas_brasil.csv` (185k do Catálogo)
+**Saída:** `data/raw/escolas_brasil_merged.csv` (80 MB, 184.8k escolas)
+**Lógica:** Censo como base primária (dados mais ricos) + escolas exclusivas do Catálogo adicionadas com parsing de endereço
+**Campo de rastreio:** `fonte_dados` = 'censo_2025' ou 'catalogo_inep' (via migration `APLICAR-011-FONTE-DADOS.sql`)
+
+### Etapa 4 — ENEM 2024 (analytics, peer groups, socioeconomia)
+
+**O que fizemos:** Processamos os microdados do ENEM 2024 da INEP para calcular ~297 colunas analíticas por escola: médias por área (MT, CN, CH, LC, Redação), rankings, peer groups (comparação com escolas da mesma cidade × mesma dependência), trajetórias 5 anos do peer group, contexto socioeconômico municipal, e perfil dos inscritos.
+
+**Pipeline externo (Cowork):**
+- Local: `C:\Users\Fernando Nienaber\Downloads\microdados_enem_2024\pipeline\`
+- Scripts: `01_aggregate_resultados.py` → `02_aggregate_participantes.py` → `01b_aggregate_legacy.py` → `04_build_trends.py` → `03_merge_and_enrich.py`
+- Output: `outputs/escolas_brasil_enriquecido.csv` (177 MB, 185k escolas, 297 colunas)
+
+**Análise do CSV:** `scripts/inspect_enem_csv.py` — analisou a estrutura e gerou relatório de tipos
+**Relatório gerado:** `scripts/enem_schema_report.json` (metadados de 297 colunas: nome, tipo SQL, grupo)
+**Migration gerada:** `scripts/generate_migration_015.py` → `APLICAR-015-SCHOOL-ANALYTICS.sql` (DDL com 297+ colunas, índices parciais, coluna GENERATED para média sem redação)
+**Script de import:** `database/migrations/import_school_analytics.py` — lê o JSON report + CSV, faz UPSERT em `school_analytics` por inep_code
+**Resultado:** `school_analytics` com 185k escolas, 4 grupos de métricas (98 enem_*, 63 peer_*, 30 socio_*, 28 pnt_*)
+
+### Etapa 5 — Série histórica Censo 2020-2024 (evolução individual)
+
+**O que fizemos:** Para permitir análises do tipo "como a escola evoluiu nos últimos 5 anos?", processamos os microdados do Censo Escolar de 2020 a 2024 (cada um com ~220k escolas). Esses censos vieram em formato **monolítico** (1 CSV gigante por ano).
+
+**Migration:** `APLICAR-016-SCHOOL-CENSO-YEARLY.sql` — tabela `school_censo_yearly` com chave composta (inep_code, vintage_censo)
+**Script:** `scripts/historico/process_censo_year.py` — processa 1 ano por vez, detecta encoding e schema dinamicamente, UPSERT por (inep, vintage)
+**Execução:** `python scripts/historico/process_censo_year.py 2020 2021 2022 2023 2024` (rodou ano a ano, ~3-8 min cada)
+**Retry/backoff:** Adicionado após o primeiro run travar por rate limit do Supabase (bug diagnosticado e corrigido)
+**Resultado:** ~1.1M linhas (220k escolas × 5 vintages), 39 colunas por registro
+
+### Etapa 6 — Seed do Censo 2025 a partir de companies
+
+**O que fizemos:** O Censo 2025 já estava em `companies` (via Etapa 2), mas NÃO em `school_censo_yearly` (que é a tabela de série). Criamos um script que copia os campos relevantes de `companies` → `school_censo_yearly` com `vintage_censo=2025`.
+
+**Script:** `scripts/historico/seed_censo_2025_from_companies.py`
+**Resultado:** 6 vintages na série (2020-2025), completando a base histórica
+
+### Etapa 7 — Infra para série ENEM futura
+
+**O que fizemos:** Criamos a tabela `school_enem_yearly` para armazenar vintages ENEM à medida que saem novos anos. Hoje só tem 2024 (primeiro ano com CO_ESCOLA nos microdados públicos). Em 2020-2023, o INEP anonimizou os microdados removendo CO_ESCOLA, impossibilitando série individual.
+
+**Migration:** `APLICAR-017-SCHOOL-ENEM-YEARLY.sql`
+**Script de seed:** `scripts/historico/seed_enem_2024_from_analytics.py` — copia snapshot de `school_analytics` → `school_enem_yearly` com `vintage_enem=2024`
+
+### Etapa 8 — Limpeza e métricas derivadas
+
+**O que fizemos:**
+- **Mojibake:** O CSV fonte ENEM chegou com ~10.500 nomes de município corrompidos (caractere `�` no lugar de acentos). Corrigido via script que propagou nomes limpos de `school_censo_yearly` → `school_analytics`.
+  - Script: `scripts/fix_mojibake_school_analytics.py`
+  - Migration: `APLICAR-018-FIX-MOJIBAKE.sql` (documenta o SQL equivalente)
+- **Métricas derivadas:** Handler `analisar_trajetoria_escola` expandido para computar razão aluno/professor, tech_score, infra_score, composição matricular por ano — tudo server-side (Python), com detecção automática de insights/correlações.
+- **Nomes de escolas:** Helper `_resolve_school_names` que resolve nomes via cascata `companies` → `school_censo_yearly`, eliminando o fallback "Escola INEP XXXXX" nos rankings.
+
+---
+
+## 📦 Mapa de artefatos
+
+### Dados fonte (não modificar — são a verdade)
+
+| Arquivo | Tamanho | Origem | O que contém |
+|---|---|---|---|
+| `data/raw/escolas_brasil.csv` | 82 MB | Catálogo INEP | 185k escolas com dados cadastrais básicos |
+| `data/raw/Censo_2025/dados/*.csv` (6 arquivos) | 445 MB | INEP Censo 2025 | Escola + Matrícula + Docente + Turma + Gestor + Curso Técnico |
+| `data/raw/escolas_brasil_crm.csv` | 77 MB | Pipeline Cowork | Censo 2025 convertido pra schema CRM (77 colunas) |
+| `data/raw/escolas_brasil_merged.csv` | 80 MB | merge_catalogo_inep.py | Censo + Catálogo unificados (184.8k escolas) |
+| `data/raw/escolas_brasil_enriquecido.csv` | 177 MB | Pipeline Cowork (ENEM) | 185k escolas × 297 colunas (enem + peer + socio + pnt) |
+
+### Scripts de processamento (rodar na atualização)
+
+| Script | Quando usar | Input | Output |
+|---|---|---|---|
+| `database/migrations/import_schools.py` | Setup inicial, novo Catálogo | escolas_brasil.csv | companies (filtrado) |
+| `database/migrations/update_existing_schools.py` | Novo Censo processado | escolas_brasil_merged.csv | companies (atualizado) |
+| `database/migrations/merge_catalogo_inep.py` | Novo Censo + Catálogo | _crm.csv + escolas_brasil.csv | _merged.csv |
+| `database/migrations/import_school_analytics.py` | Novo ENEM processado | _enriquecido.csv + schema_report.json | school_analytics |
+| `scripts/historico/process_censo_year.py` | Novo Censo (monolítico) | microdados_ed_basica_YYYY.csv | school_censo_yearly |
+| `scripts/historico/seed_censo_2025_from_companies.py` | Novo Censo (multi-tabela) | companies | school_censo_yearly |
+| `scripts/historico/seed_enem_2024_from_analytics.py` | **Antes** de importar novo ENEM | school_analytics | school_enem_yearly |
+| `scripts/inspect_enem_csv.py` | Novo CSV ENEM com schema diferente | CSV ENEM | enem_schema_report.json |
+| `scripts/generate_migration_015.py` | Novo schema ENEM | enem_schema_report.json | SQL DDL |
+| `scripts/fix_mojibake_school_analytics.py` | Se CSV fonte tiver encoding ruim | school_censo_yearly + school_analytics | school_analytics (corrigido) |
+
+### Migrations SQL (aplicar via Supabase SQL Editor)
+
+| Migration | Tabela criada/alterada | Quando aplicar |
+|---|---|---|
+| `APLICAR-010-NOVA-BASE-2025.sql` | companies (219+ colunas) | Primeiro Censo |
+| `APLICAR-011-FONTE-DADOS.sql` | companies (+fonte_dados) | Junto com 010 |
+| `APLICAR-015-SCHOOL-ANALYTICS.sql` | school_analytics | Primeiro ENEM |
+| `APLICAR-016-SCHOOL-CENSO-YEARLY.sql` | school_censo_yearly | Primeiro Censo histórico |
+| `APLICAR-017-SCHOOL-ENEM-YEARLY.sql` | school_enem_yearly | Primeira série ENEM |
+| `APLICAR-018-FIX-MOJIBAKE.sql` | school_analytics (fix) | Se mojibake detectado |
+
+### Documentação
+
+| Arquivo | Conteúdo |
+|---|---|
+| `docs/ANNUAL_UPDATE.md` | **Este documento** — runbook completo + narrativa |
+| `docs/GUIA_BASE_ESCOLAS_CRM.md` | Dicionário de dados do CSV CRM (77 campos em 9 blocos) |
+| `docs/ARCHITECTURE.md` | Arquitetura do sistema (5 camadas, fluxo de dados) |
+| `docs/IMPLEMENTATION.md` | Especificações técnicas (tabelas, agentes, dashboard) |
+| `database/migrations/readme.md` | Guia das migrations 001-002 + validação |
+| `scripts/enem_schema_report.json` | Metadados das 297 colunas do CSV ENEM |
+| `scripts/enem_schema_report.txt` | Versão legível do relatório de schema |
+
+### Pipeline externo (Cowork — gera o CSV enriquecido)
+
+| Local | Script | Função |
+|---|---|---|
+| `C:\...\microdados_enem_2024\pipeline\` | `01_aggregate_resultados.py` | Agrega notas por escola (parquet) |
+| | `02_aggregate_participantes.py` | Agrega socio por município |
+| | `01b_aggregate_legacy.py` | Agrega anos anteriores (pra séries) |
+| | `04_build_trends.py` | Computa trends 5 anos (peer trajetória) |
+| | `03_merge_and_enrich.py` | Merge final → escolas_brasil_enriquecido.csv |
 
 ---
 
