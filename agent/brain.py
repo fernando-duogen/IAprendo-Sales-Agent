@@ -1221,6 +1221,24 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "gerar_relatorio_escola",
+        "description": (
+            "Gera um One Page Report (pagina HTML) com diagnostico completo de uma "
+            "escola: radar ENEM por area, gap vs peer group, evolucao de matriculas, "
+            "e insights automaticos. O report e hospedado como URL publica permanente "
+            "que pode ser enviada por email ou WhatsApp para a escola. Use quando "
+            "Fernando quiser um material visual para enviar junto com a abordagem."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "inep": {"type": "string", "description": "Codigo INEP da escola"},
+                "escola_nome": {"type": "string", "description": "Nome da escola"},
+                "escola_id": {"type": "string", "description": "UUID da escola em companies"},
+            },
+        },
+    },
 ]
 
 
@@ -2146,6 +2164,67 @@ def _handle_gerar_graficos_escola(params: Dict) -> str:
     except Exception as e:
         logger.error(f"gerar_graficos_escola error: {e}")
         return json.dumps({"erro": f"Erro ao gerar graficos: {str(e)[:200]}"})
+
+
+def _handle_gerar_relatorio_escola(params: Dict) -> str:
+    """Gera One Page Report (HTML) para uma escola e faz upload."""
+    company, err = _resolve_company_strict(params, select="id,name,inep_code")
+    if err:
+        return err
+    if not company:
+        return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
+
+    inep = company.get("inep_code")
+    escola_nome = company.get("name", "?")
+
+    if not inep:
+        return json.dumps({"erro": f"Escola '{escola_nome}' sem INEP no CRM."})
+
+    try:
+        from tools.report_generator import generate_and_upload_report
+        result = generate_and_upload_report(str(inep))
+        if not result:
+            return json.dumps({"erro": "Nao foi possivel gerar o relatorio (dados insuficientes)."})
+
+        # Best-effort: enviar link via WhatsApp para Fernando
+        enviado_wpp = False
+        try:
+            import os
+            from agent.whatsapp_bridge import WhatsAppBridge
+            bridge = WhatsAppBridge()
+            owner = os.getenv("IALEX_OWNER_NUMBER", "")
+            if owner:
+                msg = (
+                    f"📊 *Relatorio {escola_nome}*\n\n"
+                    f"🔗 {result['html_url']}\n\n"
+                    f"Abra o link para ver o diagnostico completo."
+                )
+                send_result = bridge.send_message(owner, msg)
+                enviado_wpp = bool(send_result.get("success"))
+        except Exception:
+            pass
+
+        logger.info("gerar_relatorio_escola_ok", extra={
+            "inep": inep, "escola": escola_nome,
+        })
+
+        return json.dumps({
+            "sucesso": True,
+            "escola": escola_nome,
+            "inep": str(inep),
+            "html_url": result["html_url"],
+            "enviado_whatsapp": enviado_wpp,
+            "mensagem": (
+                f"Relatorio gerado para {escola_nome}. "
+                f"Link: {result['html_url']}. "
+                + ("Enviei o link no WhatsApp." if enviado_wpp else "")
+                + " O relatorio inclui radar ENEM, gap vs peer, evolucao de matriculas e insights."
+            ),
+            "dica": "Voce pode incluir este link no email para a escola: 'Preparamos um diagnostico da sua escola, veja aqui: [link]'",
+        }, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"gerar_relatorio_escola error: {e}")
+        return json.dumps({"erro": f"Erro ao gerar relatorio: {str(e)[:200]}"})
 
 
 def _handle_iniciar_prospeccao(params: Dict) -> str:
@@ -4517,6 +4596,20 @@ def _handle_gerar_email(params: Dict) -> str:
             # Gerar graficos de insight (best-effort)
             chart_urls = _generate_and_upload_charts(escola.get("inep_code"))
 
+            # Gerar One Page Report (best-effort)
+            report_url = None
+            try:
+                from tools.report_generator import generate_and_upload_report
+                report_result = generate_and_upload_report(str(escola.get("inep_code", "")))
+                if report_result:
+                    report_url = report_result["html_url"]
+            except Exception:
+                pass
+
+            if report_url:
+                # Adicionar o link do report no final do body
+                body += f"\n\nVeja o diagnostico completo da {escola.get('name', 'escola')}: {report_url}"
+
             # Inserir na fila
             queue_data = {
                 "company_id": escola["id"],
@@ -4828,12 +4921,27 @@ Responda em JSON valido:
     # Gerar graficos de insight (best-effort)
     chart_urls = _generate_and_upload_charts(escola.get("inep_code"))
 
+    # Gerar One Page Report (best-effort)
+    report_url = None
+    try:
+        from tools.report_generator import generate_and_upload_report
+        report_result = generate_and_upload_report(str(escola.get("inep_code", "")))
+        if report_result:
+            report_url = report_result["html_url"]
+    except Exception:
+        pass
+
     # === CANAL EMAIL (ou ambos) ===
     if canal in ("email", "ambos") and email_data:
+        email_body = email_data["corpo"]
+        if report_url:
+            # Adicionar o link do report no final do body
+            email_body += f"\n\nVeja o diagnostico completo da {escola.get('name', 'escola')}: {report_url}"
+
         queue_entry = {
             "company_id": escola["id"],
             "subject": email_data["assunto"],
-            "body": email_data["corpo"],
+            "body": email_body,
             "channel": "email",
             "status": "pending",
         }
@@ -6302,6 +6410,8 @@ TOOL_HANDLERS = {
     "diagnostico_sistema": _handle_diagnostico_sistema,
     # Graficos de insight para email
     "gerar_graficos_escola": _handle_gerar_graficos_escola,
+    # One Page Report (HTML) para escola
+    "gerar_relatorio_escola": _handle_gerar_relatorio_escola,
 }
 
 # =====================================================================
@@ -6602,7 +6712,7 @@ contextual sem ter que formula-los do zero.
 2. *COMPANHEIRO DE CAMPO*: Quando Fernando esta na rua visitando escolas, ajuda-lo a encontrar escolas perto, dar informacoes rapidas, registrar visitas
 3. *AGENTE DE VENDAS*: Qualificar leads, enriquecer contatos, gerar emails, acompanhar pipeline, sugerir acoes comerciais
 
-== ESCOLHA DE FERRAMENTAS (74 disponiveis) ==
+== ESCOLHA DE FERRAMENTAS (75 disponiveis) ==
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
@@ -6731,6 +6841,9 @@ Quando Fernando pedir abordagem ou email para uma escola:
 5. Se Fernando quiser ver os graficos ANTES de gerar o email: chame
    *gerar_graficos_escola* → as imagens sao enviadas no WhatsApp.
 6. Se Fernando pedir teste: use *enviar_email_teste* com o queue_id.
+7. O sistema tambem gera automaticamente um *One Page Report* (pagina HTML
+   com diagnostico completo) que e incluido como link no email. Fernando
+   pode gerar um report manualmente com *gerar_relatorio_escola*.
 
 IMPORTANTE: SEMPRE sugira proativamente o envio de email teste quando
 houver graficos incluidos. Fernando quer validar como ficou ANTES de
