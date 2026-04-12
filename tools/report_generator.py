@@ -419,8 +419,19 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
 # UPLOAD E PUBLICACAO
 # ============================================================================
 
+# GitHub Pages config — reports são servidos via docs/reports/ no repo
+_GITHUB_PAGES_BASE = os.getenv(
+    "GITHUB_PAGES_URL",
+    "https://fernando-duogen.github.io/IAprendo-Sales-Agent",
+)
+_REPORTS_DIR = ROOT / "docs" / "reports"
+
+
 def generate_and_upload_report(inep: str) -> Optional[Dict[str, str]]:
-    """Gera report HTML + upload para Supabase Storage.
+    """Gera report HTML e salva em docs/reports/ para GitHub Pages.
+
+    O report e servido via GitHub Pages com Content-Type text/html correto.
+    Apos gerar, faz git add + commit + push automaticamente.
 
     Returns:
         Dict com {"html_url": str, "escola_nome": str, "inep": str}
@@ -430,31 +441,34 @@ def generate_and_upload_report(inep: str) -> Optional[Dict[str, str]]:
     if not result:
         return None
 
-    from database.supabase_client import db
-    today = date.today().strftime("%Y%m%d")
-    path = f"reports/{inep}/diagnostico_{today}.html"
-
-    html_bytes = result["html"].encode("utf-8")
     try:
-        # Reusar upload_chart mas com content-type text/html
-        bucket_name = "insight-charts"
-        bucket = db.client.storage.from_(bucket_name)
+        # Salvar em docs/reports/{inep}.html
+        _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        filepath = _REPORTS_DIR / f"{inep}.html"
+        filepath.write_text(result["html"], encoding="utf-8")
+
+        # Git add + commit + push (best-effort, nao bloqueia se falhar)
+        import subprocess
         try:
-            bucket.upload(
-                path, html_bytes,
-                file_options={"content-type": "text/html; charset=utf-8", "upsert": "true"},
+            subprocess.run(
+                ["git", "add", str(filepath)],
+                cwd=str(ROOT), capture_output=True, timeout=10,
             )
-        except Exception:
-            try:
-                bucket.remove([path])
-            except Exception:
-                pass
-            bucket.upload(
-                path, html_bytes,
-                file_options={"content-type": "text/html; charset=utf-8"},
+            subprocess.run(
+                ["git", "commit", "-m",
+                 f"Report: {result['escola_nome']} (INEP {inep})"],
+                cwd=str(ROOT), capture_output=True, timeout=10,
             )
-        url = bucket.get_public_url(path)
-        logger.info("report_uploaded", extra={"inep": inep, "url": url[:80]})
+            subprocess.run(
+                ["git", "push", "origin", "main"],
+                cwd=str(ROOT), capture_output=True, timeout=30,
+            )
+            logger.info("report_pushed", extra={"inep": inep, "path": str(filepath)})
+        except Exception as git_err:
+            logger.warning(f"report git push failed (report salvo localmente): {git_err}")
+
+        url = f"{_GITHUB_PAGES_BASE}/reports/{inep}.html"
+        logger.info("report_generated", extra={"inep": inep, "url": url})
 
         return {
             "html_url": url,
@@ -464,5 +478,5 @@ def generate_and_upload_report(inep: str) -> Optional[Dict[str, str]]:
             "uf": result.get("uf"),
         }
     except Exception as e:
-        logger.error(f"report_upload failed: {e}")
+        logger.error(f"report_generate failed: {e}")
         return None
