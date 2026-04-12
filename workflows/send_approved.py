@@ -28,7 +28,7 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
 
         result = db.client.table("approval_queue")
         q = result.select(
-            "id, company_id, contact_id, subject, body, channel, scheduled_send_at"
+            "id, company_id, contact_id, subject, body, channel, scheduled_send_at, chart_urls"
         ).eq("status", "approved").is_("sent_at", "null").or_(
             f"scheduled_send_at.is.null,scheduled_send_at.lte.{now_iso}"
         ).limit(limit).execute()
@@ -181,12 +181,22 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
                 skipped += 1
                 details.append({"queue_id": queue_id, "status": "blocked", "reason": "sem_email"})
                 continue
+            # Recuperar chart_urls se existirem
+            _chart_urls = msg.get("chart_urls")
+            if isinstance(_chart_urls, str):
+                try:
+                    import json as _json
+                    _chart_urls = _json.loads(_chart_urls)
+                except Exception:
+                    _chart_urls = None
+
             result = brevo_sender.send_email(
                 to_email=to_email,
                 to_name=to_name,
                 subject=subject,
                 body=body,
                 queue_id=queue_id,
+                chart_urls=_chart_urls,
             )
         if result.get("success"):
             # Marcar como enviada

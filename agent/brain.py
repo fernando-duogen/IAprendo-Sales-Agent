@@ -1202,6 +1202,25 @@ TOOLS = [
             "required": ["nivel"]
         }
     },
+    {
+        "name": "gerar_graficos_escola",
+        "description": (
+            "Gera graficos de insight (radar ENEM, gap, tendencia) para uma escola, "
+            "faz upload para Supabase Storage e retorna URLs publicas. Tambem envia "
+            "as imagens via WhatsApp para Fernando (best-effort). Use quando Fernando "
+            "pedir: 'gera graficos pro X', 'manda os charts da escola Y', 'quero ver "
+            "o radar do Z', 'prepara as imagens pro email'. Os graficos ficam salvos e "
+            "sao incluidos automaticamente nos emails gerados via gerar_email."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {"type": "string", "description": "Nome da escola (busca parcial)"},
+                "escola_id": {"type": "string", "description": "ID da escola (UUID)"},
+                "inep": {"type": "string", "description": "Codigo INEP da escola"},
+            },
+        },
+    },
 ]
 
 
@@ -1956,9 +1975,10 @@ def _handle_enviar_email_teste(params: Dict) -> str:
 
         # Se queue_id ou posicao: enviar copia exata de um email da fila
         qid = _resolve_queue_id(params)
+        chart_urls_parsed = None
         if qid:
             r = db.client.table("approval_queue").select(
-                "id,subject,body,companies(name)"
+                "id,subject,body,chart_urls,companies(name)"
             ).eq("id", qid).single().execute()
             if not r.data:
                 return json.dumps({"erro": f"Mensagem {qid} nao encontrada na fila."})
@@ -1967,6 +1987,16 @@ def _handle_enviar_email_teste(params: Dict) -> str:
             body = item.get("body", "")
             escola = (item.get("companies") or {}).get("name", "?")
             modo = f"copia do email para {escola}"
+            # Recuperar chart_urls se existirem
+            _raw_charts = item.get("chart_urls")
+            if _raw_charts:
+                if isinstance(_raw_charts, str):
+                    try:
+                        chart_urls_parsed = json.loads(_raw_charts)
+                    except Exception:
+                        chart_urls_parsed = None
+                elif isinstance(_raw_charts, list):
+                    chart_urls_parsed = _raw_charts
         else:
             subject = "[TESTE] Preview de email IAprendo"
             _test_sender = settings.YOUR_NAME or "Fernando"
@@ -1989,17 +2019,24 @@ def _handle_enviar_email_teste(params: Dict) -> str:
             to_name="Teste",
             subject=subject,
             body=body,
+            chart_urls=chart_urls_parsed,
         )
+        _charts_note = ""
+        if chart_urls_parsed:
+            _charts_note = f" Inclui {len(chart_urls_parsed)} grafico(s) de insight."
         if result.get("success"):
             return json.dumps({
                 "sucesso": True,
                 "email_destino": email_destino,
                 "modo": modo,
                 "assunto": subject,
+                "com_graficos": bool(chart_urls_parsed),
+                "total_graficos": len(chart_urls_parsed) if chart_urls_parsed else 0,
                 "mensagem": (
                     f"Email de teste enviado para {email_destino}! "
                     f"Verifique sua caixa de entrada (e spam). "
                     f"O email inclui assinatura + links conforme configurado."
+                    f"{_charts_note}"
                 ),
             }, ensure_ascii=False)
         else:
@@ -2009,6 +2046,83 @@ def _handle_enviar_email_teste(params: Dict) -> str:
             })
     except Exception as e:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_gerar_graficos_escola(params: Dict) -> str:
+    """Gera graficos de insight (radar, gap, trend) para uma escola,
+    faz upload para Supabase Storage e retorna as URLs publicas.
+
+    Opcionalmente envia as imagens via WhatsApp para o owner (best-effort).
+    """
+    try:
+        company, err = _resolve_company_strict(params, select="id,name,inep_code")
+        if err:
+            return err
+        if not company:
+            return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
+
+        inep = company.get("inep_code") or ""
+        escola_nome = company.get("name") or "Escola"
+
+        if not inep:
+            return json.dumps({
+                "erro": f"Escola '{escola_nome}' nao tem codigo INEP cadastrado. "
+                        "Graficos dependem dos dados ENEM/Censo vinculados ao INEP.",
+            })
+
+        # Gerar e fazer upload dos graficos
+        chart_urls = _generate_and_upload_charts(str(inep))
+
+        if not chart_urls:
+            return json.dumps({
+                "sucesso": False,
+                "escola": escola_nome,
+                "inep": inep,
+                "mensagem": (
+                    "Nao foi possivel gerar graficos para esta escola. "
+                    "Possivel motivo: sem dados ENEM/Censo suficientes ou amostra nao confiavel."
+                ),
+            }, ensure_ascii=False)
+
+        # Best-effort: enviar imagens via WhatsApp para o owner
+        enviados_wpp = 0
+        try:
+            import os
+            from agent.whatsapp_bridge import WhatsAppBridge
+            bridge = WhatsAppBridge()
+            owner = os.getenv("IALEX_OWNER_NUMBER", "")
+            if owner and bridge:
+                for chart in chart_urls:
+                    try:
+                        caption = f"{escola_nome} — {chart.get('alt', chart.get('type', 'grafico'))}"
+                        bridge.send_image(owner, chart["url"], caption)
+                        enviados_wpp += 1
+                    except Exception as _img_err:
+                        logger.debug(f"WhatsApp image send skip: {_img_err}")
+        except Exception as _wpp_err:
+            logger.debug(f"WhatsApp bridge unavailable for charts: {_wpp_err}")
+
+        logger.info("gerar_graficos_escola_ok", extra={
+            "inep": inep, "escola": escola_nome,
+            "charts": len(chart_urls), "wpp_sent": enviados_wpp,
+        })
+
+        return json.dumps({
+            "sucesso": True,
+            "escola": escola_nome,
+            "inep": inep,
+            "graficos": chart_urls,
+            "total_graficos": len(chart_urls),
+            "enviados_whatsapp": enviados_wpp,
+            "mensagem": (
+                f"{len(chart_urls)} grafico(s) gerado(s) para {escola_nome}."
+                + (f" {enviados_wpp} enviado(s) no WhatsApp." if enviados_wpp else "")
+                + " As URLs estao disponiveis para incluir em emails."
+            ),
+        }, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"gerar_graficos_escola error: {e}")
+        return json.dumps({"erro": f"Erro ao gerar graficos: {str(e)[:200]}"})
 
 
 def _handle_iniciar_prospeccao(params: Dict) -> str:
@@ -4268,6 +4382,38 @@ def _calcular_proxima_acao(escola: Dict, contatos: List[Dict], fila: List[Dict])
     }
 
 
+def _generate_and_upload_charts(inep: str) -> List[Dict[str, str]]:
+    """Gera graficos de insight e faz upload para Supabase Storage.
+
+    Retorna lista de dicts: [{"type": "radar", "url": "https://...", "alt": "..."}]
+    Retorna lista vazia se falhar (best-effort — email funciona sem charts).
+    """
+    if not inep:
+        return []
+    try:
+        from tools.insight_charts import generate_all_relevant_charts
+        charts = generate_all_relevant_charts(str(inep), benchmark="municipio")
+        if not charts:
+            return []
+        urls = []
+        for chart in charts:
+            url = db.upload_chart(chart["filename"], chart["bytes"])
+            if url:
+                urls.append({
+                    "type": chart["type"],
+                    "url": url,
+                    "alt": chart.get("alt", ""),
+                })
+        logger.info("insight_charts_generated", extra={
+            "inep": inep, "charts": len(urls),
+            "types": [u["type"] for u in urls],
+        })
+        return urls
+    except Exception as e:
+        logger.warning(f"insight_charts failed (best-effort): {e}")
+        return []
+
+
 def _handle_gerar_email(params: Dict) -> str:
     escola_nome = params.get("escola_nome", "")
     # Resolucao STRICT: email gerado pra escola errada pode virar email
@@ -4345,6 +4491,9 @@ def _handle_gerar_email(params: Dict) -> str:
                 "{meeting_link_text}", meeting_link_text
             )
 
+            # Gerar graficos de insight (best-effort)
+            chart_urls = _generate_and_upload_charts(escola.get("inep_code"))
+
             # Inserir na fila
             queue_data = {
                 "company_id": escola["id"],
@@ -4355,6 +4504,8 @@ def _handle_gerar_email(params: Dict) -> str:
                 "channel": "email",
                 "status": "pending",
             }
+            if chart_urls:
+                queue_data["chart_urls"] = json.dumps(chart_urls)
             if contato_email:
                 # Buscar contact_id
                 ct = db.client.table("contacts").select("id").eq(
@@ -4648,6 +4799,9 @@ Responda em JSON valido:
 
     resultados = []
 
+    # Gerar graficos de insight (best-effort)
+    chart_urls = _generate_and_upload_charts(escola.get("inep_code"))
+
     # === CANAL EMAIL (ou ambos) ===
     if canal in ("email", "ambos") and email_data:
         queue_entry = {
@@ -4661,8 +4815,10 @@ Responda em JSON valido:
             queue_entry["scheduled_send_at"] = smart_scheduled_at
         if contact_id:
             queue_entry["contact_id"] = contact_id
+        if chart_urls:
+            queue_entry["chart_urls"] = json.dumps(chart_urls)
         db.client.table("approval_queue").insert(queue_entry).execute()
-        resultados.append({"canal": "email", "assunto": email_data["assunto"]})
+        resultados.append({"canal": "email", "assunto": email_data["assunto"], "charts": len(chart_urls)})
 
     # === CANAL WHATSAPP (ou ambos) ===
     wpp_body = None
@@ -6113,6 +6269,8 @@ TOOL_HANDLERS = {
     "uso_apis": _handle_uso_apis,
     "consulta_livre": _handle_consulta_livre,
     "diagnostico_sistema": _handle_diagnostico_sistema,
+    # Graficos de insight para email
+    "gerar_graficos_escola": _handle_gerar_graficos_escola,
 }
 
 # =====================================================================
@@ -6413,7 +6571,7 @@ contextual sem ter que formula-los do zero.
 2. *COMPANHEIRO DE CAMPO*: Quando Fernando esta na rua visitando escolas, ajuda-lo a encontrar escolas perto, dar informacoes rapidas, registrar visitas
 3. *AGENTE DE VENDAS*: Qualificar leads, enriquecer contatos, gerar emails, acompanhar pipeline, sugerir acoes comerciais
 
-== ESCOLHA DE FERRAMENTAS (73 disponiveis) ==
+== ESCOLHA DE FERRAMENTAS (74 disponiveis) ==
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
@@ -6437,6 +6595,8 @@ contextual sem ter que formula-los do zero.
 - Rejeitar email → *rejeitar_mensagem*
 - Disparar emails aprovados → *enviar_aprovados*
 - Gerar follow-ups → *gerar_followups*
+- **Gerar graficos de insight** → *gerar_graficos_escola* (radar, gap, trend — upload + WhatsApp)
+- Testar email (com graficos se queue_id) → *enviar_email_teste*
 
 *Redes educacionais:*
 - Listar redes (mantenedoras com 2+ unidades) → *listar_redes_educacionais*
@@ -6526,6 +6686,21 @@ REGRAS DE QUALIDADE (valem sempre para emails):
 - O email deve ter MAXIMO 5 frases no corpo. Se vier maior, peca pro Fernando revisar ou chame de novo.
 - Se o reasoning do email nao citar qual dado concreto foi usado, algo esta errado.
 - Emails com emojis, "Ola [Nome], tudo bem?", adjetivos vazios ou CTA generico NAO sao bons — alerte Fernando e sugira regerar.
+
+== FLUXO DE GRAFICOS PARA EMAIL ==
+Quando Fernando pedir abordagem/email para uma escola com dados ENEM:
+1. PRIMEIRO: analise com *analisar_performance_escola* → apresente a dor/oportunidade
+2. Discuta com Fernando se o angulo faz sentido
+3. Se ele pedir graficos: chame *gerar_graficos_escola* → as imagens sao enviadas no WhatsApp automaticamente
+4. Se ele aprovar: chame *gerar_email* (que ja inclui os graficos automaticamente via chart_urls salvas na fila)
+5. Ofereca: "Quer que eu mande um teste pro seu email antes?" → use *enviar_email_teste* com o queue_id (agora inclui graficos)
+
+Graficos disponiveis (gerados automaticamente se a escola tiver dados):
+- *radar*: performance ENEM por area (5 areas + peer group overlay)
+- *gap*: gap escola vs peer em cada area (barra positiva/negativa)
+- *trend*: evolucao temporal de matriculas, tech score, infra score (Censo)
+
+Os graficos ficam salvos em Supabase Storage e as URLs sao persistidas no campo chart_urls da fila de aprovacao. O envio real (Brevo) ja sabe renderizar os charts no HTML.
 
 
 == REGRA CRITICA: FLUXO DE IMPORTACAO ==

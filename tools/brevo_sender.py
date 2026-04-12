@@ -30,12 +30,13 @@ class BrevoSender:
             logger.warning("BREVO_API_KEY nao configurada - envio desabilitado")
 
     def send_email(self, to_email: str, to_name: str, subject: str, body: str,
-                   queue_id: str = None) -> Dict[str, Any]:
+                   queue_id: str = None, chart_urls: list = None) -> Dict[str, Any]:
         """
         Envia um email via Brevo. Retorna dict com status, message_id e tracking_id.
 
-        Gera tracking_id unico antes do envio e salva tanto o tracking_id
-        quanto o brevo_message_id na approval_queue apos envio com sucesso.
+        Args:
+            chart_urls: Lista opcional de dicts {"type": str, "url": str, "alt": str}
+                        para injetar graficos de insight no HTML do email.
         """
         if not self._enabled:
             logger.warning("BREVO DESABILITADO - email NAO enviado (configure BREVO_API_KEY no .env)",
@@ -49,7 +50,7 @@ class BrevoSender:
             "sender": {"name": self.from_name, "email": self.from_email},
             "to": [{"email": to_email, "name": to_name}],
             "subject": subject,
-            "htmlContent": self._text_to_html(body, with_signature=True),
+            "htmlContent": self._text_to_html(body, with_signature=True, chart_urls=chart_urls),
             "textContent": body + self._get_text_signature(),
         }
         if queue_id:
@@ -134,8 +135,9 @@ class BrevoSender:
         except Exception:
             return ""
 
-    def _text_to_html(self, text: str, with_signature: bool = False) -> str:
-        """Converte texto plano para HTML com links clicaveis e assinatura."""
+    def _text_to_html(self, text: str, with_signature: bool = False,
+                      chart_urls: list = None) -> str:
+        """Converte texto plano para HTML com links clicaveis, graficos e assinatura."""
         import re
         # Primeiro, converter URLs em links HTML
         meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
@@ -167,6 +169,25 @@ class BrevoSender:
                 html_lines.append('<div style="margin:0;padding:0;height:12px">&nbsp;</div>')
         body_html = chr(10).join(html_lines)
 
+        # Graficos de insight (se houver)
+        charts_html = ""
+        if chart_urls:
+            for chart in chart_urls:
+                url = chart.get("url", "")
+                alt = chart.get("alt", "Grafico de analise")
+                if not url:
+                    continue
+                charts_html += (
+                    '<div style="background:#f8f9fa;padding:16px;border-radius:8px;'
+                    'margin:20px 0;text-align:center">'
+                    f'<img src="{url}" alt="{alt}" '
+                    'style="width:100%;max-width:560px;display:block;margin:0 auto;'
+                    'border-radius:4px" />'
+                    '<p style="color:#999;font-size:11px;margin-top:8px;margin-bottom:0">'
+                    'Fonte: Microdados ENEM 2024 / Censo Escolar (INEP)</p>'
+                    '</div>'
+                )
+
         # Assinatura HTML (se habilitada)
         signature_html = ""
         if with_signature:
@@ -176,6 +197,7 @@ class BrevoSender:
             '<html><body style="font-family:Arial,sans-serif;font-size:14px;color:#333;'
             'line-height:1.5;margin:0;padding:20px">'
             + body_html
+            + charts_html
             + signature_html
             + '</body></html>'
         )

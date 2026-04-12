@@ -6,6 +6,7 @@ streamlit>=1.32.0
 supabase>=2.0.0
 pandas>=2.0.0
 plotly>=5.15.0
+kaleido>=0.2.1
 pydeck>=0.8.0
 python-dotenv>=1.0.0
 requests>=2.31.0

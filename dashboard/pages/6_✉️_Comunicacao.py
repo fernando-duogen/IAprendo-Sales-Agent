@@ -685,6 +685,46 @@ with tab_aprovacao:
                 if not contact_email:
                     alert_banner("Adicione o email do contato (coluna esquerda) antes de aprovar para garantir o envio.", "warning")
 
+                # --- Preview de graficos de insight (se houver) ---
+                _raw_charts = item.get("chart_urls")
+                _parsed_charts = None
+                if _raw_charts:
+                    try:
+                        _parsed_charts = json.loads(_raw_charts) if isinstance(_raw_charts, str) else _raw_charts
+                    except Exception:
+                        _parsed_charts = None
+                if _parsed_charts:
+                    st.markdown("**📊 Graficos incluidos no email:**")
+                    for _ch in _parsed_charts:
+                        _ch_url = _ch.get("url", "")
+                        _ch_alt = _ch.get("alt", "Grafico")
+                        if _ch_url:
+                            st.image(_ch_url, caption=_ch_alt, use_container_width=True)
+                    st.caption("Estes graficos serao inseridos no final do email, antes da assinatura.")
+
+                # --- Botao enviar teste para mim ---
+                import os as _os
+                _test_email = _os.getenv("YOUR_EMAIL", "")
+                if _test_email and st.button(
+                    f"📧 Enviar teste para {_test_email.split('@')[0]}",
+                    key=f"test_send_{queue_id}",
+                ):
+                    try:
+                        from tools.brevo_sender import brevo_sender as _bs
+                        _test_result = _bs.send_email(
+                            to_email=_test_email,
+                            to_name="Teste",
+                            subject=f"[TESTE] {edited_subject if subject_changed else current_subject}",
+                            body=edited_body if body_changed else current_body,
+                            chart_urls=_parsed_charts,
+                        )
+                        if _test_result.get("success"):
+                            st.success(f"Teste enviado para {_test_email}")
+                        else:
+                            st.error(f"Erro: {_test_result.get('error', '?')}")
+                    except Exception as _e:
+                        st.error(f"Erro ao enviar teste: {_e}")
+
             # --- Agendamento de envio ---
             existing_sched = item.get("scheduled_send_at")
             if existing_sched:

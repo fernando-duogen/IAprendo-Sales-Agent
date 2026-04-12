@@ -911,6 +911,69 @@ class Database:
             logger.error("Erro ao excluir contato", extra={"contact_id": contact_id, "error": str(e)})
             return False
 
+    # ========================================================================
+    # SUPABASE STORAGE — Upload de graficos para emails
+    # ========================================================================
+
+    _CHART_BUCKET = "insight-charts"
+    _bucket_verified = False
+
+    def _ensure_chart_bucket(self) -> None:
+        """Cria o bucket de charts se nao existir (1x por sessao)."""
+        if self._bucket_verified:
+            return
+        try:
+            buckets = self.client.storage.list_buckets()
+            exists = any(b.name == self._CHART_BUCKET for b in buckets)
+            if not exists:
+                self.client.storage.create_bucket(
+                    self._CHART_BUCKET,
+                    options={"public": True},
+                )
+                logger.info(f"Bucket '{self._CHART_BUCKET}' criado (publico)")
+            self._bucket_verified = True
+        except Exception as e:
+            logger.warning(f"Erro verificando/criando bucket: {e}")
+            self._bucket_verified = True  # nao travar em loop
+
+    def upload_chart(self, path: str, png_bytes: bytes) -> Optional[str]:
+        """Upload de PNG para Supabase Storage. Retorna URL publica.
+
+        Args:
+            path: Caminho relativo dentro do bucket. Ex: '43238203/radar_20260412.png'
+            png_bytes: Conteudo do PNG em bytes.
+
+        Returns:
+            URL publica do arquivo, ou None se falhar.
+        """
+        self._ensure_chart_bucket()
+        try:
+            # Tentar upload (se ja existir, remove e re-faz)
+            bucket = self.client.storage.from_(self._CHART_BUCKET)
+            try:
+                bucket.upload(
+                    path,
+                    png_bytes,
+                    file_options={"content-type": "image/png", "upsert": "true"},
+                )
+            except Exception:
+                # Fallback: remover e re-upload
+                try:
+                    bucket.remove([path])
+                except Exception:
+                    pass
+                bucket.upload(
+                    path,
+                    png_bytes,
+                    file_options={"content-type": "image/png"},
+                )
+            url = bucket.get_public_url(path)
+            logger.info("Chart uploaded", extra={"path": path, "url": url[:80]})
+            return url
+        except Exception as e:
+            logger.error(f"Erro upload chart: {e}", extra={"path": path})
+            return None
+
 
 # ============================================================================
 # SINGLETON - Instância única para todo o sistema (lazy initialization)
