@@ -2084,8 +2084,9 @@ def _handle_gerar_graficos_escola(params: Dict) -> str:
                 ),
             }, ensure_ascii=False)
 
-        # Best-effort: enviar imagens via WhatsApp para o owner
+        # Enviar imagens via WhatsApp para o Fernando (best-effort, verifica retorno)
         enviados_wpp = 0
+        falhou_wpp = 0
         try:
             import os
             from agent.whatsapp_bridge import WhatsAppBridge
@@ -2095,31 +2096,53 @@ def _handle_gerar_graficos_escola(params: Dict) -> str:
                 for chart in chart_urls:
                     try:
                         caption = f"{escola_nome} — {chart.get('alt', chart.get('type', 'grafico'))}"
-                        bridge.send_image(owner, chart["url"], caption)
-                        enviados_wpp += 1
+                        result = bridge.send_image(owner, chart["url"], caption)
+                        if result.get("success"):
+                            enviados_wpp += 1
+                        else:
+                            falhou_wpp += 1
+                            logger.warning(f"WhatsApp image send failed: {result.get('error')}")
                     except Exception as _img_err:
-                        logger.debug(f"WhatsApp image send skip: {_img_err}")
+                        falhou_wpp += 1
+                        logger.warning(f"WhatsApp image send error: {_img_err}")
         except Exception as _wpp_err:
-            logger.debug(f"WhatsApp bridge unavailable for charts: {_wpp_err}")
+            logger.warning(f"WhatsApp bridge unavailable for charts: {_wpp_err}")
+            falhou_wpp = len(chart_urls)
 
         logger.info("gerar_graficos_escola_ok", extra={
             "inep": inep, "escola": escola_nome,
-            "charts": len(chart_urls), "wpp_sent": enviados_wpp,
+            "charts": len(chart_urls), "wpp_sent": enviados_wpp, "wpp_failed": falhou_wpp,
         })
 
-        return json.dumps({
+        output: Dict[str, Any] = {
             "sucesso": True,
             "escola": escola_nome,
             "inep": inep,
             "graficos": chart_urls,
             "total_graficos": len(chart_urls),
             "enviados_whatsapp": enviados_wpp,
-            "mensagem": (
-                f"{len(chart_urls)} grafico(s) gerado(s) para {escola_nome}."
-                + (f" {enviados_wpp} enviado(s) no WhatsApp." if enviados_wpp else "")
-                + " As URLs estao disponiveis para incluir em emails."
-            ),
-        }, ensure_ascii=False)
+        }
+        # Mensagem honesta sobre o status do envio
+        if enviados_wpp == len(chart_urls):
+            output["mensagem"] = (
+                f"{len(chart_urls)} grafico(s) gerado(s) e enviado(s) no WhatsApp. "
+                "Confira as imagens que chegaram e me diga se quer usar no email."
+            )
+        elif enviados_wpp > 0:
+            output["mensagem"] = (
+                f"{len(chart_urls)} grafico(s) gerado(s). {enviados_wpp} enviado(s) "
+                f"no WhatsApp, {falhou_wpp} falharam. URLs disponiveis abaixo."
+            )
+            output["aviso_whatsapp"] = f"{falhou_wpp} imagem(ns) nao puderam ser enviadas via WhatsApp."
+        else:
+            output["mensagem"] = (
+                f"{len(chart_urls)} grafico(s) gerado(s) mas nao foi possivel enviar "
+                "via WhatsApp. As URLs estao disponiveis abaixo — voce pode abri-las "
+                "no navegador para visualizar."
+            )
+            output["aviso_whatsapp"] = "Envio via WhatsApp indisponivel. Veja as URLs dos graficos."
+
+        return json.dumps(output, ensure_ascii=False)
     except Exception as e:
         logger.error(f"gerar_graficos_escola error: {e}")
         return json.dumps({"erro": f"Erro ao gerar graficos: {str(e)[:200]}"})
@@ -4526,10 +4549,13 @@ def _handle_gerar_email(params: Dict) -> str:
                     "escola": escola.get("name"),
                     "contato": contato_nome,
                     "email_contato": contato_email,
+                    "charts_incluidos": len(chart_urls),
                     "mensagem": (
-                        f"Email gerado usando template '{tpl.get('name', '?')}'. "
-                        f"Na fila de aprovacao — revise antes de enviar."
+                        f"Email gerado usando template '{tpl.get('name', '?')}'"
+                        + (f" com {len(chart_urls)} grafico(s) de insight incluido(s)" if chart_urls else "")
+                        + ". Na fila de aprovacao — revise antes de enviar."
                     ),
+                    "dica": "Use 'enviar email teste' para ver como ficara no inbox antes de aprovar." if chart_urls else None,
                 }, ensure_ascii=False, default=str)
             return json.dumps({"erro": "Falha ao inserir na fila."})
         except Exception as e:
@@ -4936,7 +4962,12 @@ Responda em JSON valido:
         "assunto_email": (email_data or {}).get("assunto") if canal in ("email", "ambos") else None,
         "corpo_email": (email_data or {}).get("corpo") if canal in ("email", "ambos") else None,
         "corpo_whatsapp": wpp_body if canal in ("whatsapp", "ambos") else None,
+        "charts_incluidos": len(chart_urls) if chart_urls else 0,
         "status": "Na fila de aprovacao (pending) — revise antes de enviar",
+        "dica": (
+            f"O email inclui {len(chart_urls)} grafico(s) de insight (radar ENEM, gap, etc). "
+            "Use 'enviar email teste' para ver como ficara no inbox antes de aprovar."
+        ) if chart_urls else None,
     }, ensure_ascii=False)
 
 
@@ -6688,12 +6719,22 @@ REGRAS DE QUALIDADE (valem sempre para emails):
 - Emails com emojis, "Ola [Nome], tudo bem?", adjetivos vazios ou CTA generico NAO sao bons — alerte Fernando e sugira regerar.
 
 == FLUXO DE GRAFICOS PARA EMAIL ==
-Quando Fernando pedir abordagem/email para uma escola com dados ENEM:
-1. PRIMEIRO: analise com *analisar_performance_escola* → apresente a dor/oportunidade
+Quando Fernando pedir abordagem ou email para uma escola:
+1. Analise com *analisar_performance_escola* → apresente a dor/oportunidade
 2. Discuta com Fernando se o angulo faz sentido
-3. Se ele pedir graficos: chame *gerar_graficos_escola* → as imagens sao enviadas no WhatsApp automaticamente
-4. Se ele aprovar: chame *gerar_email* (que ja inclui os graficos automaticamente via chart_urls salvas na fila)
-5. Ofereca: "Quer que eu mande um teste pro seu email antes?" → use *enviar_email_teste* com o queue_id (agora inclui graficos)
+3. Ao gerar o email (*gerar_email*), graficos de insight sao incluidos
+   AUTOMATICAMENTE (radar ENEM, gap, trend) — voce NAO precisa chamar
+   nada extra, o proprio gerar_email gera e inclui.
+4. DEPOIS de gerar, SEMPRE mencione que graficos foram incluidos:
+   "Inclui graficos de radar ENEM e gap no email. Quer que eu mande um
+   teste pro seu inbox pra ver como ficou antes de aprovar?"
+5. Se Fernando quiser ver os graficos ANTES de gerar o email: chame
+   *gerar_graficos_escola* → as imagens sao enviadas no WhatsApp.
+6. Se Fernando pedir teste: use *enviar_email_teste* com o queue_id.
+
+IMPORTANTE: SEMPRE sugira proativamente o envio de email teste quando
+houver graficos incluidos. Fernando quer validar como ficou ANTES de
+enviar pra escola.
 
 Graficos disponiveis (gerados automaticamente se a escola tiver dados):
 - *radar*: performance ENEM por area (5 areas + peer group overlay)

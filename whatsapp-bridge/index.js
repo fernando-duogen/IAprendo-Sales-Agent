@@ -243,6 +243,25 @@ app.post('/send', async (req, res) => {
     }
 });
 
+// Envia imagem via URL publica
+// POST /send-image { number: "5551999999999", url: "https://...", caption: "texto" }
+app.post('/send-image', async (req, res) => {
+    const { number, url, caption } = req.body;
+    if (!sock || !connected) return res.json({ error: 'Not connected' });
+    if (!url) return res.json({ error: 'URL da imagem e obrigatoria' });
+    try {
+        const jid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        await sock.sendMessage(jid, {
+            image: { url: url },
+            caption: caption || '',
+        });
+        res.json({ success: true });
+    } catch (e) {
+        console.error(`[send-image] Erro: ${e.message}`);
+        res.json({ error: e.message });
+    }
+});
+
 // Verifica se um numero existe no WhatsApp (antes de enviar)
 // POST /check-number { number: "5551999999999" } -> { exists: true, jid: "..." }
 app.post('/check-number', async (req, res) => {

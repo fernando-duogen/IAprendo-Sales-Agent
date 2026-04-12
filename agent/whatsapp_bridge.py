@@ -194,35 +194,43 @@ class WhatsAppBridge:
             return {}
 
     def send_image(self, number: str, image_url: str, caption: str = "") -> Dict[str, Any]:
-        """Envia imagem via WhatsApp.
+        """Envia imagem via WhatsApp (Baileys bridge).
+
+        Usa o endpoint /send-image do Baileys bridge (porta 8090) que aceita
+        URLs publicas de imagem. O Baileys baixa a imagem e envia via
+        WhatsApp Web.
 
         Args:
-            number: Numero do destinatario.
-            image_url: URL publica da imagem.
+            number: Numero do destinatario (ex: '5551999999999') ou JID.
+            image_url: URL publica da imagem (HTTPS).
             caption: Legenda opcional da imagem.
 
         Returns:
-            Dict com resposta da API ou {} em caso de falha.
+            Dict com {"success": True} ou {"success": False, "error": str}.
         """
-        url = f"{self.base_url}/message/sendMedia/{self.instance_name}"
-        formatted = self.format_number(number)
+        url = f"{self.bridge_url}/send-image"
+        if "@" in number:
+            formatted = number
+        else:
+            formatted = self.format_number(number)
         body = {
             "number": formatted,
-            "media": {
-                "mediatype": "image",
-                "url": image_url,
-            },
+            "url": image_url,
             "caption": caption,
         }
         try:
-            resp = requests.post(url, json=body, headers=self._headers, timeout=15)
-            resp.raise_for_status()
+            resp = requests.post(url, json=body, timeout=20)
             data: Dict[str, Any] = resp.json()
-            logger.info(f"Imagem enviada para {formatted}.")
-            return data
+            if data.get("success"):
+                logger.info(f"Imagem enviada para {formatted}.")
+                return data
+            else:
+                error_msg = data.get("error", "desconhecido")
+                logger.error(f"Erro bridge send-image: {error_msg}")
+                return {"success": False, "error": error_msg}
         except requests.RequestException as exc:
             logger.error(f"Erro ao enviar imagem para {formatted}: {exc}")
-            return {}
+            return {"success": False, "error": str(exc)}
 
     def send_buttons(self, number: str, text: str, buttons: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Envia mensagem com botoes de resposta rapida.
