@@ -627,8 +627,8 @@ with tab_comunicacao:
     section_header("Central de Comunicacao", "mail")
 
     st.markdown("""
-A pagina **Comunicacao** consolida tudo relacionado a emails e mensagens.
-Ela e dividida em **4 abas**: Aprovacao, Follow-ups, Templates, Metricas.
+A pagina **Comunicacao** consolida tudo relacionado a emails, WhatsApp e mensagens.
+Ela e dividida em **5 abas**: Aprovacao, Follow-ups, Templates, Metricas e WhatsApp.
 """)
 
     st.markdown("## Aba 1: Aprovacao")
@@ -729,6 +729,34 @@ Acompanhe o desempenho das suas campanhas de email.
 - Comparacao entre campanhas
 - Heatmap de melhor horario de envio
 - Performance por angulo de abordagem
+""")
+
+    st.divider()
+
+    st.markdown("## Aba 5: WhatsApp")
+    st.markdown("""
+Gerencia tudo relacionado a comunicacao via WhatsApp.
+
+### Fila WhatsApp
+- Mensagens enviadas pelo IAlex via WhatsApp passam pela mesma fila de aprovacao
+- Filtro automatico por canal `whatsapp` — mostra apenas mensagens desse canal
+- KPIs dedicados: pendentes, aprovados, enviados via WhatsApp
+
+### Templates WhatsApp
+- **3 templates padrao** (apresentacao, agendamento, mensagem curta)
+- **Templates personalizados**: crie e salve templates com variaveis `{contact_name}` e `{company_name}`
+- Preview com dados de exemplo para visualizar antes de usar
+
+### Numeros Descobertos
+- Visao geral de cobertura: quantos contatos tem telefone vs quantos faltam
+- Percentual de cobertura
+- Tabela com todos os contatos que tem telefone (nome, telefone, escola)
+- Para descobrir novos numeros, use o **Pipeline > Descoberta** ou peca ao IAlex
+
+### Dicas
+- O IAlex pode enviar WhatsApp direto via comando: "mande WhatsApp para a diretora da escola X"
+- Mensagens WhatsApp sao mais informais — use os templates curtos
+- Ideal para follow-ups rapidos apos email sem resposta
 """)
 
     if st.button("Ir para Comunicacao", key="comunicacao_go"):
