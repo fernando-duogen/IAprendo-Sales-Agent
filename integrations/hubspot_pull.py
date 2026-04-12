@@ -79,9 +79,10 @@ class HubSpotPull:
         if not hubspot_id:
             return False
 
-        # Buscar no Supabase pelo hubspot_id
+        # Buscar no Supabase pelo hubspot_company_id (nome correto da coluna
+        # em companies — "hubspot_id" nao existe nessa tabela)
         try:
-            existing = db.client.table("companies").select("*").eq("hubspot_id", str(hubspot_id)).limit(1).execute()
+            existing = db.client.table("companies").select("*").eq("hubspot_company_id", str(hubspot_id)).limit(1).execute()
             if not existing.data:
                 # Nao existe no Supabase — pular (nao criar retroativamente)
                 return False
@@ -90,13 +91,18 @@ class HubSpotPull:
             updates = {}
 
             # Mapear campos HubSpot -> Supabase (apenas os permitidos)
+            # NOTA: `lifecyclestage` do HubSpot (lead/opportunity/customer/...)
+            # NAO mapeia diretamente para `commercial_stage` do Supabase
+            # (prospectado/contatado/respondeu/reuniao/proposta/cliente/perdido).
+            # Traducao requer pensar na semantica de cada valor — deixado como
+            # TODO. Se voltar a adicionar aqui, garanta que os valores mapeados
+            # batem com companies_commercial_stage_chk.
             field_map = {
                 "name": "name",
                 "city": "city",
                 "state": "state",
                 "phone": "phone",
                 "website": "website",
-                "lifecyclestage": "hubspot_stage",
             }
             for hs_field, sb_field in field_map.items():
                 if sb_field in PROTECTED_SUPABASE_FIELDS:
@@ -123,7 +129,8 @@ class HubSpotPull:
             return False
 
         try:
-            existing = db.client.table("contacts").select("*").eq("hubspot_id", str(hubspot_id)).limit(1).execute()
+            # Nome correto da coluna em contacts eh hubspot_contact_id
+            existing = db.client.table("contacts").select("*").eq("hubspot_contact_id", str(hubspot_id)).limit(1).execute()
             if not existing.data:
                 return False
 

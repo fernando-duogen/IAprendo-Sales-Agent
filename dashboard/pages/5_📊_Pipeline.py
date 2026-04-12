@@ -859,7 +859,7 @@ def render_kanban_comercial():
                         subtitle=sub,
                     ):
                         st.session_state["escola_detail_id"] = comp["id"]
-                        st.switch_page("pages/5_🏫_Escolas.py")
+                        st.switch_page("pages/1_🏫_Escolas.py")
 
                 # Expander com os restantes (clicaveis tambem)
                 if len(sorted_items) > 6:
@@ -876,7 +876,7 @@ def render_kanban_comercial():
                                 subtitle=sub,
                             ):
                                 st.session_state["escola_detail_id"] = comp["id"]
-                                st.switch_page("pages/5_🏫_Escolas.py")
+                                st.switch_page("pages/1_🏫_Escolas.py")
 
         # Secao de perdidos colapsada
         if perdidos:

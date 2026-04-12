@@ -64,7 +64,14 @@ st.caption("Organograma de decisores por escola. Hierarquia: Direcao > Coordenac
 # ===========================================================================
 col_f1, col_f2, col_f3 = st.columns([3, 1, 1])
 with col_f1:
-    search = st.text_input("Buscar escola:", placeholder="Nome da escola...", label_visibility="collapsed")
+    from dashboard.helpers.school_lookup import get_crm_schools as _get_crm_c, format_school_option as _fmt_c, parse_inep_from_option as _parse_c
+    _crm_c = _get_crm_c()
+    _crm_c_opts = ["(todas)"] + [_fmt_c(n, i) for n, i in _crm_c]
+    _sel_c = st.selectbox("Buscar escola:", _crm_c_opts, label_visibility="collapsed", key="contato_escola_search")
+    search = ""  # compatibilidade com filtro downstream
+    if _sel_c != "(todas)":
+        _inep_c = _parse_c(_sel_c)
+        search = _inep_c if _inep_c else _sel_c
 with col_f2:
     coverage_filter = st.selectbox("Cobertura:", ["Todos", "Completa", "Parcial", "Sem decisor"],
                                    label_visibility="collapsed")
@@ -118,7 +125,10 @@ def calc_coverage(contacts):
 # Filtros aplicados
 filtered = all_companies
 if search:
-    filtered = [c for c in filtered if search.lower() in c.get("name", "").lower()]
+    if search.isdigit():
+        filtered = [c for c in filtered if str(c.get("inep_code", "")).strip() == search]
+    else:
+        filtered = [c for c in filtered if search.lower() in c.get("name", "").lower()]
 if coverage_filter == "Completa":
     filtered = [c for c in filtered if calc_coverage(contacts_by_company.get(c["id"], [])) == 3]
 elif coverage_filter == "Parcial":
@@ -655,7 +665,7 @@ with tab_lista:
                     if st.button("Ver escola", icon=":material/school:",
                                   use_container_width=True, key="ct_flat_school"):
                         st.session_state["escola_detail_id"] = sel["company_id"]
-                        st.switch_page("pages/5_🏫_Escolas.py")
+                        st.switch_page("pages/1_🏫_Escolas.py")
                 with ac4:
                     if st.button("Excluir", icon=":material/delete:",
                                   use_container_width=True, key="ct_flat_del"):
@@ -724,7 +734,7 @@ with tab_lista:
                             if st.button("Ver escola", icon=":material/school:",
                                           use_container_width=True, key=f"ct_g_sch_{sel_ct['id']}"):
                                 st.session_state["escola_detail_id"] = sel_ct["company_id"]
-                                st.switch_page("pages/5_🏫_Escolas.py")
+                                st.switch_page("pages/1_🏫_Escolas.py")
                         with ac4:
                             if st.button("Excluir", icon=":material/delete:",
                                           use_container_width=True, key=f"ct_g_del_{sel_ct['id']}"):

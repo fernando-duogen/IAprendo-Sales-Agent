@@ -19,6 +19,7 @@ Integra com email_rag, memory e intent_detector (itens 1-4 do roadmap).
 """
 
 import os
+import random
 import sys
 import json
 import time
@@ -217,20 +218,37 @@ def get_due_follow_ups(
     logger.info("Buscando follow-ups devidos (comportamental)", extra={
         "limit": limit, "allowed_types": allowed_types})
 
-    try:
-        # Buscar mensagens enviadas com qualquer tracking
-        result = db.client.table("approval_queue").select(
-            "id, company_id, contact_id, subject, body, "
-            "follow_up_number, sent_at, opened_at, clicked_at, replied_at, "
-            "bounced_at, parent_id"
-        ).eq("status", "sent").not_.is_("sent_at", "null").order(
-            "sent_at", desc=False
-        ).limit(500).execute()
+    # Buscar mensagens enviadas com qualquer tracking — com retry para
+    # erros transitorios (rate limit / timeout do Supabase)
+    sent_messages: List[Dict[str, Any]] = []
+    for attempt in range(3):
+        try:
+            result = db.client.table("approval_queue").select(
+                "id, company_id, contact_id, subject, body, "
+                "follow_up_number, sent_at, opened_at, clicked_at, replied_at, "
+                "bounced_at, parent_id"
+            ).eq("status", "sent").not_.is_("sent_at", "null").order(
+                "sent_at", desc=False
+            ).limit(500).execute()
 
-        sent_messages = result.data or []
-    except Exception as e:
-        logger.error("Erro ao buscar mensagens enviadas", extra={"error": str(e)})
-        return []
+            sent_messages = result.data or []
+            break  # sucesso
+        except Exception as e:
+            err_msg = str(e)[:200]
+            is_transient = any(s in err_msg.lower() for s in [
+                "429", "503", "timeout", "rate", "too many",
+                "connection reset", "connection aborted",
+            ])
+            if attempt < 2 and is_transient:
+                wait = (2 ** (attempt + 1)) + random.random()
+                logger.warning(
+                    f"Buscar mensagens enviadas falhou (attempt {attempt+1}/3, "
+                    f"transient={is_transient}), retry em {wait:.1f}s: {err_msg}"
+                )
+                time.sleep(wait)
+                continue
+            logger.error("Erro ao buscar mensagens enviadas", extra={"error": err_msg})
+            return []
 
     if not sent_messages:
         logger.info("Nenhuma mensagem enviada encontrada para follow-up")

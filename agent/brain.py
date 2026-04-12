@@ -26,6 +26,19 @@ from config.settings import settings
 from database.supabase_client import db
 from utils.logger import logger
 
+# Carregamento defensivo do modulo ENEM analytics (regra R1 do plano).
+# Se enem_tools.py tiver qualquer erro, IAlex continua rodando com as 68
+# tools originais — apenas nao ganha as 4 tools analiticas novas.
+try:
+    from agent.tools.enem_tools import ENEM_TOOLS, ENEM_TOOL_HANDLERS
+    _ENEM_TOOLS_AVAILABLE = True
+    logger.info("ENEM tools carregadas", extra={"count": len(ENEM_TOOLS)})
+except Exception as _enem_err:
+    logger.warning(f"ENEM tools indisponivel: {_enem_err}")
+    ENEM_TOOLS = []
+    ENEM_TOOL_HANDLERS = {}
+    _ENEM_TOOLS_AVAILABLE = False
+
 # Cache do CSV para fallback (carregado na primeira busca)
 _csv_df: Optional[pd.DataFrame] = None
 
@@ -2400,16 +2413,14 @@ def _handle_atualizar_scores(params: Dict) -> str:
 
 def _handle_registrar_reuniao(params: Dict) -> str:
     """Registra visita/reunião com escola."""
-    company_id = params.get("escola_id")
-    if not company_id and params.get("escola_nome"):
-        r = db.client.table("companies").select("id,name").ilike("name", f"%{params['escola_nome']}%").limit(1).execute()
-        if r.data:
-            company_id = r.data[0]["id"]
-        else:
-            return json.dumps({"erro": f"Escola '{params['escola_nome']}' nao encontrada no banco."})
-
-    if not company_id:
-        return json.dumps({"erro": "Informe o nome ou ID da escola."})
+    # Resolucao STRICT: registrar reuniao na escola errada e' caotico
+    company, err = _resolve_company_strict(params, select="id,name")
+    if err:
+        return err
+    if not company:
+        return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
+    company_id = company["id"]
+    company_name = company.get("name") or "Escola"
 
     try:
         data_reuniao = params.get("data", datetime.now().strftime("%Y-%m-%d"))
@@ -2420,7 +2431,7 @@ def _handle_registrar_reuniao(params: Dict) -> str:
             "status": "completed",
             "outcome": params.get("resultado", "follow_up"),
             "notes": params.get("notas", ""),
-            "title": f"Visita - {params.get('escola_nome', 'Escola')}",
+            "title": f"Visita - {company_name}",
             "duration_minutes": 30,
         }
 
@@ -2834,17 +2845,14 @@ def _handle_funil_vendas(params: Dict) -> str:
 
 
 def _handle_buscar_contatos(params: Dict) -> str:
-    company_id = params.get("escola_id")
-
-    if not company_id and params.get("escola_nome"):
-        r = db.client.table("companies").select("id,name").ilike("name", f"%{params['escola_nome']}%").limit(1).execute()
-        if r.data:
-            company_id = r.data[0]["id"]
-        else:
-            return json.dumps({"erro": f"Escola '{params['escola_nome']}' nao encontrada."})
-
-    if not company_id:
-        return json.dumps({"erro": "Informe o nome ou ID da escola."})
+    # Resolucao STRICT: mostrar contatos da escola errada confunde o
+    # fluxo conversacional (LLM pode propor acao sobre o contato errado)
+    company, err = _resolve_company_strict(params, select="id,name")
+    if err:
+        return err
+    if not company:
+        return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
+    company_id = company["id"]
 
     result = db.client.table("contacts").select("*").eq("company_id", company_id).execute()
     contatos = []
@@ -2874,21 +2882,14 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
     generico. Primeiro, o IAlex oferece ate 5 angulos concretos baseados em
     dados reais da escola — Fernando escolhe, e SO ENTAO o email e gerado.
     """
-    # Buscar escola
-    escola_id = params.get("escola_id")
-    nome = params.get("escola_nome", "").strip()
-
-    if escola_id:
-        r = db.client.table("companies").select("*").eq("id", escola_id).limit(1).execute()
-    elif nome:
-        r = db.client.table("companies").select("*").ilike("name", f"%{nome}%").limit(1).execute()
-    else:
-        return json.dumps({"erro": "Informe escola_nome ou escola_id."})
-
-    if not r.data:
-        return json.dumps({"erro": f"Escola '{nome}' nao encontrada no banco."})
-
-    escola = r.data[0]
+    # Resolucao STRICT: angulos gerados pra escola errada viram contexto
+    # errado na geracao de email subsequente (fluxo critico)
+    escola, err = _resolve_company_strict(params, select="*")
+    if err:
+        return err
+    if not escola:
+        return json.dumps({"erro": "Informe escola_nome, inep ou escola_id."})
+    nome = escola.get("name", "")
     fonte = escola.get("fonte_dados") or ""
     total_mat = escola.get("total_matriculas") or 0
     fund_af = escola.get("matriculas_fund_af") or 0
@@ -3126,6 +3127,90 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
             "foco": "apresentacao",
             "baseado_em_memoria": True,
         })
+
+    # ANGULOS 8/9/10: CONDICIONAIS — baseados em dados ENEM/peer/socio
+    # Falha silenciosa se analytics nao disponivel (regra R3 do plano).
+    try:
+        from agent.tools.enem_tools import _fetch_school_analytics_by_inep
+        inep = escola.get("inep_code")
+        sa_row = _fetch_school_analytics_by_inep(str(inep)) if inep else None
+
+        if sa_row:
+            # ANGULO 8: ponto fraco especifico (regra #4 do prompt — texto literal)
+            area_fraca = sa_row.get("enem_area_mais_fraca")
+            if area_fraca and sa_row.get("enem_amostra_confiavel") is True:
+                _id += 1
+                angulos.append({
+                    "id": _id,
+                    "titulo": f"Performance ENEM — ponto fraco em {area_fraca}",
+                    "descricao": (
+                        f"Os dados ENEM 2024 apontam {area_fraca} como a area mais "
+                        f"fraca desta escola especificamente. IAprendo tem trilhas "
+                        f"adaptativas por area do conhecimento — esse e o tipo de "
+                        f"problema que o sistema resolve melhor. Tom tecnico, "
+                        f"concreto, focado em diagnostico+remedio."
+                    ),
+                    "dados_destaque": [f"Area mais fraca ENEM 2024: {area_fraca}"],
+                    "tom_sugerido": "tecnico",
+                    "foco": "demo",
+                    "baseado_em_analytics": True,
+                })
+
+            # ANGULO 9: pressao competitiva (peer_trajetoria = Subindo*)
+            peer_traj = sa_row.get("peer_trajetoria_5y")
+            delta_22_24 = sa_row.get("peer_delta_media_geral_2022_2024")
+            mun = sa_row.get("peer_mun_nome") or escola.get("city") or "seu municipio"
+            dep_peer = sa_row.get("enem_dependencia") or escola.get("admin_dependency") or ""
+            if peer_traj in ("Subindo", "Subindo forte") and delta_22_24 is not None:
+                _id += 1
+                delta_abs = abs(float(delta_22_24))
+                angulos.append({
+                    "id": _id,
+                    "titulo": "Pressao competitiva — concorrentes diretas subindo",
+                    "descricao": (
+                        f"REGRA ETICA (peer != escola individual): a trajetoria abaixo "
+                        f"e do GRUPO DE PARES. Formule obrigatoriamente como 'suas "
+                        f"concorrentes diretas em {mun} ({dep_peer}) vem subindo "
+                        f"{delta_abs:.1f} pts em 2 anos (2022-2024)'. NUNCA atribua "
+                        f"este movimento a escola individual. O pitch e: 'o mercado "
+                        f"no seu municipio esta se movendo — como voce planeja "
+                        f"acompanhar?'. Tom estrategico."
+                    ),
+                    "dados_destaque": [
+                        f"Peer group em {mun}: {peer_traj} ({delta_abs:.1f} pts 22-24)"
+                    ],
+                    "tom_sugerido": "estrategico",
+                    "foco": "apresentacao",
+                    "baseado_em_analytics": True,
+                    "aviso_etico": "Peer e do GRUPO, nunca da escola individual.",
+                })
+
+            # ANGULO 10: contexto socioeconomico do municipio em evolucao
+            delta_renda = sa_row.get("socio_delta_renda_2020_2024")
+            if delta_renda is not None and float(delta_renda) > 0.3:
+                _id += 1
+                angulos.append({
+                    "id": _id,
+                    "titulo": "Janela de oportunidade — perfil do municipio evoluindo",
+                    "descricao": (
+                        f"REGRA ETICA (socio = municipio, NAO aluno): o municipio "
+                        f"{mun} vem tendo aumento no indice de renda medio "
+                        f"(+{float(delta_renda):.2f} em 4 anos). Formule como "
+                        f"'o perfil do municipio esta evoluindo' — NUNCA 'os alunos "
+                        f"dessa escola sao de classe X'. Pitch: 'este e um momento "
+                        f"de janela para se posicionar em qualidade pedagogica como "
+                        f"diferencial percebido pelas familias'. Tom estrategico."
+                    ),
+                    "dados_destaque": [
+                        f"Delta renda municipal 2020-2024: +{float(delta_renda):.2f}"
+                    ],
+                    "tom_sugerido": "estrategico",
+                    "foco": "apresentacao",
+                    "baseado_em_analytics": True,
+                    "aviso_etico": "Socio e perfil do MUNICIPIO, nao dos alunos.",
+                })
+    except Exception as _e:
+        logger.debug(f"angulos ENEM skipped: {_e}")
 
     # Resumo contextual
     resumo = {
@@ -3676,14 +3761,16 @@ def _handle_aprovar_mensagem(params: Dict) -> str:
 
 
 def _handle_consultar_interacoes(params: Dict) -> str:
-    company_id = params.get("escola_id")
-
-    if not company_id and params.get("escola_nome"):
-        r = db.client.table("companies").select("id,name").ilike("name", f"%{params['escola_nome']}%").limit(1).execute()
-        if r.data:
-            company_id = r.data[0]["id"]
-        else:
-            return json.dumps({"erro": f"Escola '{params['escola_nome']}' nao encontrada."})
+    # Resolucao STRICT: historico da escola errada contamina a analise
+    # do LLM sobre o lead (ele pode inferir engajamento errado)
+    company_id: Optional[str] = None
+    if params.get("escola_id") or params.get("inep") or params.get("escola_nome"):
+        company, err = _resolve_company_strict(params, select="id,name")
+        if err:
+            return err
+        if company:
+            company_id = company["id"]
+    # Permite consulta global tambem (quando nenhum parametro e' passado)
 
     query = db.client.table("interactions").select("*")
     if company_id:
@@ -3897,19 +3984,13 @@ def _handle_diagnostico_sistema(params: Dict) -> str:
 
 
 def _handle_detalhes_escola(params: Dict) -> str:
-    escola = None
-
-    if params.get("inep"):
-        r = db.client.table("companies").select("*").eq("inep_code", params["inep"]).limit(1).execute()
-        if r.data:
-            escola = r.data[0]
-    elif params.get("escola_nome"):
-        r = db.client.table("companies").select("*").ilike("name", f"%{params['escola_nome']}%").limit(1).execute()
-        if r.data:
-            escola = r.data[0]
-
+    # Resolucao STRICT: detalhes da escola errada sao apresentados como
+    # "oficiais" e o LLM pode basear decisoes neles. Bloquear ambiguidade.
+    escola, err = _resolve_company_strict(params, select="*")
+    if err:
+        return err
     if not escola:
-        return json.dumps({"erro": "Escola nao encontrada."})
+        return json.dumps({"erro": "Informe inep, escola_id ou escola_nome."})
 
     # Buscar contatos
     contatos = db.client.table("contacts").select("full_name,role,email,phone,linkedin_url,source,confidence_score,decision_maker_type").eq("company_id", escola["id"]).execute()
@@ -3964,6 +4045,40 @@ def _handle_detalhes_escola(params: Dict) -> str:
         if v is not None and v != "":
             censo[key] = v
 
+    # Analytics ENEM (vintage 2024) — OPCIONAL, falha silenciosa (regra R2 do plano)
+    analytics_block: Optional[Dict[str, Any]] = None
+    try:
+        if escola.get("inep_code"):
+            from agent.tools.enem_tools import (
+                _fetch_school_analytics_by_inep,
+                _formatar_performance_individual,
+                _formatar_trajetoria_peer,
+                _formatar_contexto_municipal,
+                _formatar_area_fraca,
+                _classificar_prioridade,
+                _aviso_p3,
+            )
+            sa_row = _fetch_school_analytics_by_inep(str(escola["inep_code"]))
+            if sa_row:
+                # Merge company fields needed by formatters
+                for k in ("city", "state", "admin_dependency"):
+                    if escola.get(k) is not None and k not in sa_row:
+                        sa_row[k] = escola[k]
+                prio = _classificar_prioridade(sa_row)
+                analytics_block = {
+                    "amostra_confiavel": sa_row.get("enem_amostra_confiavel") is True,
+                    "potencial_melhoria": sa_row.get("enem_potencial_melhoria"),
+                    "prioridade_sugerida": prio,
+                    "performance_individual": _formatar_performance_individual(sa_row),
+                    "area_fraca": _formatar_area_fraca(sa_row),
+                    "peer_group": _formatar_trajetoria_peer(sa_row),
+                    "contexto_municipal": _formatar_contexto_municipal(sa_row),
+                    "aviso_fernando": _aviso_p3(prio),
+                }
+    except Exception as _e:
+        logger.debug(f"analytics block skipped: {_e}")
+        analytics_block = None
+
     return json.dumps({
         "escola": {
             "id": escola["id"],
@@ -3988,6 +4103,7 @@ def _handle_detalhes_escola(params: Dict) -> str:
             "hubspot_id": escola.get("hubspot_company_id"),
             "fonte_dados": escola.get("fonte_dados"),  # censo_2025 | catalogo_inep | manual
             "censo_mec_2025": censo,  # Dados ricos (so se fonte_dados=censo_2025)
+            "analytics_enem": analytics_block,  # None se sem dados ENEM ou falha
             "proxima_acao_sugerida": proxima_acao,  # Regra deterministica
             "memorias_relevantes": memorias_list,  # Top 5 memorias da escola
         },
@@ -4154,15 +4270,14 @@ def _calcular_proxima_acao(escola: Dict, contatos: List[Dict], fila: List[Dict])
 
 def _handle_gerar_email(params: Dict) -> str:
     escola_nome = params.get("escola_nome", "")
-    if not escola_nome:
-        return json.dumps({"erro": "Informe o nome da escola."})
-
-    # Buscar dados da escola
-    r = db.client.table("companies").select("*").ilike("name", f"%{escola_nome}%").limit(1).execute()
-    if not r.data:
-        return json.dumps({"erro": f"Escola '{escola_nome}' nao encontrada."})
-
-    escola = r.data[0]
+    # Resolucao STRICT: email gerado pra escola errada pode virar email
+    # enviado (via fluxo de aprovacao) — risco maximo de confusao de dados
+    company, err = _resolve_company_strict(params, select="*")
+    if err:
+        return err
+    if not company:
+        return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
+    escola = company
     contato_nome = params.get("contato_nome", "")
     contato_cargo = params.get("contato_cargo", "")
     contato_email = params.get("contato_email", "")
@@ -4684,17 +4799,14 @@ def _handle_rejeitar_mensagem(params: Dict) -> str:
 
 
 def _handle_atualizar_escola(params: Dict) -> str:
-    escola_id = params.get("escola_id")
-
-    if not escola_id and params.get("escola_nome"):
-        r = db.client.table("companies").select("id,name").ilike("name", f"%{params['escola_nome']}%").limit(1).execute()
-        if r.data:
-            escola_id = r.data[0]["id"]
-        else:
-            return json.dumps({"erro": f"Escola '{params['escola_nome']}' nao encontrada."})
-
-    if not escola_id:
-        return json.dumps({"erro": "Informe o nome ou ID da escola."})
+    # Resolucao STRICT: ambiguidade de nome bloqueia atualizacao
+    # (escrita em escola errada e irreversivel)
+    company, err = _resolve_company_strict(params, select="id,name")
+    if err:
+        return err
+    if not company:
+        return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
+    escola_id = company["id"]
 
     updates = {}
     for field in ["status", "phone", "website"]:
@@ -4834,22 +4946,15 @@ def _handle_enriquecer_contatos(params: Dict) -> str:
     escola_id = params.get("escola_id")
     escola_nome = params.get("escola_nome")
 
-    # Buscar escola
-    if not escola_id and escola_nome:
-        r = db.client.table("companies").select("*").ilike("name", f"%{escola_nome}%").limit(1).execute()
-        if r.data:
-            escola = r.data[0]
-            escola_id = escola["id"]
-        else:
-            return json.dumps({"erro": f"Escola '{escola_nome}' nao encontrada."})
-    elif escola_id:
-        r = db.client.table("companies").select("*").eq("id", escola_id).limit(1).execute()
-        if r.data:
-            escola = r.data[0]
-        else:
-            return json.dumps({"erro": "Escola nao encontrada com este ID."})
-    else:
-        return json.dumps({"erro": "Informe o nome ou ID da escola."})
+    # Resolucao STRICT: enriquecer contatos da escola errada consome
+    # creditos de API Apollo/Hunter/Snov (ate $$$) e gera dados em
+    # escola indevida
+    escola, err = _resolve_company_strict(params, select="*")
+    if err:
+        return err
+    if not escola:
+        return json.dumps({"erro": "Informe escola_nome, inep ou escola_id."})
+    escola_id = escola["id"]
 
     fonte = params.get("fonte")
 
@@ -4971,20 +5076,150 @@ def _handle_sincronizar_hubspot_puxar(params: Dict) -> str:
         return json.dumps({"erro": f"Erro no pull HubSpot: {str(e)[:200]}"})
 
 
+import re as _re_for_resolvers
+_UUID_RE = _re_for_resolvers.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+
 def _resolve_escola_id(params: Dict) -> Optional[str]:
-    """Helper: resolve escola_id a partir de escola_id ou escola_nome."""
-    eid = params.get("escola_id")
+    """Helper (legacy, nao-strict): resolve UUID a partir de id, inep ou nome.
+
+    Para handlers novos, preferir _resolve_company_strict que detecta
+    ambiguidade em vez de escolher silenciosamente o primeiro match.
+    """
+    eid = params.get("escola_id") or params.get("inep")
     if eid:
-        return eid
+        eid_s = str(eid).strip()
+        if _UUID_RE.match(eid_s.lower()):
+            return eid_s
+        if eid_s.isdigit() and len(eid_s) in (7, 8):
+            try:
+                r = db.client.table("companies").select("id").eq(
+                    "inep_code", eid_s
+                ).limit(1).execute()
+                if r.data:
+                    return r.data[0]["id"]
+            except Exception:
+                pass
+            return None
+
     nome = params.get("escola_nome")
     if nome:
         try:
-            r = db.client.table("companies").select("id").ilike("name", f"%{nome}%").limit(1).execute()
+            r = db.client.table("companies").select("id").ilike(
+                "name", f"%{nome}%"
+            ).limit(1).execute()
             if r.data:
                 return r.data[0]["id"]
         except Exception:
             pass
     return None
+
+
+def _resolve_company_strict(
+    params: Dict, select: str = "*"
+) -> "tuple[Optional[Dict[str, Any]], Optional[str]]":
+    """Helper STRICT: resolve company com deteccao de ambiguidade.
+
+    Aceita params com:
+      - escola_id (UUID ou INEP — detectado automaticamente)
+      - inep (alias de escola_id quando numerico)
+      - escola_nome (fuzzy, retorna erro de ambiguidade se >1 match)
+
+    Retorna:
+      - (company_dict, None) quando achou exatamente 1 match
+      - (None, None) quando NAO foi passado nenhum parametro de identificacao
+        (caller deve tratar como "faltando parametros")
+      - (None, json_str) quando:
+          * nenhum match (erro: "escola nao encontrada")
+          * multiplos matches com nome ambiguo (erro: "ambiguidade" com lista)
+          * erro de banco (erro: "falha ao consultar")
+
+    Uso tipico no handler:
+        company, err = _resolve_company_strict(params)
+        if err:
+            return err
+        if not company:
+            return json.dumps({"erro": "Informe escola_id, inep ou escola_nome"})
+        company_id = company["id"]
+        # ... resto do handler
+    """
+    # === Via ID ou INEP ===
+    eid = params.get("escola_id") or params.get("inep")
+    if eid:
+        eid_s = str(eid).strip()
+        try:
+            if _UUID_RE.match(eid_s.lower()):
+                r = db.client.table("companies").select(select).eq(
+                    "id", eid_s
+                ).limit(1).execute()
+            elif eid_s.isdigit() and len(eid_s) in (7, 8):
+                r = db.client.table("companies").select(select).eq(
+                    "inep_code", eid_s
+                ).limit(1).execute()
+            else:
+                # String que nao parece UUID nem INEP — tratar como nome
+                r = None
+        except Exception as e:
+            return (None, json.dumps({
+                "erro": f"Falha ao consultar companies por id/inep: {str(e)[:200]}"
+            }, ensure_ascii=False))
+
+        if r is not None:
+            if r.data:
+                return (r.data[0], None)
+            return (None, json.dumps({
+                "erro": f"Escola nao encontrada por id/inep '{eid_s}'."
+            }, ensure_ascii=False))
+
+    # === Via nome (com disambiguation) ===
+    nome = params.get("escola_nome") or params.get("nome")
+    if nome:
+        try:
+            r = db.client.table("companies").select(select).ilike(
+                "name", f"%{nome}%"
+            ).limit(10).execute()
+            matches = r.data or []
+        except Exception as e:
+            return (None, json.dumps({
+                "erro": f"Falha ao buscar escola por nome: {str(e)[:200]}"
+            }, ensure_ascii=False))
+
+        if len(matches) == 0:
+            return (None, json.dumps({
+                "erro": f"Nenhuma escola encontrada com '{nome}' no nome.",
+            }, ensure_ascii=False))
+
+        if len(matches) > 1:
+            return (None, json.dumps({
+                "ambiguidade": True,
+                "query_original": nome,
+                "n_matches": len(matches),
+                "escolas_encontradas": [
+                    {
+                        "inep": m.get("inep_code"),
+                        "nome": m.get("name"),
+                        "cidade": m.get("city"),
+                        "bairro": m.get("bairro"),
+                        "uf": m.get("state"),
+                        "dependencia": m.get("admin_dependency"),
+                    }
+                    for m in matches
+                ],
+                "orientacao": (
+                    f"Encontrei {len(matches)} escolas no CRM com '{nome}' no nome. "
+                    "NAO escolha silenciosamente — apresente a lista ao Fernando "
+                    "(incluindo cidade e bairro para diferenciar) e pergunte qual "
+                    "ele quer. Quando ele responder, chame esta tool de novo passando "
+                    "o parametro `inep` ou `escola_id` especifico."
+                ),
+            }, ensure_ascii=False))
+
+        return (matches[0], None)
+
+    # Nenhum parametro passado
+    return (None, None)
 
 
 def _handle_lembrar_fato(params: Dict) -> str:
@@ -5185,22 +5420,15 @@ def _handle_enviar_whatsapp_escola(params: Dict) -> str:
     CRITICO: usa contacts.phone_whatsapp (celular real), nao companies.phone
     (que geralmente eh fixo de 8 digitos e nao funciona no WhatsApp).
     """
-    company_id = params.get("escola_id")
-    escola_nome = None
-
-    if not company_id and params.get("escola_nome"):
-        r = db.client.table("companies").select("id,name").ilike("name", f"%{params['escola_nome']}%").limit(1).execute()
-        if r.data:
-            company_id = r.data[0]["id"]
-            escola_nome = r.data[0].get("name")
-        else:
-            return json.dumps({"erro": f"Escola '{params['escola_nome']}' nao encontrada."})
-    elif company_id:
-        empresa = db.client.table("companies").select("name").eq("id", company_id).single().execute()
-        escola_nome = empresa.data.get("name") if empresa.data else None
-
-    if not company_id:
-        return json.dumps({"erro": "Informe escola_id ou escola_nome."})
+    # Resolucao STRICT: mensagem WhatsApp pra escola errada vai pra fila
+    # de aprovacao e pode ser enviada ao contato errado. Bloquear ambiguidade.
+    company, err = _resolve_company_strict(params, select="id,name")
+    if err:
+        return err
+    if not company:
+        return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
+    company_id = company["id"]
+    escola_nome = company.get("name")
 
     # Buscar phone_whatsapp dos contatos da escola
     cts = db.client.table("contacts").select(
@@ -5887,6 +6115,15 @@ TOOL_HANDLERS = {
     "diagnostico_sistema": _handle_diagnostico_sistema,
 }
 
+# =====================================================================
+# EXTENSAO: ENEM analytics tools (regra R1 do plano — fallback seguro)
+# =====================================================================
+# ENEM_TOOLS e ENEM_TOOL_HANDLERS sao carregados no topo do arquivo com
+# try/except. Se o modulo agent/tools/enem_tools.py falhar, ENEM_TOOLS = []
+# e ENEM_TOOL_HANDLERS = {} — o IAlex continua com as tools originais.
+TOOLS = TOOLS + ENEM_TOOLS
+TOOL_HANDLERS.update(ENEM_TOOL_HANDLERS)
+
 
 # ===========================================================================
 # SYSTEM PROMPT
@@ -5936,12 +6173,247 @@ que tem (endereco, telefone, etapas, porte). Exemplos:
 **Se fonte_dados = 'manual' ou None**: cadastro antigo/manual — use o que tem
 no banco.
 
+== DADOS ANALITICOS ENEM (vintage 2024) ==
+
+Voce tem acesso a uma camada analitica com ~185k escolas do Brasil, que
+inclui performance ENEM 2024, trajetoria do peer group 2020-2024 e
+contexto socioeconomico municipal. Esses dados permitem conversas muito
+mais concretas com escolas — mas so se voce mantiver clareza sobre *o que
+cada numero representa*. E dessa clareza que sai a diferenca entre uma
+analise util e uma afirmacao infundada. Esta secao te ensina como manter
+essa clareza de forma natural, sem precisar lembrar de listas de proibicoes.
+
+Antes do detalhe: o sistema ja executa algumas salvaguardas por codigo
+(filtra campos sensiveis antes de te entregar o payload, remove metricas
+individuais quando a amostra nao e confiavel, adiciona disclaimers nos
+retornos das tools). Isso significa que voce NAO precisa policiar o que
+chegou — confie no que esta no payload e foque no que so voce pode fazer:
+escolher como formular a analise para uma pessoa real do outro lado.
+
+=== AS 5 ENTIDADES DISTINTAS ===
+
+Todo dado analitico se refere a uma dessas cinco entidades. Distingui-las
+e o nucleo de tudo: quando voce confunde entidade, voce cria afirmacao
+incorreta — nao por mentir, por falta de precisao epistemologica.
+
+A. **A escola individual** — campos `enem_*` (ENEM) + campos do Censo
+   Escolar (matriculas, equipe, tech, infra). Duas camadas distintas:
+
+   A.1 **Desempenho ENEM** (campos `enem_*`)
+       Representa o que aconteceu com os alunos da escola no ENEM.
+       Snapshot atual: ENEM 2024 (ENEM individual historico 2020-2023
+       NAO existe — os microdados publicos foram anonimizados pelo
+       INEP). So tem significado estatistico quando a amostra e
+       suficiente (o payload sinaliza via `amostra_confiavel`).
+
+   A.2 **Estrutura e evolucao — Censo Escolar** (serie 2020-2025)
+       Matriculas por etapa, equipe docente, tecnologia, infraestrutura.
+       *Esta serie tem 6 anos de historico por escola* e permite leituras
+       de crescimento/queda individualizadas. Diferente do ENEM, o Censo
+       nao tem gate de amostra — sao dados administrativos declarados
+       pela escola ao INEP. Use *analisar_trajetoria_escola* para acessar
+       essa serie. Lembre: trajetoria de matriculas e decisao de familias
+       votando com os pes — e um dos sinais mais fortes de saude
+       institucional disponivel.
+
+B. **O grupo de pares (peer group)** — campos `peer_*`
+   Representa um conjunto de outras escolas: mesmo municipio, mesma
+   dependencia administrativa. Os numeros sao do grupo, nao de nenhuma
+   escola individual pertencente a ele. E o retrato do mercado competitivo
+   imediato, nao da escola que esta no centro da conversa. Uma escola pode
+   ser muito diferente da media do seu peer group em qualquer direcao.
+
+C. **O municipio** — campos `socio_*`
+   Representa caracteristicas socioeconomicas do municipio onde a escola
+   esta localizada, derivadas da populacao em geral. Refere-se a
+   moradores da cidade, nao a alunos desta escola em particular. Um
+   municipio com renda media alta pode ter escolas de todos os perfis.
+
+D. **Os inscritos no ENEM da escola** — campos `pnt_*` (parcial)
+   Representa o perfil agregado e anonimo dos alunos que fizeram ENEM
+   tendo esta escola como origem. Parte dessa familia de campos e
+   acessivel (renda media, escolaridade dos pais, trajetoria escolar
+   agregada). Parte e sensivel e foi removida automaticamente pelo
+   sistema antes de chegar em voce — voce nunca vai ve-la. Isso e
+   intencional: se voce sentir falta de algum desses campos, e porque
+   a decisao de nao expo-los e comercial-etica, nao tecnica. Nao tente
+   inferir o que nao foi entregue.
+
+E. **A rede ou mantenedora** — campo `cnpj_mantenedora`
+   Agrupa unidades sob o mesmo grupo gestor. Relevante quando a decisao
+   de compra e institucional e nao da unidade.
+
+=== PROTOCOLO DE CITACAO (chain-of-thought mandatorio) ===
+
+Antes de citar QUALQUER numero, ranking, tendencia ou caracteristica na
+sua resposta — email, analise ou conversa — pare e responda mentalmente,
+na ordem, estas quatro perguntas:
+
+1. **ORIGEM.** Este dado chegou no payload da tool que eu acabei de
+   chamar? Se nao chegou, nao existe para voce neste momento. Nao
+   complete pelo raciocinio geral, nao arredonde de um campo parecido,
+   nao estime. Dado ausente do payload = dado inacessivel.
+
+2. **ENTIDADE.** A qual das cinco entidades (A-E acima) esse dado
+   pertence? A resposta muda completamente como a frase pode ser
+   formulada. O mesmo numero, falando da entidade errada, vira
+   afirmacao falsa.
+
+3. **CONFIANCA.** Se for da entidade A (escola individual), a amostra
+   e confiavel? O payload te entrega o campo `amostra_confiavel` — leia
+   ele antes de escrever. Sem amostra confiavel, o dado individual nao
+   tem valor como afirmacao; no maximo serve para orientar internamente
+   que voce precisa se apoiar em outra entidade (peer ou municipio).
+
+4. **ESCOPO TEMPORAL.** Este dado e de um ano especifico ou de uma serie?
+   Se e tendencia, qual e o intervalo? Tendencias recentes (ultimos 2
+   anos) sao mais confiaveis que longas (ultimos 5), que frequentemente
+   incluem distorcao de pandemia. Ao citar, deixe o intervalo explicito
+   para que o leitor possa calibrar.
+
+Se voce nao conseguiu responder com seguranca a QUALQUER uma das quatro,
+nao cite o numero. Prefira "nao tenho esse dado com a confianca necessaria"
+e ofereca o que tem. Honestidade epistemologica nunca prejudicou uma venda;
+afirmacao errada prejudicou muitas.
+
+=== PRINCIPIOS DE PRUDENCIA ===
+
+Quando estiver em duvida sobre o que falar, siga estes principios. Eles
+sao universais e cobrem infinitamente mais casos do que qualquer lista
+de exemplos conseguiria.
+
+- **Precisao vem antes de persuasao.** Um email com um numero errado e
+  pior que um email sem numero. Um diretor pode ler seu email e
+  reconhecer imediatamente que voce esta falando de outra escola, ou
+  de uma estatistica que nao cabe a dele. Isso queima o lead para
+  sempre. Omitir o que nao se sabe e gratuito; afirmar o que nao se
+  sabe custa caro.
+
+- **Escopo restrito e mais defensavel que escopo amplo.** "As privadas
+  de Porto Alegre subiram X pts entre 2022 e 2024" e mais preciso e
+  mais verificavel do que "o ensino privado vem subindo". Quanto mais
+  especifico o recorte geografico e temporal, mais o leitor consegue
+  calibrar e mais a afirmacao soa pensada.
+
+- **Declare a incerteza quando ela existir.** Dizer "os dados sugerem X
+  mas a amostra desta escola e pequena, entao eu olharia mais para o
+  peer group" comunica mais inteligencia do que esconder a fragilidade
+  e afirmar X com falsa confianca. Gestores escolares sao criteriosos —
+  eles valorizam transparencia, nao marketing.
+
+- **Lembre do leitor final de cada email.** Do outro lado tem uma
+  pessoa real em uma escola real, que conhece a propria escola melhor
+  do que voce jamais vai conhecer. Se a sua afirmacao sobre a escola
+  dela for algo que ela possa contestar com razao, voce perdeu o lead.
+  Se a sua afirmacao for sobre o *mercado* onde ela opera, ela pode
+  verificar e confirmar — e isso constroi credibilidade. Prefira
+  sempre falar do contexto competitivo verificavel a falar da escola
+  individual em termos que soem como diagnostico nao solicitado.
+
+Esses quatro principios substituem qualquer lista de "nao diga X". Se
+voce internaliza eles, voce naturalmente evita os erros — em casos que
+nem imaginamos ao escrever estas instrucoes.
+
+=== CAPABILITIES: quando e como usar cada tool ENEM ===
+
+Voce tem cinco tools analiticas. Aqui e sobre o que cada uma faz, nao
+sobre etica (a etica esta nas secoes acima e vale para todas as tools).
+
+- **analisar_performance_escola** (inep | escola_nome | escola_id)
+  Snapshot completo de UMA escola no ano mais recente (hoje 2024):
+  performance individual (se amostra confiavel), area mais fraca,
+  trajetoria do peer group, contexto municipal, prioridade sugerida.
+  Use ANTES de gerar email para escolas com Ensino Medio. Se Fernando
+  pedir EVOLUCAO/HISTORICO, use *analisar_trajetoria_escola* em vez
+  desta.
+
+- **analisar_trajetoria_escola** (inep | escola_nome | escola_id)
+  Serie historica INDIVIDUAL de UMA escola. Retorna a evolucao ano a
+  ano de matriculas (por etapa), equipe docente, tecnologia e
+  infraestrutura a partir do Censo Escolar 2020-2025. Tambem retorna
+  a serie ENEM da escola (hoje so 2024, cresce a cada ENEM novo).
+
+  **METRICAS DERIVADAS** (calculadas em Python, citaveis com confianca):
+  Cada ano da serie censo inclui campos derivados prefixados com _:
+  - `_alunos_por_docente`: razao matriculas/docentes geral
+  - `_alunos_por_docente_fund`: razao so no fundamental
+  - `_alunos_por_docente_med`: razao so no medio
+  - `_pct_mat_medio`: % de matriculas que sao do Ensino Medio
+  - `_pct_mat_fund_af`: % que sao do Fundamental Anos Finais
+  - `_tech_score`: score tecnologico 0-10 (internet, lab, devices)
+  - `_infra_score`: score de infraestrutura 0-4 (biblioteca, quadra, lab, alimentacao)
+
+  **TRENDS** para TODAS as metricas (absolutas E derivadas): delta total
+  (primeiro ano vs ultimo) e delta recente (ultimos 2 pontos).
+
+  **INSIGHTS DETECTADOS**: o campo `insights_detectados` traz uma lista
+  de correlacoes pre-identificadas pelo servidor (ex: "relacao
+  aluno/professor melhorou enquanto matriculas cresceram"). Cite com
+  confianca — vieram do payload. Se a lista estiver vazia, narre
+  somente os dados sem insight extra.
+
+  **EMPODERAMENTO**: voce pode e DEVE raciocinar sobre os dados do
+  payload — cruzar metricas, identificar padroes, narrar evolucoes,
+  responder perguntas derivadas ("relacao professor/aluno", "evolucao
+  tecnologica", "escola ta crescendo ou encolhendo?"). A regra "dado
+  ausente = dado inacessivel" continua para dados FORA do payload.
+  Dados DENTRO do payload sao TODOS citaveis, incluindo os derivados.
+  NAO atribua causalidade sem evidencia (diga "enquanto" ou "ao mesmo
+  tempo que", nunca "porque" ou "causou").
+
+  Use quando Fernando perguntar sobre EVOLUCAO, HISTORICO,
+  TENDENCIA, TRAJETORIA, CRESCIMENTO, QUEDA, RELACAO PROFESSOR/ALUNO,
+  TECNOLOGIA, INFRAESTRUTURA de UMA escola. Para agregacoes entre
+  escolas, use *analisar_dados_analytics*.
+
+- **priorizar_leads_enem** (municipio?, uf?, dependencia?, prioridade?)
+  Ranking de leads por temperatura comercial, baseado nos dados ENEM.
+  Retorna tres tipos de classificacao:
+  * P1 — lead quente ofensivo (a escola tem espaco para melhorar E o
+    mercado em volta esta aquecido). Foque a conversa em ganho.
+  * P2 — oportunidade de reposicionamento (escola privada com gap
+    negativo enquanto o mercado sobe). Foque em fechar o gap.
+  * P3 — urgencia defensiva (escola privada com mercado em queda
+    acentuada recente). A tool entrega um campo `aviso_fernando`
+    explicando que o tom deve ser sobre movimento do mercado, nunca
+    sobre a escola em queda. Mostre esse aviso ao Fernando antes de
+    gerar qualquer email para um P3.
+  Use quando Fernando perguntar "onde prospectar", "leads quentes",
+  "top oportunidades ENEM".
+
+- **buscar_escolas_por_enem** (area_fraca?, potencial?, trajetoria?,
+  gap_max?, etc)
+  Busca filtrada pelos campos analiticos. Use para investigacoes
+  direcionadas sobre criterios especificos.
+
+- **analisar_dados_analytics** — query builder flexivel
+  Para perguntas abertas que nao cabem nas tres acima. Operacoes:
+  valor_unico, ranking, comparacao, serie_temporal, distribuicao.
+  O parametro `modo_redacao` controla como a redacao entra no calculo:
+  "com" (media oficial das 5 provas, inclui redacao), "sem" (media das
+  4 areas do conhecimento, isola cognicao do peso da escrita) ou
+  "ambos" (mostra lado a lado). Em series temporais, prefira o
+  intervalo 2022-2024 ao 2020-2024 sempre que puder — o de 5 anos
+  carrega distorcao da pandemia.
+
+Se voce pedir um campo que nao existe ou que e sensivel, a tool retorna
+um erro amigavel listando o que esta disponivel. Leia o erro e ajuste.
+Nao tente contornar campo bloqueado — o bloqueio e uma decisao
+comercial-etica ja tomada, e voce nao precisa conhecer os detalhes para
+respeita-la.
+
+Os payloads das tools frequentemente entregam disclaimers prontos
+(`disclaimer_socio`, `disclaimer_pnt`, `aviso_fernando` em leads P3).
+Quando voltarem, use-os — eles foram desenhados exatamente para as
+situacoes em que voce precisa comunicar uma limitacao ou um cuidado
+contextual sem ter que formula-los do zero.
+
 == SEU PAPEL ==
 1. *ESPECIALISTA EM ESCOLAS*: Encontrar qualquer escola do Brasil por nome, cidade, estado, porte, tipo, niveis de ensino, proximidade ou qualquer combinacao
 2. *COMPANHEIRO DE CAMPO*: Quando Fernando esta na rua visitando escolas, ajuda-lo a encontrar escolas perto, dar informacoes rapidas, registrar visitas
 3. *AGENTE DE VENDAS*: Qualificar leads, enriquecer contatos, gerar emails, acompanhar pipeline, sugerir acoes comerciais
 
-== ESCOLHA DE FERRAMENTAS (57 disponiveis) ==
+== ESCOLHA DE FERRAMENTAS (73 disponiveis) ==
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
@@ -6676,33 +7148,58 @@ Quando Fernando pedir menu, ajuda, ou disser "o que voce faz", mostre TODAS as c
 
 🔍 *Buscar escolas:*
 • Buscar no banco (CRM)
-• Buscar no MEC (212k escolas)
+• Buscar no MEC (212k escolas Brasil)
 • Buscar por proximidade/raio
 • Descobrir escolas novas (Discovery)
 • Buscar sinais (rankings/premios)
+• Importar escola do MEC para o CRM
+
+📈 *Inteligencia ENEM e Censo:*
+• Performance ENEM 2024 de uma escola (media, ranking, peer, area fraca)
+• Ranking P1/P2/P3 de leads por temperatura ENEM
+• Buscar escolas por criterios ENEM (area fraca, potencial, trajetoria)
+• Consulta livre de dados analytics (comparacao, ranking, distribuicao)
+• Trajetoria historica 2020-2025 (matriculas, docentes, ratio aluno/prof, tech, infra)
 
 📊 *Pipeline e prospeccao:*
 • Iniciar prospeccao guiada (escola a escola, com contatos)
 • Rodar pipeline (qualificar/enriquecer/contatos/emails)
+• Operacao em lote (importar/qualificar/gerar emails em batch)
 • Ver estatisticas gerais
 • Funil de vendas
 • Score preditivo ML (top oportunidades)
 • Detectar sinais de compra
+• Melhor horario para enviar
 
 ✉️ *Emails e comunicacao:*
+• Sugerir angulos para email (antes de gerar)
+• Gerar email personalizado
 • Ver fila de aprovacao
 • Ver email completo
 • Aprovar / Rejeitar email
 • Reescrever email (dar instrucoes)
 • Editar e aprovar (colar texto)
 • Gerar follow-ups comportamentais
+• Tracking de emails (aberturas, cliques, respostas)
 • Enviar WhatsApp para escola
+
+📋 *Campanhas e templates:*
+• Criar/listar campanhas
+• Criar/listar templates de email
 
 👥 *Contatos e escolas:*
 • Buscar contatos de escola
-• Importar escola do MEC
+• Enriquecer contatos (Apollo, Hunter, Snov, Perplexity)
+• Buscar WhatsApp de escolas
 • Detalhes de escola
 • Registrar reuniao/visita
+• Registrar proposta enviada
+• Marcar cliente ganho ou perdido
+• Ver agenda (reunioes futuras)
+
+🔄 *Integracoes:*
+• Sincronizar CRM com HubSpot (enviar)
+• Puxar atualizacoes do HubSpot
 
 🤖 *Automacoes:*
 • Ver modo de autonomia
@@ -6714,6 +7211,7 @@ Quando Fernando pedir menu, ajuda, ou disser "o que voce faz", mostre TODAS as c
 💡 *Memoria e aprendizado:*
 • Lembrar fato sobre escola/contato
 • Buscar memorias
+• Esquecer memoria
 • Info do modelo preditivo
 • Info do RAG de emails
 

@@ -152,43 +152,46 @@ try:
 
     row1 = st.columns(4)
     with row1[0]:
-        if action_tile("rocket_launch", "Pipeline", "Execucao + pipeline comercial",
-                       color=COLORS["primary"], key="tile_pipeline"):
-            st.switch_page("pages/3_📊_Pipeline.py")
-    with row1[1]:
-        sub_apr = f"{pending} pendente(s)" if pending > 0 else "Tudo aprovado"
-        color_apr = COLORS["warning"] if pending > 0 else COLORS["success"]
-        if action_tile("task_alt", "Aprovacao", sub_apr, color=color_apr,
-                       key="tile_aprovacao", highlight=pending > 0):
-            st.switch_page("pages/8_✉️_Aprovacao.py")
-    with row1[2]:
-        sub_fup = f"{due_count} devido(s)" if due_count > 0 else "Nenhum devido"
-        color_fup = COLORS["accent"] if due_count > 0 else COLORS["primary"]
-        if action_tile("autorenew", "Follow-ups", sub_fup, color=color_fup,
-                       key="tile_followups", highlight=due_count > 0):
-            st.switch_page("pages/9_🔄_Follow-ups.py")
-    with row1[3]:
         if action_tile("school", "Escolas", f"{total} cadastradas",
                        color=COLORS["primary"], key="tile_escolas"):
-            st.switch_page("pages/5_🏫_Escolas.py")
+            st.switch_page("pages/1_🏫_Escolas.py")
+    with row1[1]:
+        if action_tile("contacts", "Contatos", "Gerenciar decisores",
+                       color=COLORS["success"], key="tile_contatos"):
+            st.switch_page("pages/2_👥_Contatos.py")
+    with row1[2]:
+        if action_tile("rocket_launch", "Pipeline", "Execucao + pipeline comercial",
+                       color=COLORS["primary"], key="tile_pipeline"):
+            st.switch_page("pages/5_📊_Pipeline.py")
+    with row1[3]:
+        # Tile Comunicacao — consolida aprovacao + follow-ups + emails
+        comm_parts = []
+        if pending > 0:
+            comm_parts.append(f"{pending} pendente(s)")
+        if due_count > 0:
+            comm_parts.append(f"{due_count} follow-up(s)")
+        sub_comm = " · ".join(comm_parts) if comm_parts else f"{sent} enviados"
+        color_comm = COLORS["warning"] if pending > 0 else (COLORS["accent"] if due_count > 0 else COLORS["info"])
+        if action_tile("mail", "Comunicacao", sub_comm, color=color_comm,
+                       key="tile_comunicacao", highlight=pending > 0 or due_count > 0):
+            st.switch_page("pages/6_✉️_Comunicacao.py")
 
     row2 = st.columns(4)
     with row2[0]:
-        sub_emails = f"{sent} enviados · {opened} abertos" if sent else "Nenhum enviado"
-        if action_tile("mark_email_read", "Emails", sub_emails, color=COLORS["info"],
-                       key="tile_emails"):
-            st.switch_page("pages/8_✉️_Aprovacao.py")
+        if action_tile("insights", "Inteligencia", "ENEM + Radar + Analytics",
+                       color=COLORS["info"], key="tile_inteligencia"):
+            st.switch_page("pages/7_🎯_Inteligencia.py")
     with row2[1]:
-        if action_tile("contacts", "Contatos", "Gerenciar decisores",
-                       color=COLORS["success"], key="tile_contatos"):
-            st.switch_page("pages/7_👥_Contatos.py")
+        sub_emails = f"{sent} enviados · {opened} abertos" if sent else "Nenhum enviado"
+        if action_tile("bar_chart", "Analytics", sub_emails, color=COLORS["primary"],
+                       key="tile_analytics"):
+            st.switch_page("pages/8_📈_Analytics.py")
     with row2[2]:
         if action_tile("map", "Mapa", "Visualizacao geografica",
                        color=COLORS["primary"], key="tile_mapa"):
-            st.switch_page("pages/6_🗺️_Mapa.py")
+            st.switch_page("pages/3_🗺️_Mapa.py")
     with row2[3]:
-        # Tile Diagnostico — health check com cor dinamica (verde/amarelo/vermelho).
-        # Cache 30s pra nao impactar performance do Painel.
+        # Tile Diagnostico — health check com cor dinamica
         @st.cache_data(ttl=30, show_spinner=False)
         def _cached_health_summary() -> dict:
             try:
@@ -210,7 +213,7 @@ try:
         if action_tile("health_and_safety", "Diagnostico", health_sub,
                        color=overall_color, key="tile_diagnostico",
                        highlight=is_hot):
-            st.switch_page("pages/2_⚙️_Configuracoes.py")
+            st.switch_page("pages/9_⚙️_Configuracoes.py")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 

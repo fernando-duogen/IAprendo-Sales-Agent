@@ -1,0 +1,3212 @@
+{
+  "csv_path": "C:\\Users\\Fernando Nienaber\\LAUFEN PARTICIPACOES LTDA\\All Company - Documentos\\ativos\\duogen\\produto\\mvp\\iaprendo\\agente-de-vendas\\data\\raw\\escolas_brasil_enriquecido.csv",
+  "total_rows": 185295,
+  "sample_size": 10000,
+  "total_columns": 297,
+  "groups_count": {
+    "cadastral": 78,
+    "enem": 98,
+    "peer": 63,
+    "socio": 30,
+    "pnt": 28,
+    "unknown": 0
+  },
+  "cadastral_columns": [
+    "ACESSIBILIDADE_INEXISTENTE",
+    "ALUNOS_POR_DOCENTE",
+    "BAIRRO",
+    "BANDA_LARGA",
+    "CATEGORIA_PRIVADA",
+    "CEP",
+    "CNPJ_ESCOLA",
+    "CNPJ_MANTENEDORA",
+    "CODIGO_INEP",
+    "DEPENDENCIA",
+    "ENDERECO",
+    "FONTE_DADOS",
+    "INTERNET_ALUNOS",
+    "INTERNET_APRENDIZAGEM",
+    "LAB_INFORMATICA",
+    "LATITUDE",
+    "LOCALIZACAO",
+    "LOCALIZACAO_DIFERENCIADA",
+    "LONGITUDE",
+    "MATRICULAS_CRECHE",
+    "MATRICULAS_ED_ESPECIAL",
+    "MATRICULAS_EJA",
+    "MATRICULAS_FUNDAMENTAL",
+    "MATRICULAS_FUND_AF",
+    "MATRICULAS_FUND_AI",
+    "MATRICULAS_INFANTIL",
+    "MATRICULAS_INTEGRAL",
+    "MATRICULAS_MEDIO",
+    "MATRICULAS_PRE",
+    "MATRICULAS_PROFISSIONAL",
+    "MAT_1_ANO",
+    "MAT_2_ANO",
+    "MAT_3_ANO",
+    "MAT_4_ANO",
+    "MAT_5_ANO",
+    "MAT_6_ANO",
+    "MAT_7_ANO",
+    "MAT_8_ANO",
+    "MAT_9_ANO",
+    "MAT_MEDIO_1_ANO",
+    "MAT_MEDIO_2_ANO",
+    "MAT_MEDIO_3_ANO",
+    "MAT_MEDIO_4_ANO",
+    "MEDIACAO_EAD",
+    "MUNICIPIO",
+    "NIVEL_TECNOLOGICO",
+    "NOME_ESCOLA",
+    "OFERECE_CRECHE",
+    "OFERECE_EDUCACAO_ESPECIAL",
+    "OFERECE_EJA",
+    "OFERECE_ENSINO_MEDIO",
+    "OFERECE_FUND_ANOS_FINAIS",
+    "OFERECE_FUND_ANOS_INICIAIS",
+    "OFERECE_MEDIO_INTEGRADO",
+    "OFERECE_PRE_ESCOLA",
+    "OFERECE_PROFISSIONALIZANTE",
+    "PERC_INTEGRAL",
+    "PERFIL_ENSINO",
+    "PORTE_ESCOLA",
+    "QT_ADMINISTRATIVOS",
+    "QT_COORDENADORES",
+    "QT_DESKTOP_ALUNO",
+    "QT_NOTEBOOK_ALUNO",
+    "QT_SERVICOS_GERAIS",
+    "QT_TABLET_ALUNO",
+    "REGIAO",
+    "REGULAMENTACAO",
+    "TELEFONE",
+    "TEM_ALIMENTACAO",
+    "TEM_BIBLIOTECA",
+    "TEM_INTERNET",
+    "TEM_LAB_CIENCIAS",
+    "TEM_QUADRA_ESPORTES",
+    "TOTAL_DOCENTES",
+    "TOTAL_GESTORES",
+    "TOTAL_MATRICULAS",
+    "TOTAL_TURMAS",
+    "UF"
+  ],
+  "unknown_columns": [],
+  "scenario": "A",
+  "scenario_details": {
+    "label": "CENÁRIO A — áreas separadas disponíveis",
+    "has_per_area_scores": true,
+    "has_media_geral": true,
+    "has_competencias_redacao": true,
+    "supports_modo": [
+      "com",
+      "sem",
+      "ambos"
+    ],
+    "supports_computed_sem_redacao": true
+  },
+  "analytical_columns": [
+    {
+      "name": "enem_inscritos",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "94.0",
+        "46.0",
+        "64.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_presentes",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "50.0",
+        "37.0",
+        "51.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_presentes_cn",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "50.0",
+        "37.0",
+        "51.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_eliminados_cn",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_presentes_ch",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "53.0",
+        "38.0",
+        "50.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_eliminados_ch",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_presentes_lc",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "53.0",
+        "38.0",
+        "50.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_eliminados_lc",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_presentes_mt",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "50.0",
+        "37.0",
+        "51.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_eliminados_mt",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_media_cn",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "445.708",
+        "498.2945945945946",
+        "464.4941176470588"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_mediana_cn",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "433.7",
+        "512.9",
+        "460.8"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_std_cn",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.13,
+      "samples": [
+        "59.77483546695917",
+        "57.74728923866827",
+        "58.19502525736958"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p25_cn",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "409.9",
+        "471.6",
+        "428.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p75_cn",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "489.8",
+        "539.4",
+        "507.5"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p90_cn",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "502.8",
+        "558.3",
+        "539.1"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_max_cn",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "692.3",
+        "605.5",
+        "604.1"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_min_cn",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "350.6",
+        "376.3",
+        "352.5"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_media_ch",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "456.1792452830189",
+        "515.1342105263158",
+        "460.66"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_mediana_ch",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "462.2",
+        "521.55",
+        "457.85"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_std_ch",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.08,
+      "samples": [
+        "75.67546436667406",
+        "71.27483266189763",
+        "85.07811776508093"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p25_ch",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "412.6",
+        "474.4",
+        "392.1"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p75_ch",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "507.3",
+        "571.1",
+        "527.6"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p90_ch",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "538.8",
+        "597.8",
+        "566.7"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_max_ch",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "690.1",
+        "638.6",
+        "621.3"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_min_ch",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "297.9",
+        "350.6",
+        "315.1"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_media_lc",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "479.2283018867925",
+        "526.2052631578947",
+        "493.736"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_mediana_lc",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "480.1",
+        "524.15",
+        "496.9500000000001"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_std_lc",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.08,
+      "samples": [
+        "52.15060799615523",
+        "39.70937630012706",
+        "57.79112904173414"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p25_lc",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "440.7",
+        "499.6",
+        "453.9"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p75_lc",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "511.7",
+        "553.7",
+        "535.9"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p90_lc",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "541.8",
+        "575.6",
+        "559.5"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_max_lc",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "650.9",
+        "618.7",
+        "623.9"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_min_lc",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "364.1",
+        "425.0",
+        "363.6"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_media_mt",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "467.042",
+        "531.3621621621622",
+        "472.7803921568627"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_mediana_mt",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "458.85",
+        "492.1",
+        "451.8"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_std_mt",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.13,
+      "samples": [
+        "71.60487980748867",
+        "106.36738835896232",
+        "74.51886746216115"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p25_mt",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "412.2",
+        "443.7",
+        "432.9"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p75_mt",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "495.8",
+        "627.0",
+        "495.8"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p90_mt",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "526.9",
+        "685.9",
+        "584.8"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_max_mt",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "839.0",
+        "727.1",
+        "736.7"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_min_mt",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.96,
+      "samples": [
+        "383.2",
+        "397.7",
+        "375.8"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_media_redacao",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "544.9056603773585",
+        "692.6315789473684",
+        "650.8"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_mediana_redacao",
+      "group": "enem",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.95,
+      "samples": [
+        "600.0",
+        "730.0",
+        "660.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_std_redacao",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.08,
+      "samples": [
+        "237.1596560702177",
+        "238.11970882851068",
+        "195.842919145911"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p25_redacao",
+      "group": "enem",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.95,
+      "samples": [
+        "420.0",
+        "620.0",
+        "520.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p75_redacao",
+      "group": "enem",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.95,
+      "samples": [
+        "700.0",
+        "860.0",
+        "800.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p90_redacao",
+      "group": "enem",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.95,
+      "samples": [
+        "820.0",
+        "880.0",
+        "880.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_max_redacao",
+      "group": "enem",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.95,
+      "samples": [
+        "920.0",
+        "960.0",
+        "940.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_min_redacao",
+      "group": "enem",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.95,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_media_geral",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "482.9336",
+        "556.3713513513514",
+        "508.94880000000006"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_mediana_geral",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "478.24",
+        "560.04",
+        "503.2000000000001"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_std_geral",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.13,
+      "samples": [
+        "73.21886379442759",
+        "76.90531820080824",
+        "72.97318402184264"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p25_geral",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "440.24",
+        "519.86",
+        "470.68"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p75_geral",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "530.6600000000001",
+        "610.2800000000001",
+        "553.36"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_p90_geral",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "551.46",
+        "650.1",
+        "610.7600000000001"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_max_geral",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "750.46",
+        "672.9000000000001",
+        "653.16"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_min_geral",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "321.78000000000003",
+        "351.9200000000001",
+        "319.8"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_pct_acima_500",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "0.4",
+        "0.7837837837837838",
+        "0.56"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_pct_acima_600",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "0.02",
+        "0.3243243243243243",
+        "0.12"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_pct_acima_700",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "0.02",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_ok",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "0.9056603773584906",
+        "0.9210526315789472",
+        "0.96"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_anulada",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_copia",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "0.0188679245283018",
+        "0.0263157894736842",
+        "0.02"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_em_branco",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "0.0377358490566037",
+        "0.0263157894736842",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_fuga_tema",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "0.0188679245283018",
+        "0.0",
+        "0.02"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_fora_padrao",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_insuficiente",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "0.0188679245283018",
+        "0.0263157894736842",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_desconectada",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_comp1_media",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "101.50943396226415",
+        "124.21052631578948",
+        "119.2"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_comp2_media",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "123.77358490566036",
+        "153.1578947368421",
+        "146.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_comp3_media",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "98.49056603773585",
+        "122.63157894736842",
+        "115.2"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_comp4_media",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "116.22641509433964",
+        "142.6315789473684",
+        "131.6"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_comp5_media",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.95,
+      "samples": [
+        "104.90566037735849",
+        "150.0",
+        "138.8"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_pct_ingles",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "0.2234042553191489",
+        "0.8043478260869565",
+        "0.078125"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_pct_espanhol",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "0.776595744680851",
+        "0.1956521739130435",
+        "0.921875"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_dependencia_cod",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "2.0",
+        "2.0",
+        "2.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_localizacao_cod",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "1.0",
+        "1.0",
+        "1.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_uf_cod",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "11.0",
+        "11.0",
+        "11.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_uf_sigla",
+      "group": "enem",
+      "sql_type": "TEXT",
+      "null_pct": 90.84,
+      "samples": [
+        "RO",
+        "RO",
+        "RO"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_mun_cod",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "1100015.0",
+        "1100015.0",
+        "1100015.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_mun_nome",
+      "group": "enem",
+      "sql_type": "TEXT",
+      "null_pct": 90.84,
+      "samples": [
+        "Alta Floresta D'Oeste",
+        "Alta Floresta D'Oeste",
+        "Alta Floresta D'Oeste"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_taxa_presenca",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "0.5319148936170213",
+        "0.8043478260869565",
+        "0.796875"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_ano",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.84,
+      "samples": [
+        "2024.0",
+        "2024.0",
+        "2024.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_rank_br",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.97,
+      "samples": [
+        "21956.0",
+        "8130.0",
+        "16175.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_percentil_br",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "23.62585034013605",
+        "70.6530612244898",
+        "43.2891156462585"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_rank_uf",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.97,
+      "samples": [
+        "161.0",
+        "36.0",
+        "96.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_percentil_uf",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "36.86131386861314",
+        "82.48175182481752",
+        "60.58394160583942"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_rank_mun",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.97,
+      "samples": [
+        "3.0",
+        "1.0",
+        "2.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_rank_uf_dep",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.97,
+      "samples": [
+        "114.0",
+        "4.0",
+        "52.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_percentil_uf_dep",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "44.0",
+        "92.88888888888889",
+        "71.55555555555554"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_quartil_br",
+      "group": "enem",
+      "sql_type": "INTEGER",
+      "null_pct": 90.97,
+      "samples": [
+        "Q1",
+        "Q3",
+        "Q2"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_area_mais_fraca",
+      "group": "enem",
+      "sql_type": "TEXT",
+      "null_pct": 90.95,
+      "samples": [
+        "Ciencias da Natureza",
+        "Ciencias da Natureza",
+        "Ciencias Humanas"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_redacao_pct_problemas",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "0.0943396226415094",
+        "0.0789473684210526",
+        "0.04"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_amostra_confiavel",
+      "group": "enem",
+      "sql_type": "BOOLEAN",
+      "null_pct": 90.84,
+      "samples": [
+        "True",
+        "True",
+        "True"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_potencial_melhoria",
+      "group": "enem",
+      "sql_type": "TEXT",
+      "null_pct": 90.84,
+      "samples": [
+        "Alto",
+        "Baixo",
+        "Medio"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_dependencia",
+      "group": "enem",
+      "sql_type": "TEXT",
+      "null_pct": 90.84,
+      "samples": [
+        "Estadual",
+        "Estadual",
+        "Estadual"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "enem_gap_vs_peer_2024",
+      "group": "enem",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.97,
+      "samples": [
+        "-22.176399999999944",
+        "51.26135135135149",
+        "3.8388000000001057"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_uf_sigla",
+      "group": "peer",
+      "sql_type": "TEXT",
+      "null_pct": 90.84,
+      "samples": [
+        "RO",
+        "RO",
+        "RO"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_mun_nome",
+      "group": "peer",
+      "sql_type": "TEXT",
+      "null_pct": 90.84,
+      "samples": [
+        "Alta Floresta D'Oeste",
+        "Alta Floresta D'Oeste",
+        "Alta Floresta D'Oeste"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_geral_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.92,
+      "samples": [
+        "526.6632258064517",
+        "526.6632258064517",
+        "526.6632258064517"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_geral_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "539.539",
+        "539.539",
+        "539.539"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_geral_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "542.9889855072463",
+        "542.9889855072463",
+        "542.9889855072463"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_geral_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "530.3436585365854",
+        "530.3436585365854",
+        "530.3436585365854"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_geral_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "505.11",
+        "505.11",
+        "505.11"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_cn_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.92,
+      "samples": [
+        "488.93870967741935",
+        "488.93870967741935",
+        "488.93870967741935"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_cn_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "497.7219512195122",
+        "497.7219512195122",
+        "497.7219512195122"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_cn_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "482.8985507246377",
+        "482.8985507246377",
+        "482.8985507246377"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_cn_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "477.4060240963855",
+        "477.4060240963855",
+        "477.4060240963855"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_cn_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "463.51768707483",
+        "463.51768707483",
+        "463.51768707483"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_ch_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.91,
+      "samples": [
+        "496.5353846153846",
+        "496.5353846153846",
+        "496.5353846153846"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_ch_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "504.0340909090909",
+        "504.0340909090909",
+        "504.0340909090909"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_ch_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "521.6573333333333",
+        "521.6573333333333",
+        "521.6573333333333"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_ch_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "504.4852272727272",
+        "504.4852272727272",
+        "504.4852272727272"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_ch_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "466.9251655629139",
+        "466.9251655629139",
+        "466.9251655629139"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_lc_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.91,
+      "samples": [
+        "516.8384615384615",
+        "516.8384615384615",
+        "516.8384615384615"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_lc_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "491.07954545454544",
+        "491.07954545454544",
+        "491.07954545454544"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_lc_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "499.216",
+        "499.216",
+        "499.216"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_lc_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "495.5488636363637",
+        "495.5488636363637",
+        "495.5488636363637"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_lc_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "491.0960264900662",
+        "491.0960264900662",
+        "491.0960264900662"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_mt_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.92,
+      "samples": [
+        "507.9209677419354",
+        "507.9209677419354",
+        "507.9209677419354"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_mt_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "543.5585365853659",
+        "543.5585365853659",
+        "543.5585365853659"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_mt_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "534.9927536231884",
+        "534.9927536231884",
+        "534.9927536231884"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_mt_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "515.6698795180723",
+        "515.6698795180723",
+        "515.6698795180723"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_mt_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "483.243537414966",
+        "483.243537414966",
+        "483.243537414966"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_redacao_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.91,
+      "samples": [
+        "601.2307692307693",
+        "601.2307692307693",
+        "601.2307692307693"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_redacao_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "621.3636363636364",
+        "621.3636363636364",
+        "621.3636363636364"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_redacao_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "656.5333333333333",
+        "656.5333333333333",
+        "656.5333333333333"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_redacao_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "632.2727272727273",
+        "632.2727272727273",
+        "632.2727272727273"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_media_redacao_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "607.0198675496689",
+        "607.0198675496689",
+        "607.0198675496689"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_presentes_2020",
+      "group": "peer",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.85,
+      "samples": [
+        "62.0",
+        "62.0",
+        "62.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_presentes_2021",
+      "group": "peer",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.85,
+      "samples": [
+        "41.0",
+        "41.0",
+        "41.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_presentes_2022",
+      "group": "peer",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.85,
+      "samples": [
+        "69.0",
+        "69.0",
+        "69.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_presentes_2023",
+      "group": "peer",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.85,
+      "samples": [
+        "83.0",
+        "83.0",
+        "83.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_presentes_2024",
+      "group": "peer",
+      "sql_type": "SMALLINT",
+      "null_pct": 90.84,
+      "samples": [
+        "147.0",
+        "147.0",
+        "147.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_500_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.92,
+      "samples": [
+        "0.6129032258064516",
+        "0.6129032258064516",
+        "0.6129032258064516"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_500_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "0.625",
+        "0.625",
+        "0.625"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_500_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "0.6811594202898551",
+        "0.6811594202898551",
+        "0.6811594202898551"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_500_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "0.6219512195121951",
+        "0.6219512195121951",
+        "0.6219512195121951"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_500_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "0.5273972602739726",
+        "0.5273972602739726",
+        "0.5273972602739726"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_600_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.92,
+      "samples": [
+        "0.1935483870967742",
+        "0.1935483870967742",
+        "0.1935483870967742"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_600_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "0.325",
+        "0.325",
+        "0.325"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_600_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "0.2318840579710145",
+        "0.2318840579710145",
+        "0.2318840579710145"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_600_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "0.2073170731707317",
+        "0.2073170731707317",
+        "0.2073170731707317"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_600_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "0.1301369863013698",
+        "0.1301369863013698",
+        "0.1301369863013698"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_700_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.92,
+      "samples": [
+        "0.0161290322580645",
+        "0.0161290322580645",
+        "0.0161290322580645"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_700_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "0.05",
+        "0.05",
+        "0.05"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_700_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "0.0289855072463768",
+        "0.0289855072463768",
+        "0.0289855072463768"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_700_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "0.0121951219512195",
+        "0.0121951219512195",
+        "0.0121951219512195"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_pct_acima_700_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "0.0068493150684931",
+        "0.0068493150684931",
+        "0.0068493150684931"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_redacao_pct_problemas_2020",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.91,
+      "samples": [
+        "0.0461538461538461",
+        "0.0461538461538461",
+        "0.0461538461538461"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_redacao_pct_problemas_2021",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "0.0681818181818181",
+        "0.0681818181818181",
+        "0.0681818181818181"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_redacao_pct_problemas_2022",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "0.04",
+        "0.04",
+        "0.04"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_redacao_pct_problemas_2023",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "0.0454545454545454",
+        "0.0454545454545454",
+        "0.0454545454545454"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_redacao_pct_problemas_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "0.0794701986754966",
+        "0.0794701986754966",
+        "0.0794701986754966"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_delta_media_geral_2020_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.92,
+      "samples": [
+        "-21.55322580645173",
+        "-21.55322580645173",
+        "-21.55322580645173"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_delta_presentes_2020_2024",
+      "group": "peer",
+      "sql_type": "BIGINT",
+      "null_pct": 90.85,
+      "samples": [
+        "85.0",
+        "85.0",
+        "85.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": "max=4,294,967,291 exceeds INT32, using BIGINT (likely overflow bug in source)"
+    },
+    {
+      "name": "peer_pct_evolucao_alunos_2020_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.85,
+      "samples": [
+        "1.3709677419354838",
+        "1.3709677419354838",
+        "1.3709677419354838"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": "has 7 inf values (clamp to NULL at import)"
+    },
+    {
+      "name": "peer_delta_media_geral_2022_2024",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.86,
+      "samples": [
+        "-37.87898550724634",
+        "-37.87898550724634",
+        "-37.87898550724634"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_slope_media_geral_ppa",
+      "group": "peer",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 90.84,
+      "samples": [
+        "-5.230179307631795",
+        "-5.230179307631795",
+        "-5.230179307631795"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "peer_trajetoria_5y",
+      "group": "peer",
+      "sql_type": "TEXT",
+      "null_pct": 90.84,
+      "samples": [
+        "Caindo forte",
+        "Caindo forte",
+        "Caindo forte"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_uf",
+      "group": "socio",
+      "sql_type": "TEXT",
+      "null_pct": 91.64,
+      "samples": [
+        "RO",
+        "RO",
+        "RO"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_mun_nome",
+      "group": "socio",
+      "sql_type": "TEXT",
+      "null_pct": 91.64,
+      "samples": [
+        "Alta Floresta D'Oeste",
+        "Alta Floresta D'Oeste",
+        "Alta Floresta D'Oeste"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_renda_idx_media_2020",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "2.483037156704362",
+        "2.483037156704362",
+        "2.483037156704362"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_renda_idx_media_2021",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "3.389438943894389",
+        "3.389438943894389",
+        "3.389438943894389"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_renda_idx_media_2022",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "3.1517857142857144",
+        "3.1517857142857144",
+        "3.1517857142857144"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_renda_idx_media_2023",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "3.1505102040816326",
+        "3.1505102040816326",
+        "3.1505102040816326"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_renda_idx_media_2024",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "3.129511677282378",
+        "3.129511677282378",
+        "3.129511677282378"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_pais_superior_2020",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.2131147540983606",
+        "0.2131147540983606",
+        "0.2131147540983606"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_pais_superior_2021",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.2966666666666667",
+        "0.2966666666666667",
+        "0.2966666666666667"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_pais_superior_2022",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.2919254658385093",
+        "0.2919254658385093",
+        "0.2919254658385093"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_pais_superior_2023",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.2748691099476439",
+        "0.2748691099476439",
+        "0.2748691099476439"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_pais_superior_2024",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.2413043478260869",
+        "0.2413043478260869",
+        "0.2413043478260869"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_ate_1sm_2020",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.444264943457189",
+        "0.444264943457189",
+        "0.444264943457189"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_ate_1sm_2021",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.3465346534653465",
+        "0.3465346534653465",
+        "0.3465346534653465"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_ate_1sm_2022",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.3482142857142857",
+        "0.3482142857142857",
+        "0.3482142857142857"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_ate_1sm_2023",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.3545918367346938",
+        "0.3545918367346938",
+        "0.3545918367346938"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_ate_1sm_2024",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.386411889596603",
+        "0.386411889596603",
+        "0.386411889596603"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_acima_7sm_2020",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.0403877221324717",
+        "0.0403877221324717",
+        "0.0403877221324717"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_acima_7sm_2021",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.0924092409240924",
+        "0.0924092409240924",
+        "0.0924092409240924"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_acima_7sm_2022",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.0625",
+        "0.0625",
+        "0.0625"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_acima_7sm_2023",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.0739795918367346",
+        "0.0739795918367346",
+        "0.0739795918367346"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_renda_acima_7sm_2024",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.0828025477707006",
+        "0.0828025477707006",
+        "0.0828025477707006"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_total_inscritos_2020",
+      "group": "socio",
+      "sql_type": "INTEGER",
+      "null_pct": 91.65,
+      "samples": [
+        "619.0",
+        "619.0",
+        "619.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_total_inscritos_2021",
+      "group": "socio",
+      "sql_type": "INTEGER",
+      "null_pct": 91.65,
+      "samples": [
+        "303.0",
+        "303.0",
+        "303.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_total_inscritos_2022",
+      "group": "socio",
+      "sql_type": "INTEGER",
+      "null_pct": 91.65,
+      "samples": [
+        "336.0",
+        "336.0",
+        "336.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_total_inscritos_2023",
+      "group": "socio",
+      "sql_type": "INTEGER",
+      "null_pct": 91.64,
+      "samples": [
+        "392.0",
+        "392.0",
+        "392.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_total_inscritos_2024",
+      "group": "socio",
+      "sql_type": "INTEGER",
+      "null_pct": 91.64,
+      "samples": [
+        "471.0",
+        "471.0",
+        "471.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_delta_renda_2020_2024",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.6464745205780162",
+        "0.6464745205780162",
+        "0.6464745205780162"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_delta_pais_superior_2020_2024",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "0.0281895937277263",
+        "0.0281895937277263",
+        "0.0281895937277263"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "socio_pct_evolucao_volume_2020_2024",
+      "group": "socio",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.65,
+      "samples": [
+        "6938557.589660743",
+        "6938557.589660743",
+        "6938557.589660743"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_total_inscritos",
+      "group": "pnt",
+      "sql_type": "INTEGER",
+      "null_pct": 91.64,
+      "samples": [
+        "471.0",
+        "471.0",
+        "471.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_treineiros",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.2738853503184713",
+        "0.2738853503184713",
+        "0.2738853503184713"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_feminino",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.643312101910828",
+        "0.643312101910828",
+        "0.643312101910828"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_branca",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.3524416135881104",
+        "0.3524416135881104",
+        "0.3524416135881104"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_preta",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.048832271762208",
+        "0.048832271762208",
+        "0.048832271762208"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_parda",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.5265392781316348",
+        "0.5265392781316348",
+        "0.5265392781316348"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_amarela",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.0148619957537154",
+        "0.0148619957537154",
+        "0.0148619957537154"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_indigena",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.048832271762208",
+        "0.048832271762208",
+        "0.048832271762208"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_ja_concluiu",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.1804670912951167",
+        "0.1804670912951167",
+        "0.1804670912951167"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_concluindo",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.5414012738853503",
+        "0.5414012738853503",
+        "0.5414012738853503"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_ate_18_anos",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.7346072186836518",
+        "0.7346072186836518",
+        "0.7346072186836518"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_renda_idx_media",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "3.129511677282378",
+        "3.129511677282378",
+        "3.129511677282378"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_renda_ate_1sm",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.386411889596603",
+        "0.386411889596603",
+        "0.386411889596603"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_renda_ate_3sm",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.6751592356687898",
+        "0.6751592356687898",
+        "0.6751592356687898"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_renda_acima_7sm",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.0828025477707006",
+        "0.0828025477707006",
+        "0.0828025477707006"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_escol_pais_media",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "3.4804347826086954",
+        "3.4804347826086954",
+        "3.4804347826086954"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_pais_superior",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.2413043478260869",
+        "0.2413043478260869",
+        "0.2413043478260869"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_pais_ate_fund1",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.1239130434782608",
+        "0.1239130434782608",
+        "0.1239130434782608"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_ocup_pais_media",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "2.440909090909091",
+        "2.440909090909091",
+        "2.440909090909091"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_com_empregada",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.078556263269639",
+        "0.078556263269639",
+        "0.078556263269639"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_sem_banheiro",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.0233545647558386",
+        "0.0233545647558386",
+        "0.0233545647558386"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_com_internet",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.9532908704883228",
+        "0.9532908704883228",
+        "0.9532908704883228"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_com_computador",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.4585987261146497",
+        "0.4585987261146497",
+        "0.4585987261146497"
+      ],
+      "blocked_from_llm": true,
+      "safe_pnt": false,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_so_publica",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.9851380042462844",
+        "0.9851380042462844",
+        "0.9851380042462844"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_pct_so_privada",
+      "group": "pnt",
+      "sql_type": "NUMERIC(14,4)",
+      "null_pct": 91.64,
+      "samples": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_uf",
+      "group": "pnt",
+      "sql_type": "TEXT",
+      "null_pct": 91.64,
+      "samples": [
+        "RO",
+        "RO",
+        "RO"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_mun_nome",
+      "group": "pnt",
+      "sql_type": "TEXT",
+      "null_pct": 91.64,
+      "samples": [
+        "Alta Floresta D'Oeste",
+        "Alta Floresta D'Oeste",
+        "Alta Floresta D'Oeste"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    },
+    {
+      "name": "pnt_ano",
+      "group": "pnt",
+      "sql_type": "SMALLINT",
+      "null_pct": 91.64,
+      "samples": [
+        "2024.0",
+        "2024.0",
+        "2024.0"
+      ],
+      "blocked_from_llm": false,
+      "safe_pnt": true,
+      "quality_note": null
+    }
+  ],
+  "data_quality_warnings": [
+    "peer_delta_presentes_2020_2024: max=4,294,967,291 exceeds INT32, using BIGINT (likely overflow bug in source)",
+    "peer_pct_evolucao_alunos_2020_2024: has 7 inf values (clamp to NULL at import)"
+  ],
+  "pnt_blocked_fields": [
+    "pnt_pct_amarela",
+    "pnt_pct_branca",
+    "pnt_pct_com_computador",
+    "pnt_pct_com_empregada",
+    "pnt_pct_com_internet",
+    "pnt_pct_feminino",
+    "pnt_pct_indigena",
+    "pnt_pct_parda",
+    "pnt_pct_preta",
+    "pnt_pct_sem_banheiro"
+  ],
+  "pnt_safe_fields": [
+    "pnt_ano",
+    "pnt_escol_pais_media",
+    "pnt_mun_nome",
+    "pnt_ocup_pais_media",
+    "pnt_pct_ate_18_anos",
+    "pnt_pct_concluindo",
+    "pnt_pct_ja_concluiu",
+    "pnt_pct_pais_ate_fund1",
+    "pnt_pct_pais_superior",
+    "pnt_pct_renda_acima_7sm",
+    "pnt_pct_renda_ate_1sm",
+    "pnt_pct_renda_ate_3sm",
+    "pnt_pct_so_privada",
+    "pnt_pct_so_publica",
+    "pnt_pct_treineiros",
+    "pnt_renda_idx_media",
+    "pnt_total_inscritos",
+    "pnt_uf"
+  ]
+}

@@ -177,18 +177,33 @@ else:
 
 ## ✨ Features do Sistema
 
-### Core (Obrigatórias)
-- ✅ Qualificação automática com Claude (Haiku 4.5 para score, Sonnet 4.5 para escrita)
-- ✅ Enriquecimento multi-fonte com fallbacks (Apollo→Snov→Hunter→Scraping)
-- ✅ Geração de mensagens hiperpersonalizadas (nunca templates)
-- ✅ Dashboard Streamlit para aprovação humana
-- ✅ Integração HubSpot bidirecional (Supabase ↔ HubSpot)
-- ✅ Tracking completo (enviado→entregue→aberto→respondido)
+### Core
+- ✅ Qualificação automática com IA (GPT-4.1-mini para score e escrita)
+- ✅ Enriquecimento multi-fonte com fallbacks (Apollo→Snov→Hunter→Perplexity→Scraping)
+- ✅ Geração de mensagens hiperpersonalizadas (nunca templates genéricos)
+- ✅ Dashboard Streamlit (10 páginas) para aprovação humana
+- ✅ IAlex — agente WhatsApp com 73 tools (24/7, acesso a CRM/ENEM/Censo)
+- ✅ Integração HubSpot bidirecional (Supabase ↔ HubSpot push + pull)
+- ✅ Tracking completo (enviado→entregue→aberto→clicado→respondido)
 
-### Extras (Opcionais mas Recomendadas)
+### Inteligência ENEM (Fase 1-3, Abril 2026)
+- ✅ 185k escolas com analytics ENEM 2024 (média, ranking, peer group, potencial)
+- ✅ Ranking P1/P2/P3 de leads por temperatura comercial
+- ✅ Radar comparativo (escola vs município vs estado, 5 áreas ENEM + 5 competências redação)
+- ✅ Query builder flexível (comparação, ranking, distribuição, série temporal)
+- ✅ Série histórica Censo 2020-2025 por escola (matrículas, docentes, tech, infra)
+- ✅ Métricas derivadas (razão aluno/professor, tech score, infra score, composição matrícula)
+- ✅ Insight seeds (correlações pré-detectadas: ratio vs matrícula, salto tech, etc.)
+- ✅ Defense in depth ética (amostra_confiavel gate, peer≠escola, socio=município)
+
+### Extras
 - ✅ Geocodificação automática via Google Maps API
 - ✅ Busca automática de telefones via Google Search
 - ✅ Visualização de leads em mapa interativo (PyDeck)
+- ✅ Score preditivo ML + detecção de sinais de compra
+- ✅ Memória persistente (IAlex lembra fatos sobre escolas/contatos)
+- ✅ Follow-ups comportamentais (Hot Click, Curious Open, Silent Open, Revival)
+- ✅ Autocomplete de escolas (cascata UF→Município→Escola via Censo)
 
 ---
 
@@ -219,22 +234,42 @@ else:
 
 ## 📦 Estrutura de Entrega
 
-Claude Code deve criar **~60 arquivos** em **12 pastas**:
+### Dashboard — 10 Paginas (reorganizado Abril 2026)
+```
+📊 Home (app.py) — Central de Comando com KPIs e tiles de acesso rapido
+─── CRM ───
+1  🏫 Escolas         — Gestao de escolas, detalhe, redes, performance ENEM
+2  👥 Contatos        — Power Map de decisores por escola
+3  🗺️ Mapa           — Visualizacao geografica interativa (PyDeck)
+4  📥 Importar        — Importar escolas da base MEC (212k)
+─── Execucao ───
+5  📊 Pipeline        — Execucao + Descoberta + Pipeline Comercial (Kanban)
+6  ✉️ Comunicacao     — Aprovacao + Follow-ups + Templates + Metricas (4 tabs)
+─── Inteligencia ───
+7  🎯 Inteligencia    — Ranking ENEM P1/P2/P3, Radar Comparativo, Explorador Livre
+8  📈 Analytics       — ROI, Funil, Conversoes, Custos
+─── Sistema ───
+9  ⚙️ Configuracoes  — Automacoes, Memoria, Diagnostico
+10 📖 Manual          — Manual completo da plataforma (12 tabs)
+```
+
+### Backend — ~70+ arquivos em 14 pastas
 ```
 agente-vendas-iaprendo/
-├── 📁 config/           (2 arquivos)
-├── 📁 database/         (3 + migrations/)
-├── 📁 agents/           (8 arquivos)
-├── 📁 integrations/     (3 arquivos)
-├── 📁 tools/            (10 arquivos) ← geocoder, phone_finder
-├── 📁 approval_queue/   (2 arquivos)
-├── 📁 workflows/        (3 arquivos)
-├── 📁 dashboard/        (app + 6 pages) ← map_view
-├── 📁 prompts/          (4 templates)
-├── 📁 utils/            (4 helpers)
-├── 📁 tests/            (3 suites)
-├── 📁 scripts/          (2 helpers)
-└── 📁 docs/             (3 documentações)
+├── 📁 agent/            (brain.py + tools/enem_tools.py + webhook + bridge)
+├── 📁 config/           (settings.py)
+├── 📁 database/         (supabase_client + migrations/)
+├── 📁 agents/           (qualifier, enricher, writer, etc.)
+├── 📁 integrations/     (hubspot, brevo, memory, email_rag, outlook)
+├── 📁 tools/            (geocoder, phone_finder, health_check, predictive, etc.)
+├── 📁 approval_queue/   (queue_manager)
+├── 📁 workflows/        (daily_pipeline, follow_up_manager, send_approved)
+├── 📁 dashboard/        (app.py + pages/ + theme.py + helpers/)
+├── 📁 prompts/          (templates de email)
+├── 📁 utils/            (logger, template_renderer, fit_score, role_classifier)
+├── 📁 scripts/          (historico/, inspect, generate_migration, fix_mojibake)
+├── 📁 docs/             (ARCHITECTURE, IMPLEMENTATION, STANDARDS, ANNUAL_UPDATE)
+└── 📁 data/             (raw/ CSVs MEC + ENEM)
 ```
 
 **Detalhes**: Ver `docs/IMPLEMENTATION.md`

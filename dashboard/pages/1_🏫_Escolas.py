@@ -69,6 +69,527 @@ def go_to_list() -> None:
     st.session_state.escola_detail_id = None
 
 
+# ---------------------------------------------------------------------------
+# Performance ENEM — fetch separado em school_analytics (R6 do plano)
+# ---------------------------------------------------------------------------
+@st.cache_data(ttl=300)
+def _fetch_analytics_by_inep_list(inep_list: tuple) -> dict:
+    """Batch fetch de school_analytics para uma lista de INEPs.
+    Retorna dict {inep: row}. Cached 5 min. Falha silenciosa -> {}.
+    Usado pela coluna Potencial na tabela principal.
+    """
+    if not inep_list:
+        return {}
+    try:
+        r = db.client.table("school_analytics").select(
+            "inep_code,enem_amostra_confiavel,enem_potencial_melhoria,"
+            "peer_trajetoria_5y,enem_gap_vs_peer_2024,enem_dependencia,"
+            "enem_media_geral,enem_media_geral_sem_redacao,enem_area_mais_fraca,"
+            "enem_presentes,peer_delta_media_geral_2022_2024"
+        ).in_("inep_code", list(inep_list)).execute()
+        return {str(row["inep_code"]): row for row in (r.data or [])}
+    except Exception as e:
+        return {}
+
+
+@st.cache_data(ttl=300)
+def _fetch_analytics_single(inep_code: str) -> dict | None:
+    """Fetch completo de school_analytics para 1 escola. Falha silenciosa."""
+    if not inep_code:
+        return None
+    try:
+        r = db.client.table("school_analytics").select("*").eq(
+            "inep_code", str(inep_code).strip()
+        ).limit(1).execute()
+        if r.data:
+            return r.data[0]
+    except Exception:
+        pass
+    return None
+
+
+def _potencial_badge(row: dict | None) -> str:
+    """Retorna badge HTML para coluna Potencial. '' se sem dado."""
+    if not row or not row.get("enem_amostra_confiavel"):
+        return "—"
+    pot = row.get("enem_potencial_melhoria")
+    if pot == "Alto":
+        return "🔥 Alto"
+    if pot == "Medio" or pot == "Médio":
+        return "🟡 Medio"
+    if pot == "Baixo":
+        return "🟢 Baixo"
+    return "—"
+
+
+@st.cache_data(ttl=300)
+def _fetch_censo_yearly_by_inep(inep: str) -> list:
+    """Busca serie historica Censo 2020-2025 de uma escola. Cache 5min.
+    Retorna lista ordenada por vintage. Falha silenciosa -> []."""
+    if not inep:
+        return []
+    try:
+        r = db.client.table("school_censo_yearly").select(
+            "vintage_censo,name,qt_mat_bas,qt_mat_inf,qt_mat_fund,"
+            "qt_mat_fund_ai,qt_mat_fund_af,qt_mat_med,qt_mat_eja,qt_mat_prof,"
+            "qt_doc_bas,qt_doc_fund,qt_doc_med,"
+            "in_internet,in_internet_alunos,in_internet_aprendizagem,"
+            "in_laboratorio_informatica,qt_desktop_aluno,"
+            "qt_comp_portatil_aluno,qt_tablet_aluno,"
+            "in_biblioteca,in_quadra_esportes,in_laboratorio_ciencias,"
+            "in_alimentacao"
+        ).eq("inep_code", str(inep).strip()).order("vintage_censo").execute()
+        return r.data or []
+    except Exception:
+        return []
+
+
+def _render_performance_tab(company: dict, company_id: str) -> None:
+    """Renderiza a aba Performance ENEM do detalhe de escola.
+
+    - Fail-safe: se school_analytics indisponivel, mostra banner
+    - Respeita regra #1 (amostra_confiavel): nao mostra metricas
+      individuais quando False
+    - Peer group sempre com rotulo "suas concorrentes"
+    - Socio sempre com rotulo "perfil do municipio"
+    """
+    from utils.fit_score import fit_cor_hex
+    try:
+        import plotly.graph_objects as go
+    except Exception:
+        alert_banner("plotly nao instalado.", "error")
+        return
+
+    inep = company.get("inep_code")
+    if not inep:
+        alert_banner("Escola sem codigo INEP — nao ha como buscar dados ENEM.", "info")
+        return
+
+    row = _fetch_analytics_single(str(inep))
+    if not row:
+        alert_banner(
+            "Escola sem dados ENEM no school_analytics (provavelmente Catalogo INEP, "
+            "escola sem Ensino Medio, ou nao participou do ENEM 2024).",
+            "info",
+        )
+        return
+
+    amostra_ok = row.get("enem_amostra_confiavel") is True
+    potencial = row.get("enem_potencial_melhoria")
+
+    # --- Banner de prioridade P1/P2/P3 via handler (fonte unica da verdade) ---
+    try:
+        from agent.tools.enem_tools import _classificar_prioridade, _aviso_p3
+        # Merge company fields pro helper funcionar
+        row_for_helper = dict(row)
+        for k in ("city", "state", "admin_dependency"):
+            if company.get(k) and k not in row_for_helper:
+                row_for_helper[k] = company[k]
+        prio = _classificar_prioridade(row_for_helper)
+        aviso = _aviso_p3(prio)
+    except Exception:
+        prio = None
+        aviso = None
+
+    if prio == "P1":
+        alert_banner(
+            f"🔥 LEAD P1 — potencial Alto + peer Subindo. Pitch ofensivo recomendado.",
+            "success",
+        )
+    elif prio == "P2":
+        alert_banner(
+            f"⚡ LEAD P2 — privada com gap negativo vs peer. Oportunidade clara.",
+            "info",
+        )
+    elif prio == "P3":
+        alert_banner(
+            f"⚠️ LEAD P3 — URGENCIA DEFENSIVA. {aviso or 'Revise tom do email antes de aprovar.'}",
+            "warning",
+        )
+
+    if not amostra_ok:
+        alert_banner(
+            "Amostra ENEM NAO confiavel (poucos presentes, dados estatisticamente "
+            "fracos). Metricas individuais desta escola NAO serao exibidas (regra "
+            "etica #1). Voce ainda tem dados do peer_group e do contexto municipal.",
+            "warning",
+        )
+
+    st.markdown("")
+
+    # --- Metricas principais (so se amostra confiavel) ---
+    if amostra_ok and row.get("enem_media_geral") is not None:
+        section_header("Performance ENEM 2024", "trending_up")
+        media_com = float(row.get("enem_media_geral") or 0)
+        media_sem = row.get("enem_media_geral_sem_redacao")
+        gap = row.get("enem_gap_vs_peer_2024")
+        presentes = row.get("enem_presentes") or 0
+
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        with mc1:
+            metric_card("Media com redacao", f"{media_com:.1f}",
+                        COLORS["primary"], icon="school")
+        with mc2:
+            if media_sem is not None:
+                # Delta > 0: redacao eleva a media (media_com > media_sem)
+                # Delta < 0: redacao baixa a media (raro mas possivel)
+                delta = media_com - float(media_sem)
+                direction = "puxa p/ cima" if delta > 0 else "puxa p/ baixo" if delta < 0 else "neutra"
+                metric_card(
+                    "Media sem redacao",
+                    f"{float(media_sem):.1f}",
+                    COLORS["info"],
+                    icon="functions",
+                )
+                st.caption(f"Redacao {direction}: Δ={delta:+.1f}")
+        with mc3:
+            if gap is not None:
+                gap_f = float(gap)
+                metric_card(
+                    "Gap vs peer 2024",
+                    f"{gap_f:+.1f}",
+                    COLORS["success"] if gap_f > 0 else COLORS["error"],
+                    icon="compare_arrows",
+                )
+        with mc4:
+            metric_card(
+                "Presentes",
+                f"{presentes}",
+                COLORS["secondary"],
+                icon="how_to_reg",
+            )
+
+        # Potencial badge
+        st.markdown(f"**Potencial de melhoria:** `{potencial or 'N/A'}`")
+
+        # --- Area mais fraca ---
+        area_fraca = row.get("enem_area_mais_fraca")
+        if area_fraca:
+            alert_banner(
+                f"**Area mais fraca:** {area_fraca}. Esta e a disciplina onde a escola "
+                f"tem a menor media nas 5 provas — angulo mais forte para o pitch.",
+                "info",
+            )
+
+        # --- Radar das competencias da redacao ---
+        comps = {}
+        for i in range(1, 6):
+            v = row.get(f"enem_redacao_comp{i}_media")
+            if v is not None:
+                comps[f"Comp {i}"] = float(v)
+        if comps:
+            st.markdown("")
+            section_header("Competencias da redacao (ENEM 2024)", "radar")
+            fig = go.Figure()
+            fig.add_trace(go.Scatterpolar(
+                r=list(comps.values()) + [list(comps.values())[0]],
+                theta=list(comps.keys()) + [list(comps.keys())[0]],
+                fill="toself",
+                name="Desta escola",
+                line_color=COLORS["primary"],
+            ))
+            fig.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 200])),
+                showlegend=False,
+                height=300,
+                margin=dict(l=40, r=40, t=10, b=10),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        # --- Medias por area ---
+        areas = {
+            "Ciencias da Natureza": row.get("enem_media_cn"),
+            "Ciencias Humanas": row.get("enem_media_ch"),
+            "Linguagens e Codigos": row.get("enem_media_lc"),
+            "Matematica": row.get("enem_media_mt"),
+            "Redacao": row.get("enem_media_redacao"),
+        }
+        areas = {k: float(v) for k, v in areas.items() if v is not None}
+        if areas:
+            st.markdown("")
+            section_header("Medias por area", "bar_chart")
+            df_areas = pd.DataFrame([
+                {"Area": k, "Media": v} for k, v in areas.items()
+            ])
+            fig2 = go.Figure(go.Bar(
+                x=df_areas["Area"], y=df_areas["Media"],
+                marker_color=[COLORS["error"] if v == min(areas.values())
+                              else COLORS["primary"] for v in df_areas["Media"]],
+                text=[f"{v:.0f}" for v in df_areas["Media"]],
+                textposition="outside",
+            ))
+            fig2.update_layout(
+                yaxis=dict(range=[0, 800], title="Media"),
+                height=260, margin=dict(l=0, r=0, t=10, b=0),
+                plot_bgcolor="white",
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+
+    st.markdown("")
+
+    # --- Peer group (sempre mostra, mesmo sem amostra individual) ---
+    peer_traj = row.get("peer_trajetoria_5y")
+    if peer_traj:
+        section_header("Peer group — escolas do mesmo municipio x mesma dependencia", "groups")
+        st.caption(
+            "⚠️ **REGRA ETICA:** dados abaixo referem-se ao GRUPO DE PARES "
+            "(concorrentes diretas), NUNCA a esta escola individualmente."
+        )
+        mun = row.get("peer_mun_nome") or company.get("city")
+        dep = row.get("enem_dependencia") or company.get("admin_dependency")
+
+        pc1, pc2, pc3, pc4 = st.columns(4)
+        with pc1:
+            metric_card("Trajetoria 5 anos", str(peer_traj),
+                        COLORS["accent"], icon="timeline")
+        with pc2:
+            delta = row.get("peer_delta_media_geral_2022_2024")
+            if delta is not None:
+                delta_f = float(delta)
+                metric_card(
+                    "Delta 2022-2024",
+                    f"{delta_f:+.1f}",
+                    COLORS["success"] if delta_f > 0 else COLORS["error"],
+                    icon="trending_flat",
+                )
+        with pc3:
+            media_2024 = row.get("peer_media_geral_2024")
+            if media_2024 is not None:
+                metric_card("Media peer 2024", f"{float(media_2024):.1f}",
+                            COLORS["info"], icon="analytics")
+        with pc4:
+            presentes_2024 = row.get("peer_presentes_2024")
+            if presentes_2024 is not None:
+                metric_card("Presentes peer", f"{int(presentes_2024):,}".replace(",", "."),
+                            COLORS["secondary"], icon="groups")
+
+        # --- Serie historica 2020-2024 ---
+        serie = {}
+        for ano in range(2020, 2025):
+            v = row.get(f"peer_media_geral_{ano}")
+            if v is not None:
+                serie[ano] = float(v)
+        if len(serie) >= 2:
+            st.markdown("")
+            fig3 = go.Figure(go.Scatter(
+                x=list(serie.keys()), y=list(serie.values()),
+                mode="lines+markers",
+                line=dict(color=COLORS["primary"], width=3),
+                marker=dict(size=12),
+                text=[f"{v:.0f}" for v in serie.values()],
+                textposition="top center",
+            ))
+            fig3.update_layout(
+                title=f"Media ENEM do peer group em {mun} ({dep}) 2020-2024",
+                yaxis=dict(title="Media"),
+                height=280, margin=dict(l=0, r=0, t=40, b=0),
+                plot_bgcolor="white",
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+
+    st.markdown("")
+
+    # --- Contexto municipal (sempre rotulado) ---
+    renda_2024 = row.get("socio_renda_idx_media_2024")
+    if renda_2024 is not None:
+        section_header("Contexto do municipio (perfil socioeconomico)", "location_city")
+        st.caption(
+            "⚠️ **REGRA ETICA:** dados abaixo sao do MUNICIPIO onde a escola esta "
+            "localizada, NUNCA dos alunos desta escola individualmente."
+        )
+        sc1, sc2, sc3 = st.columns(3)
+        with sc1:
+            metric_card("Indice de renda 2024", f"{float(renda_2024):.2f}",
+                        COLORS["primary"], icon="paid")
+        with sc2:
+            pais_sup = row.get("socio_pct_pais_superior_2024")
+            if pais_sup is not None:
+                pct = float(pais_sup) * 100 if float(pais_sup) < 1 else float(pais_sup)
+                metric_card("% pais com superior", f"{pct:.1f}%",
+                            COLORS["info"], icon="school")
+        with sc3:
+            delta_renda = row.get("socio_delta_renda_2020_2024")
+            if delta_renda is not None:
+                metric_card(
+                    "Delta renda 2020-2024",
+                    f"{float(delta_renda):+.2f}",
+                    COLORS["success"] if float(delta_renda) > 0 else COLORS["error"],
+                    icon="trending_up",
+                )
+
+    # --- SERIE HISTORICA INDIVIDUAL (Censo 2020-2025) ---
+    # Fetch separado (padrao R6 do plano), falha silenciosa se indisponivel.
+    st.markdown("")
+    try:
+        sc_rows = _fetch_censo_yearly_by_inep(str(inep))
+    except Exception:
+        sc_rows = []
+
+    if sc_rows and len(sc_rows) >= 2:
+        section_header("Serie historica individual (Censo 2020-2025)", "timeline")
+        st.caption(
+            "Evolucao ano a ano desta escola em matriculas, equipe e tecnologia. "
+            "Dados administrativos declarados ao INEP — nao dependem de amostra "
+            "estatistica."
+        )
+
+        # Ordena por ano
+        sc_rows = sorted(sc_rows, key=lambda r: r.get("vintage_censo") or 0)
+        anos = [r.get("vintage_censo") for r in sc_rows]
+
+        # === CHART 1: Matriculas por etapa ===
+        def _series(key):
+            return [r.get(key) for r in sc_rows]
+
+        mat_bas = _series("qt_mat_bas")
+        mat_fund_af = _series("qt_mat_fund_af")
+        mat_med = _series("qt_mat_med")
+        mat_fund_ai = _series("qt_mat_fund_ai")
+
+        fig_mat = go.Figure()
+        fig_mat.add_trace(go.Scatter(
+            x=anos, y=mat_bas, mode="lines+markers+text",
+            name="Total Basica",
+            line=dict(color=COLORS["primary"], width=3),
+            marker=dict(size=10),
+            text=[str(int(v)) if v else "" for v in mat_bas],
+            textposition="top center",
+        ))
+        fig_mat.add_trace(go.Scatter(
+            x=anos, y=mat_fund_ai, mode="lines+markers",
+            name="Fund. Anos Iniciais (1-5)",
+            line=dict(color=COLORS["info"], width=2, dash="dot"),
+            marker=dict(size=8),
+        ))
+        fig_mat.add_trace(go.Scatter(
+            x=anos, y=mat_fund_af, mode="lines+markers",
+            name="Fund. Anos Finais (6-9)",
+            line=dict(color=COLORS["accent"], width=2),
+            marker=dict(size=8),
+        ))
+        fig_mat.add_trace(go.Scatter(
+            x=anos, y=mat_med, mode="lines+markers",
+            name="Ensino Medio",
+            line=dict(color=COLORS["success"], width=2),
+            marker=dict(size=8),
+        ))
+        fig_mat.update_layout(
+            title="Matriculas por etapa",
+            height=320,
+            margin=dict(l=0, r=0, t=40, b=0),
+            plot_bgcolor="white",
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_mat, use_container_width=True)
+
+        # === CHART 2: Equipe docente ===
+        docentes = _series("qt_doc_bas")
+        fig_doc = go.Figure(go.Scatter(
+            x=anos, y=docentes, mode="lines+markers+text",
+            line=dict(color=COLORS["accent"], width=3),
+            marker=dict(size=12),
+            text=[str(int(v)) if v else "" for v in docentes],
+            textposition="top center",
+        ))
+        fig_doc.update_layout(
+            title="Equipe docente total",
+            height=220,
+            margin=dict(l=0, r=0, t=40, b=0),
+            plot_bgcolor="white",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_doc, use_container_width=True)
+
+        # === KPIs de crescimento (deltas calculados localmente) ===
+        def _delta_pct(series):
+            vals = [v for v in series if v is not None]
+            if len(vals) < 2 or vals[0] == 0:
+                return None
+            return round((vals[-1] - vals[0]) / vals[0] * 100, 1)
+
+        delta_total = _delta_pct(mat_bas)
+        delta_med = _delta_pct(mat_med)
+        delta_fund_af = _delta_pct(mat_fund_af)
+        delta_doc = _delta_pct(docentes)
+
+        st.markdown("")
+        st.markdown(f"**Deltas totais ({anos[0]} → {anos[-1]})**")
+        dc1, dc2, dc3, dc4 = st.columns(4)
+        with dc1:
+            if delta_total is not None:
+                metric_card(
+                    "Matriculas base",
+                    f"{delta_total:+.1f}%",
+                    COLORS["success"] if delta_total > 0 else COLORS["error"],
+                    icon="school",
+                )
+        with dc2:
+            if delta_med is not None:
+                metric_card(
+                    "Ensino Medio",
+                    f"{delta_med:+.1f}%",
+                    COLORS["success"] if delta_med > 0 else COLORS["error"],
+                    icon="menu_book",
+                )
+        with dc3:
+            if delta_fund_af is not None:
+                metric_card(
+                    "Fund. Anos Finais",
+                    f"{delta_fund_af:+.1f}%",
+                    COLORS["success"] if delta_fund_af > 0 else COLORS["error"],
+                    icon="groups",
+                )
+        with dc4:
+            if delta_doc is not None:
+                metric_card(
+                    "Docentes",
+                    f"{delta_doc:+.1f}%",
+                    COLORS["success"] if delta_doc > 0 else COLORS["error"],
+                    icon="record_voice_over",
+                )
+
+        # === CHART 3: Tecnologia (dados binarios) ===
+        tech_fields = [
+            ("in_internet", "Internet"),
+            ("in_internet_alunos", "Internet p/ alunos"),
+            ("in_internet_aprendizagem", "Internet p/ aprendizagem"),
+            ("in_laboratorio_informatica", "Lab. Informatica"),
+            ("in_biblioteca", "Biblioteca"),
+            ("in_quadra_esportes", "Quadra"),
+            ("in_laboratorio_ciencias", "Lab. Ciencias"),
+            ("in_alimentacao", "Alimentacao"),
+        ]
+        tech_rows = []
+        for ano, row_sc in zip(anos, sc_rows):
+            for field, label in tech_fields:
+                val = row_sc.get(field)
+                if val is not None:
+                    tech_rows.append({"Ano": ano, "Item": label, "Presente": 1 if val else 0})
+        if tech_rows:
+            df_tech = pd.DataFrame(tech_rows)
+            pivot = df_tech.pivot_table(index="Item", columns="Ano", values="Presente", fill_value=0)
+            # Preserve order
+            label_order = [lbl for _, lbl in tech_fields if lbl in pivot.index]
+            pivot = pivot.loc[label_order]
+            st.markdown("")
+            st.markdown("**Tecnologia e infraestrutura (presente/ausente por ano)**")
+            st.dataframe(
+                pivot.replace({1: "✅", 0: "❌"}),
+                use_container_width=True,
+                height=320,
+            )
+    elif sc_rows:
+        alert_banner(
+            f"Serie historica disponivel para apenas {len(sc_rows)} ano(s) — "
+            "pelo menos 2 anos sao necessarios para mostrar evolucao.",
+            "info",
+        )
+
+
+# ---------------------------------------------------------------------------
+
+
 def render_redes_view() -> None:
     """Renderiza a aba Redes: agrupa escolas por cnpj_mantenedora, mostra
     KPIs, grafico top 10, e expanders por rede com metricas + unidades +
@@ -488,8 +1009,8 @@ if st.session_state.escola_detail_id:
     st.markdown("")
 
     # --- Tabs ---
-    tab_dados, tab_contatos, tab_msgs, tab_hist, tab_acoes = st.tabs([
-        "Dados", "Contatos", "Mensagens", "Historico", "Acoes"
+    tab_dados, tab_performance, tab_contatos, tab_msgs, tab_hist, tab_acoes = st.tabs([
+        "Dados", "Performance ENEM", "Contatos", "Mensagens", "Historico", "Acoes"
     ])
 
     # === TAB DADOS (edicao) ===
@@ -723,6 +1244,10 @@ if st.session_state.escola_detail_id:
                     metric_card("Notebooks p/ aluno", int(qt_note), COLORS["info"], icon="laptop")
                 with disp_cols[2]:
                     metric_card("Tablets p/ aluno", int(qt_tab), COLORS["accent"], icon="tablet")
+
+    # === TAB PERFORMANCE ENEM ===
+    with tab_performance:
+        _render_performance_tab(company, company_id)
 
     # === TAB CONTATOS ===
     with tab_contatos:
@@ -1062,12 +1587,41 @@ else:
             return fit["score"] if fit["score"] is not None else 0
         df["Fit"] = df.apply(_calc_fit, axis=1).astype(int)
 
+        # --- Enriquecer com school_analytics (UI12b — fetch separado, falha silenciosa) ---
+        # Regra R6 do plano: NUNCA fazer LEFT JOIN. Fetch separado in-memory merge.
+        # Se analytics indisponivel, a coluna Potencial vem vazia e tabela nao quebra.
+        inep_list = [str(x).strip() for x in df["inep_code"].dropna().tolist() if x]
+        analytics_map = _fetch_analytics_by_inep_list(tuple(inep_list)) if inep_list else {}
+        df["Potencial"] = df["inep_code"].apply(
+            lambda i: _potencial_badge(analytics_map.get(str(i).strip()) if i else None)
+        )
+        df["Gap ENEM"] = df["inep_code"].apply(
+            lambda i: (
+                float(analytics_map.get(str(i).strip(), {}).get("enem_gap_vs_peer_2024") or 0)
+                if i and analytics_map.get(str(i).strip(), {}).get("enem_amostra_confiavel")
+                else None
+            )
+        )
+        df["Trajet. Peer"] = df["inep_code"].apply(
+            lambda i: (analytics_map.get(str(i).strip(), {}) or {}).get("peer_trajetoria_5y") or "—"
+        )
+
         # --- Filtros inline (barra horizontal) ---
         st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
         fc1, fc2, fc3, fc4 = st.columns([3, 2, 2, 2])
         with fc1:
-            search = st.text_input("Buscar", placeholder="Nome da escola...", label_visibility="collapsed",
-                                   key="search_escola")
+            from dashboard.helpers.school_lookup import get_crm_schools as _get_crm, format_school_option as _fmt_crm, parse_inep_from_option as _parse_crm
+            _crm_list = _get_crm()
+            _crm_opts = ["(todas)"] + [_fmt_crm(n, i) for n, i in _crm_list]
+            search_sel = st.selectbox("Buscar escola", _crm_opts, label_visibility="collapsed",
+                                     key="search_escola")
+            search = ""  # compatibilidade com filtro existente abaixo
+            if search_sel != "(todas)":
+                _parsed_inep = _parse_crm(search_sel)
+                if _parsed_inep:
+                    search = _parsed_inep  # filtra por INEP (exato)
+                else:
+                    search = search_sel  # fallback: filtra por texto
         with fc2:
             all_statuses_pt = sorted(df["Status"].unique().tolist())
             sel_status = st.multiselect("Status", all_statuses_pt, default=all_statuses_pt,
@@ -1099,6 +1653,24 @@ else:
             min_fit = st.number_input("Min Fit", min_value=0, max_value=100, value=0, step=5,
                                        label_visibility="collapsed", placeholder="Min Fit IAprendo",
                                        help="Fit IAprendo minimo (0-100)")
+
+        # Terceira linha: filtros ENEM analytics
+        fc10, fc11, fc12 = st.columns([2, 2, 2])
+        with fc10:
+            pot_options = ["🔥 Alto", "🟡 Medio", "🟢 Baixo"]
+            sel_pot = st.multiselect("Potencial", pot_options, default=[],
+                                      label_visibility="collapsed",
+                                      placeholder="Potencial ENEM...")
+        with fc11:
+            traj_options = ["Subindo forte", "Subindo", "Estavel", "Caindo", "Caindo forte"]
+            sel_traj = st.multiselect("Trajet.", traj_options, default=[],
+                                       label_visibility="collapsed",
+                                       placeholder="Trajet. peer...")
+        with fc12:
+            max_gap = st.number_input("Max gap", min_value=-200, max_value=200, value=200, step=5,
+                                       label_visibility="collapsed",
+                                       placeholder="Max gap peer (negativo=oportunidade)",
+                                       help="So escolas com gap <= este valor. -10 retorna escolas com gap <= -10 pts (abaixo do peer).")
         st.markdown('</div>', unsafe_allow_html=True)
 
         # Aplicar filtros
@@ -1109,7 +1681,11 @@ else:
             df_f = df_f[df_f["Tipo"].isin(sel_type)]
         df_f = df_f[(df_f["Score"] >= score_range[0]) & (df_f["Score"] <= score_range[1])]
         if search:
-            df_f = df_f[df_f["name"].str.contains(search, case=False, na=False)]
+            # Se search e um INEP (so digitos), filtra exato; senao busca por texto
+            if search.isdigit():
+                df_f = df_f[df_f["inep_code"].astype(str).str.strip() == search]
+            else:
+                df_f = df_f[df_f["name"].str.contains(search, case=False, na=False)]
         if sel_tech:
             df_f = df_f[df_f["Tech"].isin(sel_tech)]
         if sel_fonte:
@@ -1120,6 +1696,12 @@ else:
             df_f = df_f[df_f["Medio"] >= min_medio]
         if min_fit > 0:
             df_f = df_f[df_f["Fit"] >= min_fit]
+        if sel_pot:
+            df_f = df_f[df_f["Potencial"].isin(sel_pot)]
+        if sel_traj:
+            df_f = df_f[df_f["Trajet. Peer"].isin(sel_traj)]
+        if max_gap < 200:
+            df_f = df_f[(df_f["Gap ENEM"].notna()) & (df_f["Gap ENEM"] <= max_gap)]
 
         # --- Metricas ---
         avg = df["Score"].replace(0, pd.NA).dropna().mean()
@@ -1148,7 +1730,9 @@ else:
             st.session_state.escola_msg = None
 
         # --- Tabela interativa com selecao por clique ---
-        table_cols = ["name", "city", "UF", "Bairro", "Tipo", "Fund AF", "Medio", "Tech", "Coord", "Fit", "Score", "Status"]
+        table_cols = ["name", "city", "UF", "Bairro", "Tipo", "Fund AF", "Medio", "Tech",
+                      "Potencial", "Gap ENEM", "Trajet. Peer",
+                      "Coord", "Fit", "Score", "Status"]
         col_config = {
             "name": st.column_config.TextColumn("Escola", width="large"),
             "city": st.column_config.TextColumn("Cidade", width="small"),
@@ -1166,6 +1750,18 @@ else:
             "Tech": st.column_config.TextColumn(
                 "Tech", width="small", disabled=True,
                 help="Nivel tecnologico da escola (Alto/Medio/Baixo)",
+            ),
+            "Potencial": st.column_config.TextColumn(
+                "Potencial ENEM", width="small", disabled=True,
+                help="Potencial de melhoria ENEM 2024 (Alto=🔥 / Medio=🟡 / Baixo=🟢 / —=sem amostra confiavel)",
+            ),
+            "Gap ENEM": st.column_config.NumberColumn(
+                "Gap peer", width="small", disabled=True, format="%+.1f",
+                help="Gap (pts) vs peer group em 2024. Negativo=abaixo dos pares (oportunidade).",
+            ),
+            "Trajet. Peer": st.column_config.TextColumn(
+                "Trajet. peer", width="small", disabled=True,
+                help="Trajetoria 5 anos do peer group (escolas do mesmo municipio × mesma dependencia). NAO e da escola individual.",
             ),
             "Coord": st.column_config.NumberColumn(
                 "Coord", width="small", disabled=True,

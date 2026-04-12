@@ -803,7 +803,7 @@ def action_tile(
     Returns:
         True quando clicado. Uso tipico:
             if action_tile("rocket_launch", "Pipeline", "Rodar", key="t1"):
-                st.switch_page("pages/3_Pipeline.py")
+                st.switch_page("pages/5_📊_Pipeline.py")
     """
     wrapper_class = "action-tile-hot" if highlight else "action-tile"
     # Mapeia hex color -> classe semantica pra CSS (:has seletor)

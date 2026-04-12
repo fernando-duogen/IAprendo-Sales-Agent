@@ -199,29 +199,82 @@ if not is_csv_mode:
         only_geocoded = st.checkbox("Apenas com coordenadas", value=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Toggle para colorir por status ou nivel tecnologico
+    # Toggle para colorir por status, nivel tecnologico ou dados ENEM
     colorir_por_db = st.radio(
         "Colorir pontos por:",
-        ["Status", "Nivel tecnologico"],
+        ["Status", "Nivel tecnologico", "Potencial ENEM", "Trajetoria peer", "Prioridade P1-P3"],
         horizontal=True,
         key="mapa_colorir_por_db",
     )
 
-    if colorir_por_db == "Nivel tecnologico":
-        legenda_md = "**Legenda:** Verde = Alto | Laranja = Medio | Vermelho = Baixo | Cinza = Sem dado"
-    else:
-        legenda_md = "**Legenda:** Azul = Novo | Amarelo = Qualificado | Verde = Contatado | Roxo = Respondeu"
+    legenda_map = {
+        "Status": "**Legenda:** Azul = Novo | Amarelo = Qualificado | Verde = Contatado | Roxo = Respondeu",
+        "Nivel tecnologico": "**Legenda:** Verde = Alto | Laranja = Medio | Vermelho = Baixo | Cinza = Sem dado",
+        "Potencial ENEM": "**Legenda:** 🔥 Vermelho = Alto | 🟡 Amarelo = Medio | 🟢 Verde = Baixo | Cinza = Sem amostra confiavel",
+        "Trajetoria peer": "**Legenda:** Verde = Subindo forte | Verde claro = Subindo | Cinza = Estavel | Laranja = Caindo | Vermelho = Caindo forte",
+        "Prioridade P1-P3": "**Legenda:** 🔥 Vermelho = P1 quente | Laranja = P2 gap | Roxo = P3 defensivo | Cinza = nao priorizado",
+    }
+    legenda_md = legenda_map.get(colorir_por_db, "")
 
     # --- Query ---
     try:
         query = db.client.table("companies").select(
             "id,name,city,state,status,qualification_score,address,latitude,longitude,"
-            "nivel_tecnologico,matriculas_fund_af,matriculas_medio"
+            "nivel_tecnologico,matriculas_fund_af,matriculas_medio,inep_code,admin_dependency"
         )
         all_companies = query.execute().data or []
     except Exception as e:
         st.error(f"Erro ao buscar escolas: {e}")
         st.stop()
+
+    # --- Fetch analytics (UI12d — fetch separado, falha silenciosa) ---
+    # Batch fetch de school_analytics para todos os INEPs carregados.
+    @st.cache_data(ttl=300)
+    def _fetch_map_analytics(inep_tuple: tuple) -> dict:
+        if not inep_tuple:
+            return {}
+        try:
+            r = db.client.table("school_analytics").select(
+                "inep_code,enem_amostra_confiavel,enem_potencial_melhoria,"
+                "peer_trajetoria_5y,enem_gap_vs_peer_2024,enem_dependencia,"
+                "enem_presentes,peer_delta_media_geral_2022_2024"
+            ).in_("inep_code", list(inep_tuple)).execute()
+            return {str(row["inep_code"]): row for row in (r.data or [])}
+        except Exception:
+            return {}
+
+    inep_list = tuple(
+        str(c["inep_code"]).strip()
+        for c in all_companies
+        if c.get("inep_code")
+    )
+    analytics_map = _fetch_map_analytics(inep_list)
+
+    # Helper local: classifica prioridade P1/P2/P3 usando helper do enem_tools
+    try:
+        from agent.tools.enem_tools import _classificar_prioridade
+    except Exception:
+        _classificar_prioridade = lambda row: None  # fallback: tudo sem prioridade
+
+    # Paletas para modos ENEM
+    POTENCIAL_COLORS = {
+        "Alto": [229, 57, 53],       # vermelho forte
+        "Medio": [251, 192, 45],     # amarelo
+        "Médio": [251, 192, 45],
+        "Baixo": [67, 160, 71],      # verde
+    }
+    TRAJ_COLORS = {
+        "Subindo forte": [46, 125, 50],
+        "Subindo": [139, 195, 74],
+        "Estavel": [158, 158, 158],
+        "Caindo": [255, 152, 0],
+        "Caindo forte": [229, 57, 53],
+    }
+    PRIO_COLORS = {
+        "P1": [229, 57, 53],
+        "P2": [255, 152, 0],
+        "P3": [156, 39, 176],
+    }
 
     if not all_companies:
         alert_banner("Nenhuma escola importada no banco ainda. Use a pagina 'Importar Escolas' primeiro.", "info")
@@ -248,8 +301,33 @@ if not is_csv_mode:
         status = c.get("status", "raw")
         nivel_tech = c.get("nivel_tecnologico") or "Sem dado"
 
+        # Lookup analytics (pode ser None se escola nao tem ENEM)
+        sa_row = analytics_map.get(str(c.get("inep_code") or "").strip())
+        enem_pot = None
+        enem_traj = None
+        enem_gap = None
+        enem_prio = None
+        if sa_row:
+            # Regra #1: so citar metricas individuais se amostra_confiavel
+            if sa_row.get("enem_amostra_confiavel"):
+                enem_pot = sa_row.get("enem_potencial_melhoria")
+                enem_gap = sa_row.get("enem_gap_vs_peer_2024")
+            enem_traj = sa_row.get("peer_trajetoria_5y")
+            # Classificar prioridade usando helper oficial
+            row_for_helper = dict(sa_row)
+            row_for_helper["admin_dependency"] = c.get("admin_dependency")
+            row_for_helper["city"] = c.get("city")
+            enem_prio = _classificar_prioridade(row_for_helper)
+
+        # Escolher cor conforme modo
         if colorir_por_db == "Nivel tecnologico":
             cor = TECH_COLORS.get(nivel_tech, DEFAULT_COLOR)
+        elif colorir_por_db == "Potencial ENEM":
+            cor = POTENCIAL_COLORS.get(enem_pot, DEFAULT_COLOR) if enem_pot else DEFAULT_COLOR
+        elif colorir_por_db == "Trajetoria peer":
+            cor = TRAJ_COLORS.get(enem_traj, DEFAULT_COLOR) if enem_traj else DEFAULT_COLOR
+        elif colorir_por_db == "Prioridade P1-P3":
+            cor = PRIO_COLORS.get(enem_prio, DEFAULT_COLOR) if enem_prio else DEFAULT_COLOR
         else:
             cor = STATUS_COLORS_MAP.get(status, DEFAULT_COLOR)
 
@@ -265,6 +343,10 @@ if not is_csv_mode:
             "alvo": alvo,
             "radius": max(50, score * 3),
             "color": cor,
+            "potencial": enem_pot or "—",
+            "trajetoria": enem_traj or "—",
+            "prioridade": enem_prio or "—",
+            "gap": f"{float(enem_gap):+.1f}" if enem_gap is not None else "—",
         })
 
     if not records:
@@ -272,7 +354,18 @@ if not is_csv_mode:
         st.stop()
 
     df_map = pd.DataFrame(records)
-    tooltip_html = "<b>{name}</b><br/>Status: {status}<br/>Score: {score}<br/>Cidade: {city}<br/>Nivel tec: {tech}"
+    tooltip_html = (
+        "<b>{name}</b><br/>"
+        "Status: {status}<br/>"
+        "Score: {score}<br/>"
+        "Cidade: {city}<br/>"
+        "Nivel tec: {tech}<br/>"
+        "<i>— ENEM —</i><br/>"
+        "Potencial: {potencial}<br/>"
+        "Trajet. peer: {trajetoria}<br/>"
+        "Gap peer: {gap}<br/>"
+        "Prioridade: {prioridade}"
+    )
 
     total_banco = len(all_companies)
     com_coords = sum(1 for c in all_companies if c.get("latitude"))
@@ -595,10 +688,21 @@ section_header("Escolas no mapa", "list")
 # Filtros da tabela
 tc1, tc2 = st.columns([3, 2])
 with tc1:
-    table_search = st.text_input(
-        "Buscar escola:", placeholder="Digite o nome...",
-        key="mapa_search", label_visibility="collapsed",
-    )
+    # Selectbox com escolas do DataFrame ja filtrado (melhor que text_input livre)
+    _mapa_name_col = "name" if "name" in df_map.columns else (df_map.columns[0] if len(df_map.columns) > 0 else None)
+    if _mapa_name_col and len(df_map) <= 2000:
+        _mapa_escola_opts = ["(todas)"] + sorted(df_map[_mapa_name_col].dropna().unique().tolist())
+        table_search_sel = st.selectbox(
+            "Buscar escola:", _mapa_escola_opts,
+            key="mapa_search", label_visibility="collapsed",
+        )
+        table_search = "" if table_search_sel == "(todas)" else table_search_sel
+    else:
+        # Fallback: text_input se o DF for muito grande (>2000)
+        table_search = st.text_input(
+            "Buscar escola:", placeholder="Digite o nome...",
+            key="mapa_search_txt", label_visibility="collapsed",
+        )
 with tc2:
     if is_csv_mode and "city" in df_map.columns:
         city_col = "city"
@@ -771,7 +875,7 @@ if selected_rows:
             with mc2:
                 if st.button("Abrir detalhes da escola"):
                     st.session_state.escola_detail_id = cid
-                    st.switch_page("pages/5_🏫_Escolas.py")
+                    st.switch_page("pages/1_🏫_Escolas.py")
 
 if is_csv_mode and len(df_map) > 500:
     st.caption(f"Mostrando 500 de {len(df_map):,} escolas. Use filtros para refinar.".replace(",", "."))
