@@ -1,31 +1,32 @@
 """Gerador de One Page Report — pagina HTML personalizada por escola.
 
 Gera um HTML estatico auto-contido (charts embutidos como base64 PNG,
-CSS inline, zero dependencias externas) que e hospedado no Supabase
-Storage como URL publica permanente.
+CSS inline, zero dependencias externas) que e hospedado via GitHub Pages
+como URL publica permanente.
 
 O report mostra:
-- Header com nome da escola + cidade + badges
-- Radar ENEM 5 areas vs benchmark
-- Gap indicator na area mais fraca
+- Header com nome da escola + cidade + badges (sem info interna)
+- Metricas rapidas com media_geral SEMPRE visivel
+- Radar ENEM 5 areas vs benchmark (gated por amostra_confiavel)
+- Comparacao por area (HTML cards, escola vs benchmark, 5 areas ENEM)
 - Evolucao de matriculas vs media local
-- Insights automaticos (ratio aluno/prof, tech, etc.)
-- CTA para agendar conversa
+- Insights reframed como oportunidades
+- CTA orientado a solucao
+- Footnotes por secao com fontes
 
 Usage:
     from tools.report_generator import generate_report, generate_and_upload_report
 
     # Gerar HTML + upload → URL publica
     result = generate_and_upload_report("43216684")
-    print(result["html_url"])  # https://...supabase.co/storage/.../report_2024.html
-    print(result["pdf_url"])   # None (ou URL se weasyprint instalado)
+    print(result["html_url"])  # https://...github.io/.../reports/43216684.html
 """
 import base64
 import os
 import sys
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
@@ -130,6 +131,17 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   .insight-card.warn {{
     border-left-color: #f59e0b;
   }}
+  .insight-card.opportunity {{
+    border-left-color: #f59e0b;
+  }}
+  .insight-card.highlight {{
+    border-left-color: #10B981;
+  }}
+  .insight-card .card-title {{
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }}
   .metrics-grid {{
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -152,6 +164,33 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
     color: #888;
     margin-top: 2px;
   }}
+  .footnote {{
+    font-size: 10px;
+    color: #aaa;
+    margin-top: 6px;
+    font-style: italic;
+  }}
+  .comparison-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+    margin: 16px 0;
+  }}
+  .comp-card {{
+    text-align: center;
+    padding: 14px 8px;
+    border-radius: 8px;
+    background: #f8f9fa;
+    border-top: 3px solid #e0e0e0;
+  }}
+  .comp-card.above {{ border-top-color: #10B981; }}
+  .comp-card.below {{ border-top-color: #EF4444; }}
+  .comp-card .area-name {{ font-size: 11px; color: #888; margin-bottom: 4px; }}
+  .comp-card .area-value {{ font-size: 20px; font-weight: 700; color: #333; }}
+  .comp-card .area-diff {{ font-size: 12px; font-weight: 600; margin-top: 2px; }}
+  .comp-card .area-diff.positive {{ color: #10B981; }}
+  .comp-card .area-diff.negative {{ color: #EF4444; }}
+  .comp-card .bench-val {{ font-size: 10px; color: #999; margin-top: 2px; }}
   .cta {{
     background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
     color: white;
@@ -192,6 +231,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
     .header {{ padding: 24px 16px; }}
     .section {{ padding: 20px 16px; }}
     .metrics-grid {{ grid-template-columns: repeat(2, 1fr); }}
+    .comparison-grid {{ grid-template-columns: repeat(2, 1fr); }}
     .header h1 {{ font-size: 18px; }}
   }}
 </style>
@@ -223,7 +263,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
       </div>
       <div class="metric-box">
         <div class="value">{gap_display}</div>
-        <div class="label">Gap vs Peer</div>
+        <div class="label">Diferenca vs Escolas Similares</div>
       </div>
     </div>
   </div>
@@ -231,8 +271,8 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   <!-- RADAR ENEM -->
   {radar_section}
 
-  <!-- GAP INDICATOR -->
-  {gap_section}
+  <!-- COMPARACAO POR AREA -->
+  {comparison_section}
 
   <!-- EVOLUCAO MATRICULAS -->
   {trend_section}
@@ -242,9 +282,9 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
 
   <!-- CTA -->
   <div class="cta">
-    <h2>Quer discutir esses resultados?</h2>
-    <p>Nosso time pode ajudar a transformar esses dados em acoes concretas para melhorar o desempenho dos seus alunos.</p>
-    <a href="{meeting_link}" class="cta-button">Agendar Conversa Gratuita</a>
+    <h2>Como a IA pode transformar esses resultados?</h2>
+    <p>Conheca como nossa plataforma de IA educacional alinhada a BNCC pode ajudar a melhorar a performance dos alunos, posicionar sua escola como referencia em inovacao e atrair mais matriculas.</p>
+    <a href="{meeting_link}" class="cta-button">Conhecer a Solucao</a>
   </div>
 
   <!-- FOOTER -->
@@ -265,6 +305,130 @@ def _img_to_base64(png_bytes: bytes) -> str:
 
 
 # ============================================================================
+# HELPERS: fetch media_geral e benchmark para comparison cards
+# ============================================================================
+
+def _fetch_media_geral(inep: str) -> Optional[float]:
+    """Busca enem_media_geral diretamente de school_analytics, SEM gate de amostra_confiavel.
+
+    media_geral e dado bruto do INEP — sempre valido para exibicao, independente
+    do tamanho da amostra.
+    """
+    try:
+        from database.supabase_client import db
+        r = db.client.table("school_analytics").select(
+            "enem_media_geral"
+        ).eq("inep_code", str(inep).strip()).limit(1).execute()
+        if r.data and r.data[0].get("enem_media_geral") is not None:
+            return float(r.data[0]["enem_media_geral"])
+        return None
+    except Exception as e:
+        logger.debug(f"report_generator: fetch media_geral failed: {e}")
+        return None
+
+
+def _build_comparison_cards(
+    school: Dict[str, Any],
+    bench_data: Dict[str, Optional[float]],
+    bench_count: int,
+    dep: str,
+    cidade: str,
+) -> str:
+    """Gera HTML grid de cards comparativos: escola vs benchmark para cada area ENEM.
+
+    Cada card mostra: area name, valor da escola, diferenca, valor do benchmark.
+    Verde para acima do benchmark, vermelho para abaixo.
+    """
+    from tools.insight_charts import AREA_KEYS, AREA_LABELS
+
+    area_display_names = {
+        "enem_media_mt": "Matematica",
+        "enem_media_cn": "Ciencias da Natureza",
+        "enem_media_ch": "Ciencias Humanas",
+        "enem_media_lc": "Linguagens",
+        "enem_media_redacao": "Redacao",
+    }
+
+    cards_html = []
+    for key in AREA_KEYS:
+        school_val = school.get(key)
+        bench_val = bench_data.get(key)
+        area_name = area_display_names.get(key, AREA_LABELS.get(key, key))
+
+        if school_val is None:
+            continue
+
+        sv = float(school_val)
+        sv_display = f"{sv:.0f}"
+
+        if bench_val is not None:
+            bv = float(bench_val)
+            diff = sv - bv
+            css_class = "above" if diff >= 0 else "below"
+            diff_class = "positive" if diff >= 0 else "negative"
+            diff_display = f"{diff:+.0f} pts"
+            bench_display = f"Benchmark: {bv:.0f}"
+        else:
+            css_class = ""
+            diff_class = ""
+            diff_display = ""
+            bench_display = ""
+
+        card = (
+            f'<div class="comp-card {css_class}">'
+            f'<div class="area-name">{area_name}</div>'
+            f'<div class="area-value">{sv_display}</div>'
+            f'<div class="area-diff {diff_class}">{diff_display}</div>'
+            f'<div class="bench-val">{bench_display}</div>'
+            f'</div>'
+        )
+        cards_html.append(card)
+
+    if not cards_html:
+        return ""
+
+    return "\n      ".join(cards_html)
+
+
+def _reframe_insight_as_opportunity(insight_text: str) -> Tuple[str, str, str]:
+    """Reframe um insight observacional como oportunidade ou destaque.
+
+    Args:
+        insight_text: Texto observacional gerado por _detectar_insights.
+
+    Returns:
+        Tuple de (titulo, texto reframed, css_class).
+        - Insights negativos → oportunidade com sugestao de IA
+        - Insights positivos → destaque com posicionamento
+    """
+    negative_signals = [
+        "piorou", "regrediu", "encolheu", "queda", "perda",
+        "superou a contratacao", "pressao financeira",
+    ]
+
+    is_negative = any(signal in insight_text.lower() for signal in negative_signals)
+
+    if is_negative:
+        # Map negative trends to specific IA benefits
+        if "aluno/professor" in insight_text.lower() or "docente" in insight_text.lower():
+            benefit = "ferramentas de IA podem personalizar o aprendizado e aliviar a sobrecarga dos professores"
+        elif "infra" in insight_text.lower():
+            benefit = "uma plataforma digital pode compensar lacunas de infraestrutura fisica"
+        elif "matriculas" in insight_text.lower() and "queda" in insight_text.lower():
+            benefit = "inovacao com IA pode ser um diferencial para atrair e reter alunos"
+        elif "tech" in insight_text.lower():
+            benefit = "a adocao de IA educacional pode acelerar essa transformacao digital"
+        else:
+            benefit = "ferramentas de IA educacional podem ajudar a reverter essa tendencia"
+
+        reframed = f"{insight_text} — {benefit}."
+        return ("Oportunidade", reframed, "opportunity")
+    else:
+        reframed = f"{insight_text} — uma plataforma de IA pode potencializar essa vantagem."
+        return ("Destaque", reframed, "highlight")
+
+
+# ============================================================================
 # GERADOR PRINCIPAL
 # ============================================================================
 
@@ -280,13 +444,14 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     from database.supabase_client import db
     from tools.insight_charts import (
         generate_radar_chart,
-        generate_gap_indicator,
         generate_trend_chart,
         _fetch_school_data,
+        _fetch_benchmark,
         _resolve_school_name,
+        AREA_KEYS,
     )
 
-    # Buscar dados
+    # Buscar dados da escola
     school = _fetch_school_data(str(inep))
     if not school:
         logger.warning(f"report_generator: escola {inep} nao encontrada em school_analytics")
@@ -296,26 +461,26 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     cidade = school.get("peer_mun_nome") or "?"
     uf = school.get("peer_uf_sigla") or "?"
     dep = school.get("enem_dependencia") or "?"
-    media_geral = school.get("enem_media_geral")
     presentes = school.get("enem_presentes")
     gap = school.get("enem_gap_vs_peer_2024")
     area_fraca = school.get("enem_area_mais_fraca")
-    potencial = school.get("enem_potencial_melhoria")
     confiavel = school.get("enem_amostra_confiavel") is True
 
-    # Badges
+    # Fetch media_geral WITHOUT confiavel gate — raw INEP data, always valid
+    media_geral_raw = _fetch_media_geral(str(inep))
+
+    # --- Badges (NO "Potencial" badge — that's internal info) ---
     badges = []
-    if potencial:
-        cls = "good" if potencial == "Alto" else ("warn" if potencial == "Baixo" else "")
-        badges.append(f'<span class="badge {cls}">Potencial: {potencial}</span>')
+    if presentes:
+        badges.append(f'<span class="badge">{int(presentes)} alunos no ENEM</span>')
+    if dep and dep != "?":
+        badges.append(f'<span class="badge">{dep}</span>')
     if area_fraca:
         badges.append(f'<span class="badge warn">Area fraca: {area_fraca}</span>')
-    if presentes and int(presentes) >= 30:
-        badges.append(f'<span class="badge">Amostra confiavel</span>')
     badges_html = "\n      ".join(badges)
 
-    # Metricas rapidas
-    media_display = f"{float(media_geral):.1f}" if media_geral else "—"
+    # --- Metricas rapidas (media_geral ALWAYS shown) ---
+    media_display = f"{media_geral_raw:.1f}" if media_geral_raw is not None else "—"
     pres_display = str(int(presentes)) if presentes else "—"
     if gap is not None:
         g = float(gap)
@@ -323,35 +488,54 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     else:
         gap_display = "—"
 
-    # Gerar charts
+    # --- Fetch benchmark data for comparison cards and footnotes ---
+    bench_data: Dict[str, Optional[float]] = {}
+    bench_count = 0
+    try:
+        bench_data, bench_count = _fetch_benchmark(
+            cidade if cidade != "?" else "",
+            uf if uf != "?" else "",
+            dep if dep != "?" else "",
+            AREA_KEYS,
+        )
+    except Exception as e:
+        logger.debug(f"report_generator: benchmark fetch failed: {e}")
+
+    # --- Gerar charts (radar + trend gated by confiavel; trend always attempted) ---
     radar_png = generate_radar_chart(str(inep), benchmark="municipio") if confiavel else None
-    gap_png = generate_gap_indicator(str(inep)) if confiavel else None
     trend_png = generate_trend_chart(str(inep), "qt_mat_bas", "Matriculas Totais")
 
-    # Montar secoes de charts
+    # --- RADAR SECTION ---
     radar_section = ""
     if radar_png:
         radar_b64 = _img_to_base64(radar_png)
+        bench_caption = f"Media das {bench_count} escolas {dep} de {cidade}" if bench_count > 0 else f"Media das escolas {dep} de {cidade}"
         radar_section = f'''
   <div class="section">
     <div class="section-title"><span class="icon">🎯</span> Performance por Area</div>
     <div class="chart-container">
       <img src="{radar_b64}" alt="Radar ENEM 5 areas" />
-      <div class="chart-caption">Azul: {nome[:30]} &bull; Cinza: Media das {dep} de {cidade}</div>
+      <div class="chart-caption">Azul: {nome[:30]} &bull; Cinza: {bench_caption}</div>
     </div>
+    <div class="footnote">&#185; Fonte: Microdados ENEM 2024 (INEP). Comparacao com {bench_count} escolas {dep} de {cidade}.</div>
   </div>'''
 
-    gap_section = ""
-    if gap_png:
-        gap_b64 = _img_to_base64(gap_png)
-        gap_section = f'''
+    # --- COMPARISON CARDS SECTION (5 areas, escola vs benchmark) ---
+    comparison_section = ""
+    if bench_data and any(school.get(k) is not None for k in AREA_KEYS):
+        cards_inner = _build_comparison_cards(school, bench_data, bench_count, dep, cidade)
+        if cards_inner:
+            bench_caption_comp = f"escolas {dep} de {cidade}" if cidade != "?" else "escolas do mesmo perfil"
+            comparison_section = f'''
   <div class="section">
-    <div class="section-title"><span class="icon">📉</span> Gap vs Escolas Similares</div>
-    <div class="chart-container">
-      <img src="{gap_b64}" alt="Gap indicator" />
+    <div class="section-title"><span class="icon">📊</span> Comparacao com Escolas do Mesmo Perfil</div>
+    <div class="comparison-grid">
+      {cards_inner}
     </div>
+    <div class="footnote">&#178; Escolas similares = mesma dependencia administrativa ({dep}) + mesmo municipio ({cidade}).</div>
   </div>'''
 
+    # --- TREND SECTION ---
     trend_section = ""
     if trend_png:
         trend_b64 = _img_to_base64(trend_png)
@@ -362,9 +546,10 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
       <img src="{trend_b64}" alt="Evolucao de matriculas" />
       <div class="chart-caption">Fonte: Censo Escolar INEP 2020-2025</div>
     </div>
+    <div class="footnote">&#179; Fonte: Censo Escolar INEP 2020-2025.</div>
   </div>'''
 
-    # Insights
+    # --- INSIGHTS SECTION (reframed as opportunities) ---
     insights_section = ""
     try:
         from agent.tools.enem_tools import _handle_analisar_trajetoria_escola
@@ -373,14 +558,33 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         traj_data = json.loads(traj_raw)
         insights_list = traj_data.get("insights_detectados") or []
         if insights_list:
-            cards = "\n    ".join(
-                f'<div class="insight-card">{insight}</div>'
-                for insight in insights_list[:5]
-            )
+            cards = []
+            for insight in insights_list[:5]:
+                title, reframed, css_class = _reframe_insight_as_opportunity(insight)
+                icon = "💡" if css_class == "opportunity" else "✅"
+                cards.append(
+                    f'<div class="insight-card {css_class}">'
+                    f'<div class="card-title">{icon} {title}</div>'
+                    f'{reframed}'
+                    f'</div>'
+                )
+            cards_html = "\n    ".join(cards)
             insights_section = f'''
   <div class="section">
-    <div class="section-title"><span class="icon">💡</span> Insights Detectados</div>
-    {cards}
+    <div class="section-title"><span class="icon">💡</span> Oportunidades Identificadas</div>
+    {cards_html}
+    <div class="footnote">&#8308; Analises baseadas na evolucao dos indicadores do Censo e ENEM.</div>
+  </div>'''
+        else:
+            # No specific insights — show a positive fallback
+            insights_section = f'''
+  <div class="section">
+    <div class="section-title"><span class="icon">✅</span> Oportunidades Identificadas</div>
+    <div class="insight-card highlight">
+      <div class="card-title">✅ Destaque</div>
+      A escola esta bem posicionada nos indicadores analisados — uma plataforma de IA educacional pode manter essa vantagem e impulsionar ainda mais os resultados.
+    </div>
+    <div class="footnote">&#8308; Analises baseadas na evolucao dos indicadores do Censo e ENEM.</div>
   </div>'''
     except Exception as e:
         logger.debug(f"report_generator: insights failed: {e}")
@@ -399,7 +603,7 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         presentes=pres_display,
         gap_display=gap_display,
         radar_section=radar_section,
-        gap_section=gap_section,
+        comparison_section=comparison_section,
         trend_section=trend_section,
         insights_section=insights_section,
         meeting_link=meeting_link,

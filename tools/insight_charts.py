@@ -42,8 +42,8 @@ from utils.logger import logger
 # Cores
 COLOR_SCHOOL = "#2563EB"        # Azul forte (escola)
 COLOR_SCHOOL_FILL = "rgba(37, 99, 235, 0.15)"
-COLOR_BENCHMARK = "#9CA3AF"     # Cinza (benchmark)
-COLOR_BENCHMARK_FILL = "rgba(156, 163, 175, 0.08)"
+COLOR_BENCHMARK = "#6B7280"     # Cinza mais escuro (benchmark — mais visível)
+COLOR_BENCHMARK_FILL = "rgba(107, 114, 128, 0.10)"
 COLOR_GAP_NEGATIVE = "#EF4444"  # Vermelho (gap negativo)
 COLOR_GAP_POSITIVE = "#10B981"  # Verde (gap positivo)
 COLOR_TREND_SCHOOL = "#2563EB"
@@ -110,8 +110,12 @@ def _fetch_school_data(inep: str) -> Optional[Dict[str, Any]]:
 
 def _fetch_benchmark(
     municipio: str, uf: str, dependencia: str, metrics: List[str]
-) -> Dict[str, Optional[float]]:
-    """Busca media do benchmark (municipio x dependencia) para as metricas."""
+) -> Tuple[Dict[str, Optional[float]], int]:
+    """Busca media do benchmark (municipio x dependencia) para as metricas.
+
+    Returns:
+        Tuple de (dict de medias por metrica, contagem de escolas no benchmark).
+    """
     db = _get_db()
     try:
         fields = ",".join(metrics + ["inep_code"])
@@ -127,16 +131,16 @@ def _fetch_benchmark(
         r = q.limit(1000).execute()
         rows = r.data or []
         if not rows:
-            return {}
+            return {}, 0
         # Calcular media por metrica
         result = {}
         for m in metrics:
             vals = [float(row[m]) for row in rows if row.get(m) is not None]
             result[m] = round(sum(vals) / len(vals), 2) if vals else None
-        return result
+        return result, len(rows)
     except Exception as e:
         logger.warning(f"insight_charts: fetch benchmark failed: {e}")
-        return {}
+        return {}, 0
 
 
 def _resolve_school_name(inep: str) -> str:
@@ -201,7 +205,7 @@ def generate_radar_chart(
         return None
 
     # Benchmark
-    bench_data = _fetch_benchmark(
+    bench_data, bench_count = _fetch_benchmark(
         municipio if benchmark == "municipio" else "",
         uf if benchmark in ("municipio", "estado") else "",
         dep,
@@ -219,30 +223,18 @@ def generate_radar_chart(
     b_closed = b_vals + [b_vals[0]]
     l_closed = labels + [labels[0]]
 
-    # Benchmark label
+    # Benchmark label (sem jargao "peer", com contagem de escolas)
     if benchmark == "municipio":
-        bench_label = f"Media {dep} de {municipio}"
+        bench_label = f"Media de {bench_count} escolas {dep} de {municipio}"
     elif benchmark == "estado":
-        bench_label = f"Media {dep} do {uf}"
+        bench_label = f"Media de {bench_count} escolas {dep} do {uf}"
     else:
-        bench_label = f"Media {dep} Brasil"
+        bench_label = f"Media de {bench_count} escolas {dep} Brasil"
 
     # Construir figura
     fig = go.Figure()
 
-    # Benchmark trace (cinza, atras)
-    if any(v > 0 for v in b_closed):
-        fig.add_trace(go.Scatterpolar(
-            r=b_closed,
-            theta=l_closed,
-            fill="toself",
-            name=bench_label,
-            line=dict(color=COLOR_BENCHMARK, width=2, dash="dot"),
-            fillcolor=COLOR_BENCHMARK_FILL,
-            opacity=0.6,
-        ))
-
-    # Escola trace (azul, frente)
+    # Escola trace PRIMEIRO (azul, fica atras quando menor)
     fig.add_trace(go.Scatterpolar(
         r=s_closed,
         theta=l_closed,
@@ -250,8 +242,19 @@ def generate_radar_chart(
         name=nome[:40],
         line=dict(color=COLOR_SCHOOL, width=3),
         fillcolor=COLOR_SCHOOL_FILL,
-        opacity=0.9,
+        opacity=0.85,
     ))
+
+    # Benchmark trace POR CIMA (cinza pontilhado, mais visivel)
+    if any(v > 0 for v in b_closed):
+        fig.add_trace(go.Scatterpolar(
+            r=b_closed,
+            theta=l_closed,
+            fill="none",
+            name=bench_label[:50],
+            line=dict(color=COLOR_BENCHMARK, width=3, dash="dot"),
+            opacity=0.9,
+        ))
 
     # Range
     all_vals = [v for v in s_vals + b_vals if v > 0]
@@ -275,21 +278,21 @@ def generate_radar_chart(
         legend=dict(
             orientation="h",
             yanchor="top",
-            y=-0.12,
+            y=-0.15,
             xanchor="center",
             x=0.5,
-            font=dict(size=11),
+            font=dict(size=10),
         ),
         title=dict(
-            text=f"Performance ENEM 2024<br><span style='font-size:12px;color:#666'>"
-                 f"{nome[:50]} vs {bench_label}</span>",
+            text=f"Performance ENEM 2024<br><span style='font-size:11px;color:#666'>"
+                 f"{nome[:45]} vs {bench_label[:55]}</span>",
             font=dict(size=14, color="#333"),
             x=0.5,
             xanchor="center",
         ),
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=70, r=70, t=70, b=60),
+        margin=dict(l=70, r=70, t=75, b=65),
         height=RADAR_HEIGHT,
         width=RADAR_WIDTH,
     )
@@ -452,13 +455,13 @@ def generate_trend_chart(
     fig.update_layout(
         title=dict(
             text=f"Evolucao {metric_label}<br>"
-                 f"<span style='font-size:12px;color:#666'>"
-                 f"{nome[:45]} vs Media de {city}</span>",
+                 f"<span style='font-size:11px;color:#666'>"
+                 f"{nome[:40]} vs Media de {city}</span>",
             font=dict(size=14, color="#333"),
             x=0.5, xanchor="center",
         ),
         xaxis=dict(
-            title="Ano", dtick=1,
+            dtick=1,
             gridcolor="#F3F4F6",
             tickfont=dict(size=11),
         ),
@@ -468,12 +471,12 @@ def generate_trend_chart(
             tickfont=dict(size=11),
         ),
         legend=dict(
-            orientation="h", yanchor="top", y=-0.18,
-            xanchor="center", x=0.5, font=dict(size=11),
+            orientation="h", yanchor="top", y=-0.25,
+            xanchor="center", x=0.5, font=dict(size=10),
         ),
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=60, r=30, t=70, b=60),
+        margin=dict(l=60, r=30, t=70, b=75),
         height=TREND_HEIGHT,
         width=TREND_WIDTH,
     )
