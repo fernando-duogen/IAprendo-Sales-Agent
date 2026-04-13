@@ -58,7 +58,7 @@ try:
     all_companies = db.client.table("companies").select(
         "id,name,city,state,status,qualification_score,admin_dependency,admin_category,"
         "categoria_privada,school_size,fonte_dados,matriculas_fund_af,matriculas_medio,"
-        "nivel_tecnologico,qt_coordenadores,phone,website,latitude,longitude"
+        "nivel_tecnologico,qt_coordenadores,phone,website,latitude,longitude,urgency_score,urgency_tier"
     ).order("qualification_score", desc=True).execute().data or []
 
     # Calcular alvo (Fund AF + Medio) e Fit Score IAprendo para cada escola
@@ -346,6 +346,7 @@ def render_execucao():
             "Status": f"{STATUS_ICON.get(c.get('status',''), '')} {STATUS_PT.get(c.get('status',''), '')}",
             "Score": c.get("qualification_score") or 0,
             "Tipo": c.get("admin_dependency", ""),
+            "Urgencia": c.get("urgency_tier") or "COLD",
         } for c in selected_companies])
         st.data_editor(
             df_sel, use_container_width=True, hide_index=True, height=200,
@@ -640,6 +641,7 @@ def render_descoberta():
             "Fit": int(c.get("_fit") or 0),
             "Alvo": int((c.get("matriculas_fund_af") or 0) + (c.get("matriculas_medio") or 0)),
             "Tech": c.get("nivel_tecnologico") or "-",
+            "Urgencia": c.get("urgency_tier") or "COLD",
             "Tipo": (c.get("admin_dependency") or "")[:15],
             "id": c["id"],
         } for c in sorted(filtered_sig, key=lambda x: (x.get("_fit") or 0), reverse=True)])

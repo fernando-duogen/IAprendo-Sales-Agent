@@ -1505,6 +1505,58 @@ if st.session_state.escola_detail_id:
 
     # === TAB ACOES ===
     with tab_acoes:
+
+        # === OPR + GRAFICOS (F1/F2) ===
+        section_header("Relatorios e Graficos", "analytics")
+        _inep_report = company.get("inep_code")
+        if _inep_report:
+            rp1, rp2, rp3 = st.columns(3)
+            with rp1:
+                if st.button("Gerar One Page Report", icon=":material/description:", key="btn_opr"):
+                    with st.spinner("Gerando report..."):
+                        try:
+                            from tools.report_generator import generate_and_upload_report
+                            _opr = generate_and_upload_report(str(_inep_report))
+                            if _opr:
+                                st.session_state["opr_result"] = _opr
+                                st.session_state.escola_msg = ("success", f"Report gerado! URL: {_opr['html_url']}")
+                            else:
+                                st.session_state.escola_msg = ("error", "Falha ao gerar report (dados insuficientes?).")
+                        except Exception as _e:
+                            st.session_state.escola_msg = ("error", f"Erro: {_e}")
+                    st.rerun()
+            with rp2:
+                if st.button("Gerar Graficos", icon=":material/bar_chart:", key="btn_charts"):
+                    with st.spinner("Gerando graficos..."):
+                        try:
+                            from tools.insight_charts import generate_all_relevant_charts
+                            _charts = generate_all_relevant_charts(str(_inep_report))
+                            if _charts:
+                                st.session_state["charts_result"] = _charts
+                                st.session_state.escola_msg = ("success", f"{len(_charts)} grafico(s) gerado(s)!")
+                            else:
+                                st.session_state.escola_msg = ("error", "Nenhum grafico gerado (dados insuficientes?).")
+                        except Exception as _e:
+                            st.session_state.escola_msg = ("error", f"Erro: {_e}")
+                    st.rerun()
+            with rp3:
+                _opr_data = st.session_state.get("opr_result")
+                if _opr_data:
+                    st.link_button("Abrir Report", _opr_data["html_url"], icon=":material/open_in_new:")
+
+            # Mostrar graficos gerados
+            _charts_data = st.session_state.get("charts_result")
+            if _charts_data:
+                st.markdown("**Graficos gerados:**")
+                _ch_cols = st.columns(min(len(_charts_data), 3))
+                for _ci, _ch in enumerate(_charts_data):
+                    with _ch_cols[_ci % len(_ch_cols)]:
+                        _b64 = __import__("base64").b64encode(_ch["bytes"]).decode(); st.image(f"data:image/png;base64,{_b64}", caption=_ch.get("alt", _ch["type"]), use_container_width=True)
+        else:
+            st.info("Escola sem codigo INEP — nao e possivel gerar reports.")
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
         section_header("Acoes", "settings")
         ac1, ac2, ac3 = st.columns(3)
         with ac1:
@@ -1552,7 +1604,7 @@ else:
                 "school_size, admin_dependency, admin_category, categoria_privada, "
                 "inep_code, created_at, fonte_dados, "
                 "matriculas_fund_af, matriculas_medio, total_docentes, "
-                "qt_coordenadores, nivel_tecnologico"
+                "qt_coordenadores, nivel_tecnologico, urgency_score, urgency_tier"
             ).order("created_at", desc=True).limit(1000).execute()
             rows = result.data or []
         except Exception as e:
@@ -1586,6 +1638,13 @@ else:
             fit = calcular_fit_score(row.to_dict())
             return fit["score"] if fit["score"] is not None else 0
         df["Fit"] = df.apply(_calc_fit, axis=1).astype(int)
+
+        # F2: Urgency badge
+        try:
+            from dashboard.helpers.urgency_widgets import urgency_badge_text
+            df["Urgencia"] = df["urgency_tier"].fillna("COLD").map(urgency_badge_text)
+        except Exception:
+            df["Urgencia"] = "-"
 
         # --- Enriquecer com school_analytics (UI12b — fetch separado, falha silenciosa) ---
         # Regra R6 do plano: NUNCA fazer LEFT JOIN. Fetch separado in-memory merge.

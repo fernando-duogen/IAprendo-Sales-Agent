@@ -974,6 +974,42 @@ class Database:
             logger.error(f"Erro upload chart: {e}", extra={"path": path})
             return None
 
+    def upload_report(self, path: str, html_content: str) -> Optional[str]:
+        """Upload de HTML report para Supabase Storage. Retorna URL publica.
+
+        Args:
+            path: Caminho relativo dentro do bucket. Ex: 'reports/43105114.html'
+            html_content: Conteudo HTML como string.
+
+        Returns:
+            URL publica do arquivo, ou None se falhar.
+        """
+        self._ensure_chart_bucket()
+        try:
+            html_bytes = html_content.encode("utf-8")
+            bucket = self.client.storage.from_(self._CHART_BUCKET)
+            # Remover versao anterior se existir (upsert nem sempre funciona)
+            try:
+                bucket.remove([path])
+            except Exception:
+                pass
+            # Upload com content-type explícito (ambos formatos para compatibilidade)
+            bucket.upload(
+                path,
+                html_bytes,
+                file_options={
+                    "content-type": "text/html; charset=utf-8",
+                    "contentType": "text/html; charset=utf-8",
+                    "x-upsert": "true",
+                },
+            )
+            url = bucket.get_public_url(path)
+            logger.info("Report uploaded", extra={"path": path, "url": url[:80]})
+            return url
+        except Exception as e:
+            logger.error(f"Erro upload report: {e}", extra={"path": path})
+            return None
+
 
 # ============================================================================
 # SINGLETON - Instância única para todo o sistema (lazy initialization)

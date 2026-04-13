@@ -467,6 +467,16 @@ def generate_trend_chart(
             textfont=dict(size=10, color=COLOR_TREND_SCHOOL),
         ))
 
+    # Calcular range Y com padding para labels nao serem cortados
+    all_vals = [p[1] for p in s_valid] + [p[1] for p in b_valid]
+    if all_vals:
+        y_min_val = min(all_vals)
+        y_max_val = max(all_vals)
+        y_pad = max((y_max_val - y_min_val) * 0.18, 20)
+        y_range = [max(0, y_min_val - y_pad), y_max_val + y_pad]
+    else:
+        y_range = None
+
     fig.update_layout(
         title=dict(
             text=f"Evolucao {metric_label}<br>"
@@ -484,6 +494,7 @@ def generate_trend_chart(
             title=metric_label,
             gridcolor="#F3F4F6",
             tickfont=dict(size=11),
+            range=y_range,
         ),
         legend=dict(
             orientation="h", yanchor="top", y=-0.25,

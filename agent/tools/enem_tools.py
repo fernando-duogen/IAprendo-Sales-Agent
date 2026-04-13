@@ -597,6 +597,54 @@ def _fetch_school_analytics_by_inep(inep: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _fetch_benchmark_for_insights(inep: str) -> Optional[Dict[str, Any]]:
+    """Busca medias do peer group (mesmo municipio + dependencia) para insights ENEM.
+
+    Returns:
+        Dict com media_cn, media_ch, media_lc, media_mt, media_redacao, media_geral
+        ou None se nao encontrar.
+    """
+    try:
+        school = _fetch_school_analytics_by_inep(inep)
+        if not school:
+            return None
+        mun = school.get("peer_mun_nome") or ""
+        uf = school.get("peer_uf_sigla") or ""
+        dep = school.get("enem_dependencia") or ""
+        if not (mun and dep):
+            return None
+
+        metrics = [
+            "enem_media_cn", "enem_media_ch", "enem_media_lc",
+            "enem_media_mt", "enem_media_redacao", "enem_media_geral",
+        ]
+        fields = ",".join(metrics)
+        q = db.client.table("school_analytics").select(fields).eq(
+            "enem_amostra_confiavel", True
+        ).ilike("peer_mun_nome", f"%{mun}%").eq(
+            "enem_dependencia", dep
+        )
+        if uf:
+            q = q.eq("peer_uf_sigla", uf.upper())
+        rows = (q.limit(500).execute()).data or []
+        if not rows:
+            return None
+
+        result: Dict[str, Any] = {}
+        key_map = {
+            "enem_media_cn": "media_cn", "enem_media_ch": "media_ch",
+            "enem_media_lc": "media_lc", "enem_media_mt": "media_mt",
+            "enem_media_redacao": "media_redacao", "enem_media_geral": "media_geral",
+        }
+        for db_key, out_key in key_map.items():
+            vals = [float(r[db_key]) for r in rows if r.get(db_key) is not None]
+            result[out_key] = round(sum(vals) / len(vals), 2) if vals else None
+        return result
+    except Exception as e:
+        logger.debug(f"fetch_benchmark_for_insights failed: {e}")
+        return None
+
+
 def _fetch_company_by_inep(inep: str) -> Optional[Dict[str, Any]]:
     """Busca dados cadastrais basicos da escola (se estiver em companies)."""
     try:
@@ -1727,12 +1775,101 @@ def _compute_derived_metrics(row: Dict[str, Any]) -> Dict[str, Any]:
 def _detectar_insights(
     trends: Dict[str, Optional[Dict[str, Any]]],
     censo_series: List[Dict[str, Any]],
+    enem_data: Optional[Dict[str, Any]] = None,
+    benchmark_data: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
-    """Detecta correlacoes e padroes nas trends. Retorna lista de textos observacionais.
+    """Detecta correlacoes e padroes nas trends + dados ENEM.
 
+    Retorna lista de textos observacionais.
     Formulacao SEMPRE observacional (o que aconteceu), NUNCA causal (por que).
+
+    Insights ENEM tem prioridade e aparecem primeiro na lista.
+
+    Args:
+        trends: Dict com trends do Censo (ratio, tech, mat, etc).
+        censo_series: Serie historica do Censo.
+        enem_data: Dict com dados school_analytics (opcional). Campos usados:
+            enem_media_geral, enem_media_cn/ch/lc/mt/redacao,
+            enem_gap_vs_peer_2024, enem_area_mais_fraca,
+            enem_pct_acima_600, enem_amostra_confiavel.
+        benchmark_data: Dict com medias do benchmark/peer group (opcional). Campos:
+            media_cn, media_ch, media_lc, media_mt, media_redacao, media_geral.
     """
-    insights: List[str] = []
+    insights_enem: List[str] = []
+    insights_censo: List[str] = []
+
+    # =====================================================================
+    # INSIGHTS ENEM (prioridade alta — relevancia comercial direta)
+    # =====================================================================
+    if enem_data and enem_data.get("enem_amostra_confiavel"):
+        _AREA_NAMES = {
+            "cn": "Ciencias da Natureza",
+            "ch": "Ciencias Humanas",
+            "lc": "Linguagens",
+            "mt": "Matematica",
+            "redacao": "Redacao",
+        }
+
+        # Gap geral vs peer
+        gap_geral = enem_data.get("enem_gap_vs_peer_2024")
+        if gap_geral is not None and gap_geral < -15:
+            insights_enem.append(
+                f"Performance geral {abs(int(gap_geral))} pontos abaixo da media "
+                f"das escolas similares — indica espaco significativo para melhoria "
+                f"com intervencoes pedagogicas direcionadas."
+            )
+
+        # Areas abaixo do benchmark (se temos benchmark)
+        if benchmark_data:
+            gaps_por_area: List[tuple] = []
+            for key, label in _AREA_NAMES.items():
+                escola_val = enem_data.get(f"enem_media_{key}")
+                bench_val = benchmark_data.get(f"media_{key}")
+                if escola_val and bench_val and bench_val > 0:
+                    gap = escola_val - bench_val
+                    if gap < -10:
+                        gaps_por_area.append((label, int(gap), int(escola_val), int(bench_val)))
+
+            # Ordenar por gap (mais negativo primeiro)
+            gaps_por_area.sort(key=lambda x: x[1])
+
+            if len(gaps_por_area) >= 3:
+                areas_texto = ", ".join(f"{g[0]} ({g[1]:+d} pts)" for g in gaps_por_area[:3])
+                insights_enem.append(
+                    f"Tres ou mais areas do ENEM abaixo do benchmark: {areas_texto}. "
+                    f"Um plano de reforco integrado pode ter impacto rapido."
+                )
+            elif gaps_por_area:
+                for label, gap, escola_val, bench_val in gaps_por_area[:2]:
+                    insights_enem.append(
+                        f"{label}: {abs(gap)} pontos abaixo da media das escolas "
+                        f"similares ({escola_val} vs {bench_val}) — area com "
+                        f"potencial de ganho rapido com exercicios focados."
+                    )
+
+        # Redacao fraca (sinal forte — pais e gestores prestam muita atencao)
+        redacao = enem_data.get("enem_media_redacao")
+        bench_redacao = benchmark_data.get("media_redacao") if benchmark_data else None
+        if redacao and bench_redacao and (redacao - bench_redacao) < -30:
+            gap_red = int(redacao - bench_redacao)
+            insights_enem.append(
+                f"Redacao {abs(gap_red)} pontos abaixo do esperado para escolas deste perfil "
+                f"({int(redacao)} vs {int(bench_redacao)}) — competencia textual e "
+                f"sensivel para familias e impacta diretamente o score geral."
+            )
+
+        # Percentual baixo acima de 600
+        pct_600 = enem_data.get("enem_pct_acima_600")
+        if pct_600 is not None and pct_600 < 30:
+            insights_enem.append(
+                f"Apenas {pct_600:.0f}% dos alunos acima de 600 pontos no ENEM — "
+                f"exercicios adaptativos podem elevar essa faixa, melhorando "
+                f"o posicionamento da escola nos rankings."
+            )
+
+    # =====================================================================
+    # INSIGHTS CENSO (mantidos como antes)
+    # =====================================================================
 
     def _t(key: str) -> Optional[Dict]:
         return trends.get(key)
@@ -1758,19 +1895,19 @@ def _detectar_insights(
             last_r = _last(t_ratio)
             if first_r and last_r:
                 if d_ratio < -5 and d_mat > 0:
-                    insights.append(
+                    insights_censo.append(
                         f"A relacao aluno/professor melhorou (de {first_r:.1f}:1 para "
                         f"{last_r:.1f}:1) enquanto as matriculas cresceram {d_mat:+.1f}% "
                         f"— a escola contratou docentes em ritmo maior que o crescimento de alunos."
                     )
                 elif d_ratio > 5 and d_mat > 0:
-                    insights.append(
+                    insights_censo.append(
                         f"As matriculas cresceram {d_mat:+.1f}% mas a relacao aluno/professor "
                         f"piorou (de {first_r:.1f}:1 para {last_r:.1f}:1) — o crescimento "
                         f"de alunos superou a contratacao de docentes."
                     )
                 elif d_ratio < -5 and d_mat < -3:
-                    insights.append(
+                    insights_censo.append(
                         f"A relacao aluno/professor melhorou (de {first_r:.1f}:1 para "
                         f"{last_r:.1f}:1) mas com matriculas em queda ({d_mat:+.1f}%) — "
                         f"a melhora pode ser por perda de alunos, nao por investimento em equipe."
@@ -1784,12 +1921,12 @@ def _detectar_insights(
         last_tech = _last(t_tech)
         if d_tech is not None and first_tech is not None and last_tech is not None:
             if d_tech > 30 and first_tech < 4:
-                insights.append(
+                insights_censo.append(
                     f"Salto tecnologico: tech score subiu de {first_tech:.1f} para "
                     f"{last_tech:.1f} (escala 0-10) — possivel transformacao digital no periodo."
                 )
             elif last_tech >= 8:
-                insights.append(
+                insights_censo.append(
                     f"Escola com bom nivel tecnologico (score {last_tech:.1f}/10)."
                 )
 
@@ -1802,7 +1939,7 @@ def _detectar_insights(
         last_pct = _last(t_pct_med)
         if d_pct_med is not None and first_pct is not None and last_pct is not None:
             if d_pct_med > 15:
-                insights.append(
+                insights_censo.append(
                     f"Mudanca de perfil: % de matriculas no Ensino Medio subiu de "
                     f"{first_pct:.1f}% para {last_pct:.1f}% do total — crescimento "
                     f"relativo do Medio frente a outras etapas."
@@ -1815,12 +1952,12 @@ def _detectar_insights(
         last_i = _last(t_infra)
         if first_i is not None and last_i is not None:
             if last_i > first_i:
-                insights.append(
+                insights_censo.append(
                     f"Infraestrutura fisica melhorou: de {int(first_i)} para {int(last_i)} "
                     f"facilidades (de 4 possiveis: biblioteca, quadra, lab ciencias, alimentacao)."
                 )
             elif last_i < first_i:
-                insights.append(
+                insights_censo.append(
                     f"Infraestrutura fisica regrediu: de {int(first_i)} para {int(last_i)} "
                     f"facilidades (de 4 possiveis)."
                 )
@@ -1830,13 +1967,14 @@ def _detectar_insights(
         d_doc = _delta(t_doc)
         d_mat_val = _delta(t_mat) if t_mat else None
         if d_doc is not None and d_doc < -10 and (d_mat_val is None or d_mat_val > -3):
-            insights.append(
+            insights_censo.append(
                 f"Corpo docente encolheu {d_doc:+.1f}% no periodo"
                 + (f" enquanto matriculas variaram apenas {d_mat_val:+.1f}%." if d_mat_val is not None else ".")
                 + " Possivel sinal de pressao financeira ou reestruturacao."
             )
 
-    return insights
+    # ENEM primeiro (prioridade comercial), depois Censo
+    return insights_enem + insights_censo
 
 
 def _interpretar_trend_numerico(valores: List[Optional[float]], vintages: List[int]) -> Optional[Dict[str, Any]]:
@@ -2090,6 +2228,8 @@ def _handle_analisar_trajetoria_escola(params: Dict) -> str:
                 "pct_matriculas_medio": trend_pct_med,
             },
             censo_clean,
+            enem_data=_fetch_school_analytics_by_inep(str(inep)),
+            benchmark_data=_fetch_benchmark_for_insights(str(inep)),
         ),
         "orientacao_para_o_pitch": (
             "A serie inclui metricas derivadas por ano (_alunos_por_docente, "

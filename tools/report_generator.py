@@ -445,8 +445,12 @@ def _reframe_insight_as_opportunity(insight_text: str, index: int = 0) -> Tuple[
         - Insights positivos -> destaque com beneficio de manter vantagem
     """
     negative_signals = [
+        # Censo
         "piorou", "regrediu", "encolheu", "queda", "perda",
         "superou a contratacao", "pressao financeira",
+        # ENEM
+        "abaixo", "gap", "apenas", "fraca", "fraco",
+        "menor", "deficit", "defasagem",
     ]
 
     is_negative = any(signal in insight_text.lower() for signal in negative_signals)
@@ -730,7 +734,13 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
 # UPLOAD E PUBLICACAO
 # ============================================================================
 
-# GitHub Pages config — reports são servidos via docs/reports/ no repo
+# Reports config — servidos via Supabase Storage com proxy Cloudflare
+# O dominio dados.iaprendo.com.br aponta para Supabase Storage via Cloudflare Worker
+_REPORT_BASE_URL = os.getenv(
+    "REPORT_BASE_URL",
+    "https://dados.iaprendo.com.br",
+)
+# Fallback: URL direta do Supabase Storage (se dominio nao configurado)
 _GITHUB_PAGES_BASE = os.getenv(
     "GITHUB_PAGES_URL",
     "https://fernando-duogen.github.io/IAprendo-Sales-Agent",
@@ -739,10 +749,10 @@ _REPORTS_DIR = ROOT / "docs" / "reports"
 
 
 def generate_and_upload_report(inep: str) -> Optional[Dict[str, str]]:
-    """Gera report HTML e salva em docs/reports/ para GitHub Pages.
+    """Gera report HTML e faz upload para Supabase Storage.
 
-    O report e servido via GitHub Pages com Content-Type text/html correto.
-    Apos gerar, faz git add + commit + push automaticamente.
+    O report e servido como HTML publico via Supabase Storage CDN.
+    Tambem salva copia local em docs/reports/ como backup.
 
     Returns:
         Dict com {"html_url": str, "escola_nome": str, "inep": str}
@@ -753,33 +763,28 @@ def generate_and_upload_report(inep: str) -> Optional[Dict[str, str]]:
         return None
 
     try:
-        # Salvar em docs/reports/{inep}.html
+        # Salvar copia local como backup
         _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         filepath = _REPORTS_DIR / f"{inep}.html"
         filepath.write_text(result["html"], encoding="utf-8")
 
-        # Git add + commit + push (best-effort, nao bloqueia se falhar)
-        import subprocess
+        # Upload para Supabase Storage (rapido, sem git)
+        supabase_ok = False
         try:
-            subprocess.run(
-                ["git", "add", str(filepath)],
-                cwd=str(ROOT), capture_output=True, timeout=10,
-            )
-            subprocess.run(
-                ["git", "commit", "-m",
-                 f"Report: {result['escola_nome']} (INEP {inep})"],
-                cwd=str(ROOT), capture_output=True, timeout=10,
-            )
-            subprocess.run(
-                ["git", "push", "origin", "main"],
-                cwd=str(ROOT), capture_output=True, timeout=30,
-            )
-            logger.info("report_pushed", extra={"inep": inep, "path": str(filepath)})
-        except Exception as git_err:
-            logger.warning(f"report git push failed (report salvo localmente): {git_err}")
+            from database.supabase_client import db
+            supabase_url = db.upload_report(f"reports/{inep}.html", result["html"])
+            if supabase_url:
+                supabase_ok = True
+        except Exception as upload_err:
+            logger.warning(f"Supabase upload failed: {upload_err}")
 
-        url = f"{_GITHUB_PAGES_BASE}/reports/{inep}.html"
-        logger.info("report_generated", extra={"inep": inep, "url": url})
+        # URL final: dominio customizado se Supabase OK, senao fallback GitHub Pages
+        if supabase_ok:
+            url = f"{_REPORT_BASE_URL}/reports/{inep}.html"
+        else:
+            url = f"{_GITHUB_PAGES_BASE}/reports/{inep}.html"
+
+        logger.info("report_generated", extra={"inep": inep, "url": url[:80]})
 
         return {
             "html_url": url,

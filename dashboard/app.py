@@ -217,6 +217,16 @@ try:
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
+    # === HOT LEADS (F2 - Urgency) ===
+    section_header("Leads Quentes", "local_fire_department")
+    try:
+        from dashboard.helpers.urgency_widgets import hot_leads_widget
+        hot_leads_widget()
+    except Exception as e:
+        st.caption(f"Urgency indisponivel: {e}")
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
     # === ATIVIDADE RECENTE ===
     section_header("Atividade Recente", "history")
     try:

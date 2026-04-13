@@ -55,9 +55,13 @@ data/raw/Censo_2025/
 data/processed/*.csv
 data/processed/mec_snapshot_*.json
 data/exports/*.csv
+data/tmp_charts/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/exports/.gitkeep
+
+# Reports gerados (hospedados no Supabase Storage, backup local apenas)
+docs/reports/*.html
 
 # Cache
 .cache/

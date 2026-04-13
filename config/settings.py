@@ -229,6 +229,22 @@ class Settings:
     WHATSAPP_PROVIDER: str = os.getenv("WHATSAPP_PROVIDER", "manual")
 
     # ========================================================================
+    # URGENCY SCORE — F2 (pesos e thresholds configuraveis)
+    # ========================================================================
+    URGENCY_W_ENGAGEMENT: float = float(os.getenv("URGENCY_W_ENGAGEMENT", "0.25"))
+    URGENCY_W_PREDICTIVE: float = float(os.getenv("URGENCY_W_PREDICTIVE", "0.25"))
+    URGENCY_W_INTENT: float = float(os.getenv("URGENCY_W_INTENT", "0.35"))
+    URGENCY_W_ENEM: float = float(os.getenv("URGENCY_W_ENEM", "0.15"))
+
+    URGENCY_TIER_CRITICAL: int = int(os.getenv("URGENCY_TIER_CRITICAL", "80"))
+    URGENCY_TIER_HOT: int = int(os.getenv("URGENCY_TIER_HOT", "60"))
+    URGENCY_TIER_WARM: int = int(os.getenv("URGENCY_TIER_WARM", "40"))
+
+    URGENCY_INACTIVITY_DAYS: int = int(os.getenv("URGENCY_INACTIVITY_DAYS", "5"))
+    URGENCY_TREND_HOURS: int = int(os.getenv("URGENCY_TREND_HOURS", "72"))
+    URGENCY_DIGEST_TIME: str = os.getenv("URGENCY_DIGEST_TIME", "08:15")
+
+    # ========================================================================
     # SISTEMA (3 variáveis)
     # ========================================================================
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

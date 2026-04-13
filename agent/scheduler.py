@@ -47,6 +47,11 @@ class IALexScheduler:
         schedule.every(30).minutes.do(self._update_dynamic_scores)
         # Detector de sinais de compra (intent alerts) — a cada 30 min
         schedule.every(30).minutes.do(self._check_buying_signals)
+        # Score de urgencia unificado (F2) — a cada 30 min, DEPOIS dos sub-scores
+        schedule.every(30).minutes.do(self._update_urgency_scores)
+        # Digest de urgencia diario (F2) — 08:15 (apos briefing matinal 08:00)
+        digest_time = os.getenv("URGENCY_DIGEST_TIME", "08:15")
+        schedule.every().day.at(digest_time).do(self._send_urgency_digest)
         # Retreino semanal do modelo preditivo (domingo 03:00)
         schedule.every().sunday.at("03:00").do(self._retrain_predictive_model)
 
@@ -472,13 +477,30 @@ class IALexScheduler:
             logger.error(f"Erro no envio agendado: {e}")
 
     def _morning_briefing(self):
-        """Envia briefing matinal as 8h."""
+        """Envia briefing matinal as 8h (com urgency highlights F2)."""
         try:
             from agent.brain import Brain
             brain = Brain()
             briefing = brain.get_morning_briefing()
+
+            # F2: adicionar contagem de urgencia ao briefing
+            urgency_line = ""
+            try:
+                from tools.urgency_scorer import urgency_scorer
+                critical = urgency_scorer.get_by_tier("CRITICAL", limit=50)
+                hot = urgency_scorer.get_by_tier("HOT", limit=50)
+                if critical or hot:
+                    parts = []
+                    if critical:
+                        parts.append(f"\U0001f534 {len(critical)} CRITICO(S)")
+                    if hot:
+                        parts.append(f"\U0001f7e0 {len(hot)} QUENTE(S)")
+                    urgency_line = f"\n\n\U0001f525 *Urgencia:* {' | '.join(parts)}"
+            except Exception:
+                pass
+
             if briefing:
-                self._send_to_owner(f"☀️ *Bom dia, Fernando!*\n\n{briefing}")
+                self._send_to_owner(f"\u2600\ufe0f *Bom dia, Fernando!*\n\n{briefing}{urgency_line}")
         except Exception as e:
             logger.error(f"Erro no briefing matinal: {e}")
 
@@ -585,6 +607,100 @@ class IALexScheduler:
                 intent_detector.mark_alerted(signal)
         except Exception as e:
             logger.error(f"Erro no check buying signals: {e}")
+
+    # ============================================================
+    # URGENCY SCORE (F2)
+    # ============================================================
+
+    def _update_urgency_scores(self):
+        """Recalcula scores de urgencia unificados (F2).
+        Roda a cada 30 min, DEPOIS de dynamic_scores e buying_signals.
+        Se detectar novo lead CRITICAL, envia alerta WhatsApp imediato.
+        """
+        try:
+            from tools.urgency_scorer import urgency_scorer
+            result = urgency_scorer.compute_all()
+            updated = result.get("updated", 0)
+            by_tier = result.get("by_tier", {})
+
+            if updated > 0:
+                logger.info(f"Urgency scores: {updated} atualizado(s)", extra=by_tier)
+
+            # Alertar IMEDIATAMENTE sobre novos CRITICALs (tier changes)
+            tier_changes = result.get("tier_changes", [])
+            new_critical = [
+                c for c in tier_changes
+                if c.get("new_tier") == "CRITICAL" and c.get("old_tier") != "CRITICAL"
+            ]
+            for c in new_critical:
+                name = "?"
+                try:
+                    from database.supabase_client import db as _db
+                    comp = _db.client.table("companies").select("name").eq(
+                        "id", c["company_id"]
+                    ).limit(1).execute()
+                    if comp.data:
+                        name = comp.data[0].get("name", "?")
+                except Exception:
+                    pass
+
+                self._send_to_owner(
+                    f"\U0001f534 *ALERTA URGENCIA CRITICA!*\n\n"
+                    f"\U0001f3eb *{name}*\n"
+                    f"\U0001f4c8 Score: {c.get('urgency_score', '?')}/100\n"
+                    f"\u2b06\ufe0f Era {c.get('old_tier', '?')} → agora CRITICAL\n\n"
+                    f"_Acao imediata recomendada. Pergunte 'proximas acoes' para ver sugestoes._"
+                )
+
+            # Notificar via dashboard
+            if new_critical:
+                try:
+                    from tools.notification_manager import notification_manager
+                    notification_manager.add_notification(
+                        title=f"{len(new_critical)} lead(s) CRITICO(S)",
+                        message=f"Novos leads atingiram urgencia CRITICAL. Verifique agora.",
+                        notification_type="warning",
+                        link="/Pipeline",
+                    )
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.debug(f"Urgency scores skip: {e}")
+
+    def _send_urgency_digest(self):
+        """Envia digest de urgencia diario as 08:15 (apos briefing matinal).
+        Inclui leads por tier, tendencias e alertas de inatividade.
+        """
+        try:
+            from tools.proactive_actions import proactive_engine
+
+            parts: list = []
+
+            # Digest principal
+            digest = proactive_engine.generate_daily_digest()
+            if digest:
+                parts.append(digest)
+
+            # Tendencias de tier
+            trends = proactive_engine.detect_and_format_trends()
+            if trends:
+                parts.append(trends)
+
+            # Inatividade
+            from config.settings import settings as _s
+            inactive = proactive_engine.detect_inactivity(days=_s.URGENCY_INACTIVITY_DAYS)
+            inactivity_msg = proactive_engine.format_inactivity_for_whatsapp(inactive)
+            if inactivity_msg:
+                parts.append(inactivity_msg)
+
+            if parts:
+                full_message = "\n\n---\n\n".join(parts)
+                self._send_to_owner(full_message)
+                logger.info("Urgency digest enviado", extra={"parts": len(parts)})
+
+        except Exception as e:
+            logger.error(f"Erro no urgency digest: {e}")
 
     def _retrain_predictive_model(self):
         """Retreina o modelo preditivo semanalmente (domingo 03:00)."""

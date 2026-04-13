@@ -196,6 +196,27 @@ else:
 - ✅ Insight seeds (correlações pré-detectadas: ratio vs matrícula, salto tech, etc.)
 - ✅ Defense in depth ética (amostra_confiavel gate, peer≠escola, socio=município)
 
+### One Page Report + Graficos (F1)
+- ✅ **One Page Report (OPR)**: HTML auto-contido com diagnostico ENEM por escola
+  - Radar 5 areas ENEM (escola vs benchmark), metricas, gap, evolucao matriculas, insights
+  - Publicado via GitHub Pages: `https://fernando-duogen.github.io/IAprendo-Sales-Agent/reports/{inep}.html`
+  - Gerador: `tools/report_generator.py` → `generate_and_upload_report(inep)`
+  - Acesso: Dashboard (Escolas → detalhe → aba Acoes) ou IAlex (WhatsApp: "gera relatorio da escola X")
+- ✅ **Graficos de Insight**: 3 PNGs otimizados para email (Plotly + kaleido)
+  - Radar ENEM (5 areas vs benchmark), Gap Indicator (area mais fraca), Trend de matriculas
+  - Upload para Supabase Storage → URLs publicas em `approval_queue.chart_urls`
+  - Gerador: `tools/insight_charts.py` → `generate_all_relevant_charts(inep)`
+  - Inseridos automaticamente nos emails de prospecao (final do body, antes da assinatura)
+  - Acesso: Dashboard (Escolas → detalhe → aba Acoes) ou IAlex ("gera graficos da escola X")
+
+### Score de Urgencia Unificado (F2)
+- ✅ Score 0-100 combinando engagement + preditivo ML + intent + ENEM P1/P2/P3
+- ✅ Tiers: CRITICAL (80+), HOT (60-79), WARM (40-59), COLD (0-39)
+- ✅ Alertas WhatsApp imediatos para novos CRITICALs
+- ✅ Digest diario as 8:15 com leads por tier + trends + inatividade
+- ✅ 3 tools IAlex: `score_urgencia`, `proximas_acoes`, `digest_urgencia`
+- ✅ Dashboard: widget Hot Leads na Home + coluna Urgencia em Escolas e Pipeline
+
 ### Extras
 - ✅ Geocodificação automática via Google Maps API
 - ✅ Busca automática de telefones via Google Search

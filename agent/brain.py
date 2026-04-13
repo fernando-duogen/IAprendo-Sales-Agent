@@ -1032,6 +1032,46 @@ TOOLS = [
             }
         }
     },
+    # === F2: Urgency Score tools ===
+    {
+        "name": "score_urgencia",
+        "description": "Score de Urgencia UNIFICADO (0-100) que combina engajamento, preditivo ML, sinais de compra "
+                       "e prioridade ENEM num unico numero. Tiers: CRITICAL (80+), HOT (60-79), WARM (40-59), COLD (0-39). "
+                       "Use quando Fernando perguntar 'quais leads estao quentes?', 'quem e prioridade?', 'urgencia' "
+                       "ou 'ranking de leads'. Pode consultar uma escola especifica ou ver o ranking geral por tier.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_id": {"type": "string", "description": "UUID da escola (opcional — se vazio, retorna ranking)"},
+                "limite": {"type": "integer", "description": "Max escolas no ranking (default 10)"},
+                "tier": {"type": "string", "enum": ["CRITICAL", "HOT", "WARM", "COLD"],
+                         "description": "Filtrar por tier especifico (opcional)"}
+            }
+        }
+    },
+    {
+        "name": "proximas_acoes",
+        "description": "Retorna lista priorizada de 'o que fazer agora' baseada nos scores de urgencia. "
+                       "Inclui leads CRITICAL sem follow-up, leads que responderam sem retorno (inatividade), "
+                       "leads HOT para agendar follow-up. Use quando Fernando perguntar 'o que devo fazer?', "
+                       "'proximos passos?', 'prioridades de hoje' ou 'quem precisa de atencao'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limite": {"type": "integer", "description": "Max acoes (default 10)"}
+            }
+        }
+    },
+    {
+        "name": "digest_urgencia",
+        "description": "Gera digest completo de urgencia: leads por tier, mudancas de tier recentes (quem esquentou "
+                       "ou esfriou) e alertas de inatividade (leads que responderam mas nao tiveram follow-up). "
+                       "Use quando Fernando pedir 'resumo de urgencia', 'como estao os leads?' ou 'overview'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
     {
         "name": "ver_pipeline_automatico",
         "description": "Mostra a configuracao atual do pipeline automatico do IAlex: se esta ativo, horario, "
@@ -5867,6 +5907,118 @@ def _handle_detectar_sinais_compra(params: Dict) -> str:
         return json.dumps({"erro": f"Erro ao detectar sinais: {str(e)[:200]}"})
 
 
+# =====================================================================
+# F2: Urgency Score handlers
+# =====================================================================
+
+def _handle_score_urgencia(params: Dict) -> str:
+    """Score de urgencia unificado — consulta individual ou ranking por tier."""
+    try:
+        from tools.urgency_scorer import urgency_scorer
+        escola_id = params.get("escola_id")
+        tier = params.get("tier")
+        limite = params.get("limite", 10)
+
+        if escola_id:
+            result = urgency_scorer.compute_urgency(escola_id)
+            # Enriquecer com nome
+            try:
+                comp = db.client.table("companies").select("name,city").eq("id", escola_id).limit(1).execute()
+                if comp.data:
+                    result["nome"] = comp.data[0].get("name", "?")
+                    result["cidade"] = comp.data[0].get("city", "")
+            except Exception:
+                pass
+            return json.dumps(result, ensure_ascii=False, default=str)
+
+        # Ranking por tier ou geral
+        if tier:
+            leads = urgency_scorer.get_by_tier(tier, limit=limite)
+            return json.dumps({
+                "tier": tier,
+                "total": len(leads),
+                "leads": leads[:limite],
+            }, ensure_ascii=False, default=str)
+
+        # Ranking geral (top leads de todos os tiers quentes)
+        critical = urgency_scorer.get_by_tier("CRITICAL", limit=limite)
+        hot = urgency_scorer.get_by_tier("HOT", limit=limite)
+        return json.dumps({
+            "criticos": critical[:5],
+            "quentes": hot[:5],
+            "total_criticos": len(critical),
+            "total_quentes": len(hot),
+            "dica": "Use tier='WARM' ou tier='COLD' para ver os demais tiers.",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao consultar urgencia: {str(e)[:200]}"})
+
+
+def _handle_proximas_acoes(params: Dict) -> str:
+    """Lista priorizada de acoes baseada em urgencia."""
+    try:
+        from tools.proactive_actions import proactive_engine
+        limite = params.get("limite", 10)
+        actions = proactive_engine.get_prioritized_actions(limit=limite)
+
+        formatted = []
+        for a in actions:
+            formatted.append({
+                "prioridade": a["priority"],
+                "escola": a.get("name", "?"),
+                "tipo": a["action_type"],
+                "descricao": a["description"],
+                "urgencia": a.get("urgency_tier", "?"),
+                "company_id": a["company_id"],
+            })
+
+        return json.dumps({
+            "total_acoes": len(formatted),
+            "acoes": formatted,
+            "dica": "Acoes com prioridade 1 sao mais urgentes. Para leads CRITICAL, considere ligar ou enviar follow-up imediato.",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_digest_urgencia(params: Dict) -> str:
+    """Digest completo de urgencia com tiers, trends e inatividade."""
+    try:
+        from tools.proactive_actions import proactive_engine
+        from tools.urgency_scorer import urgency_scorer
+
+        parts = {}
+
+        # Contagem por tier
+        for tier in ["CRITICAL", "HOT", "WARM", "COLD"]:
+            leads = urgency_scorer.get_by_tier(tier, limit=50)
+            parts[tier.lower()] = {
+                "total": len(leads),
+                "top_3": [{"nome": l.get("name", "?"), "score": l.get("urgency_score", 0)} for l in leads[:3]],
+            }
+
+        # Tendencias
+        changes = urgency_scorer.detect_tier_changes(hours=72)
+        parts["mudancas_tier_72h"] = len(changes)
+        parts["esquentando"] = [
+            {"nome": c["name"], "de": c["old_tier"], "para": c["new_tier"]}
+            for c in changes if c.get("new_tier") in ("CRITICAL", "HOT") and c.get("old_tier") in ("COLD", "WARM")
+        ][:5]
+
+        # Inatividade
+        from config.settings import settings as _s
+        inactive = proactive_engine.detect_inactivity(days=_s.URGENCY_INACTIVITY_DAYS)
+        parts["inativos"] = [
+            {"escola": i["company_name"], "dias_sem_followup": i["days_since_reply"], "contato": i["contact_name"]}
+            for i in inactive[:5]
+        ]
+        parts["total_inativos"] = len(inactive)
+
+        return json.dumps(parts, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
 def _handle_info_rag_emails(params: Dict) -> str:
     """Retorna estatisticas do RAG de emails."""
     try:
@@ -6390,6 +6542,10 @@ TOOL_HANDLERS = {
     "info_rag_emails": _handle_info_rag_emails,
     # Intent detector (sinais de compra)
     "detectar_sinais_compra": _handle_detectar_sinais_compra,
+    # Urgency Score (F2)
+    "score_urgencia": _handle_score_urgencia,
+    "proximas_acoes": _handle_proximas_acoes,
+    "digest_urgencia": _handle_digest_urgencia,
     # Pipeline automatico (Item 5)
     "ver_pipeline_automatico": _handle_ver_pipeline_automatico,
     "configurar_pipeline_automatico": _handle_configurar_pipeline_automatico,
@@ -6950,6 +7106,34 @@ O scheduler roda a cada 30 min e ENVIA ALERTAS PROATIVOS para Fernando no WhatsA
 
 *Quando chegar um alerta automatico:* Fernando ja recebe no WhatsApp formatado com a escola, contato, motivos, keywords e acao recomendada.
 
+== SCORE DE URGENCIA UNIFICADO (F2) ==
+O sistema combina 4 sub-scores num unico "Score de Urgencia" (0-100) por lead:
+- Engajamento (25%): opens, clicks, replies com decay temporal
+- Preditivo ML (25%): probabilidade de fechamento por ML
+- Intent/Sinais de compra (35%): sinais em tempo real (maior peso!)
+- ENEM (15%): oportunidade estrategica P1/P2/P3
+
+Tiers de urgencia:
+- 🔴 CRITICAL (80-100): Acao IMEDIATA. Alerta WhatsApp automatico + auto-draft na fila
+- 🟠 HOT (60-79): Destaque no briefing. Agendar follow-up
+- 🟡 WARM (40-59): Monitorar. Notificacao no dashboard
+- 🟢 COLD (0-39): Tracking passivo
+
+*Quando usar score_urgencia:*
+- Fernando pergunta "quais leads estao quentes?", "prioridades?", "ranking de leads?"
+- Overview rapido: retorna CRITICAL + HOT com scores
+- Detalhe: passar escola_id para breakdown completo com sub-scores
+
+*Quando usar proximas_acoes:*
+- Fernando pergunta "o que devo fazer?", "proximos passos?", "me diz o que e prioridade"
+- Retorna lista priorizada: leads CRITICAL sem follow-up > leads inativos > leads HOT
+
+*Quando usar digest_urgencia:*
+- Fernando quer overview completo: "como estao os leads?", "resumo de urgencia"
+- Retorna contagem por tier + mudancas recentes + alertas inatividade
+
+REGRA: quando Fernando perguntar "quem esta quente?" ou "prioridades", PREFIRA score_urgencia. Ele e mais completo que detectar_sinais_compra (que vê apenas intent). Use detectar_sinais_compra para drill-down em sinais específicos.
+
 == COMPORTAMENTO CONVERSACIONAL (CRITICO — LEIA COM ATENCAO) ==
 
 Voce e um ASSISTENTE HUMANO, nao um menu de opcoes. Fernando conversa com voce NATURALMENTE,
@@ -7028,7 +7212,7 @@ SE Fernando mudar de assunto sem nomear escola, PERGUNTE: "Voce quer que eu faca
 - "O telefone do Marista" → primeiro tente telefone da EMPRESA (companies.phone), se Fernando quiser o do contato, diga: "Telefone da escola: X. Do diretor: Y."
 
 *3. TERMOS AMBIGUOS — RESOLVER PELO CONTEXTO:*
-- "Score" → se falando de uma escola especifica: qualification_score. Se falando de ranking: score_preditivo. Se ambiguo: "Score de qualificacao (82) ou score preditivo de fechamento (67%)?"
+- "Score" → se falando de prioridades/quentes: score_urgencia (unificado). Se falando de uma escola especifica: score_urgencia com escola_id. Se falando de ML: score_preditivo. Se falando de qualificacao base: qualification_score.
 - "Pipeline" → se falando de automacao: pipeline automatico (config). Se falando de etapas: pagina Pipeline. Na duvida: "Pipeline automatico (config) ou rodar etapas do pipeline?"
 - "Template" → se gerando email: template de mensagem. Se falando de follow-up: template de follow-up. Se falando de visual: assinatura.
 - "Fila" → normalmente = fila de aprovacao (pendentes). Se Fernando acabou de aprovar: "Fila de pendentes ou aba de aprovadas/enviadas?"
@@ -7459,8 +7643,8 @@ Conversa inicial (sem contexto especifico):
 4️⃣ Gerar follow-ups
 5️⃣ Descobrir escolas novas
 6️⃣ Ver estatisticas
-7️⃣ Score preditivo
-8️⃣ Sinais de compra
+7️⃣ Urgencia (leads quentes)
+8️⃣ Proximas acoes
 📋 _"menu" para ver TODAS as opcoes_
 
 *Regras:*
