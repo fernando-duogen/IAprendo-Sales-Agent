@@ -276,7 +276,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
         for i in range(1, 6):
             v = row.get(f"enem_redacao_comp{i}_media")
             if v is not None:
-                comps[f"Comp {i}"] = float(v)
+                _COMP_NAMES = {1: "Norma Culta", 2: "Compreensao", 3: "Argumentacao", 4: "Coesao", 5: "Intervencao"}; comps[_COMP_NAMES.get(i, f"Comp {i}")] = float(v)
         if comps:
             st.markdown("")
             section_header("Competencias da redacao (ENEM 2024)", "radar")
@@ -316,11 +316,11 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
                 marker_color=[COLORS["error"] if v == min(areas.values())
                               else COLORS["primary"] for v in df_areas["Media"]],
                 text=[f"{v:.0f}" for v in df_areas["Media"]],
-                textposition="outside",
+                textposition="outside", textfont=dict(size=13),
             ))
             fig2.update_layout(
-                yaxis=dict(range=[0, 800], title="Media"),
-                height=260, margin=dict(l=0, r=0, t=10, b=0),
+                yaxis=dict(range=[0, max(areas.values()) * 1.15], title="Media"),
+                height=280, margin=dict(l=0, r=0, t=30, b=0),
                 plot_bgcolor="white",
             )
             st.plotly_chart(fig2, use_container_width=True)
@@ -372,7 +372,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
         if len(serie) >= 2:
             st.markdown("")
             fig3 = go.Figure(go.Scatter(
-                x=list(serie.keys()), y=list(serie.values()),
+                x=[str(y) for y in serie.keys()], y=list(serie.values()),
                 mode="lines+markers",
                 line=dict(color=COLORS["primary"], width=3),
                 marker=dict(size=12),
@@ -744,7 +744,7 @@ def render_redes_view() -> None:
             },
             text="Alunos alvo", hover_data=["Unidades", "Score medio"], height=420,
         )
-        fig.update_traces(textposition="outside", cliponaxis=False)
+        fig.update_traces(textposition="outside", textfont=dict(size=13), cliponaxis=False)
         fig.update_layout(
             yaxis=dict(autorange="reversed", title=""),
             xaxis_title="Alunos alvo (Fund AF + Medio)",
@@ -1136,7 +1136,7 @@ if st.session_state.escola_detail_id:
                         text="Alunos",
                         height=320,
                     )
-                    fig.update_traces(textposition="outside", cliponaxis=False)
+                    fig.update_traces(textposition="outside", textfont=dict(size=13), cliponaxis=False)
                     fig.update_layout(
                         yaxis=dict(autorange="reversed", title=""),
                         xaxis=dict(title="Matriculas"),
@@ -1551,7 +1551,7 @@ if st.session_state.escola_detail_id:
                 _ch_cols = st.columns(min(len(_charts_data), 3))
                 for _ci, _ch in enumerate(_charts_data):
                     with _ch_cols[_ci % len(_ch_cols)]:
-                        _b64 = __import__("base64").b64encode(_ch["bytes"]).decode(); st.image(f"data:image/png;base64,{_b64}", caption=_ch.get("alt", _ch["type"]), use_container_width=True)
+                        _b64 = __import__("base64").b64encode(_ch["bytes"]).decode(); st.markdown(f'<img src="data:image/png;base64,{_b64}" style="width:100%;border-radius:8px"><p style="color:#888;font-size:12px;text-align:center">{_ch.get("alt", _ch["type"])}</p>', unsafe_allow_html=True)
         else:
             st.info("Escola sem codigo INEP — nao e possivel gerar reports.")
 
