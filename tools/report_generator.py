@@ -172,7 +172,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   }}
   .comparison-grid {{
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
     margin: 16px 0;
   }}
@@ -262,7 +262,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
         <div class="label">Alunos Presentes</div>
       </div>
       <div class="metric-box">
-        <div class="value">{gap_display}</div>
+        <div class="value">{gap_display_html}</div>
         <div class="label">Diferenca vs Escolas Similares</div>
       </div>
     </div>
@@ -282,9 +282,9 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
 
   <!-- CTA -->
   <div class="cta">
-    <h2>Como a IA pode transformar esses resultados?</h2>
-    <p>Conheca como nossa plataforma de IA educacional alinhada a BNCC pode ajudar a melhorar a performance dos alunos, posicionar sua escola como referencia em inovacao e atrair mais matriculas.</p>
-    <a href="{meeting_link}" class="cta-button">Conhecer a Solucao</a>
+    <h2>Pronto para transformar o aprendizado?</h2>
+    <p>Conheca a IAprendo: exercicios adaptativos, alinhados a BNCC, que ajudam cada aluno no seu ritmo. Melhore os resultados, inove na pedagogia e atraia mais matriculas.</p>
+    <a href="{meeting_link}" class="cta-button">Conhecer a IAprendo</a>
   </div>
 
   <!-- FOOTER -->
@@ -350,6 +350,37 @@ def _build_comparison_cards(
     }
 
     cards_html = []
+
+    # 6th card: Media Geral (placed first for 3x2 grid layout)
+    mg_school = school.get("enem_media_geral")
+    if mg_school is None:
+        # fallback: fetch from dedicated helper
+        mg_school_raw = _fetch_media_geral(str(school.get("inep_code", "")))
+        mg_school = mg_school_raw
+    if mg_school is not None:
+        mg_sv = float(mg_school)
+        mg_bv = bench_data.get("enem_media_geral")
+        if mg_bv is not None:
+            mg_bv = float(mg_bv)
+            mg_diff = mg_sv - mg_bv
+            mg_css = "above" if mg_diff >= 0 else "below"
+            mg_diff_class = "positive" if mg_diff >= 0 else "negative"
+            mg_diff_display = f"{mg_diff:+.0f} pts"
+            mg_bench_display = f"Benchmark: {mg_bv:.0f}"
+        else:
+            mg_css = ""
+            mg_diff_class = ""
+            mg_diff_display = ""
+            mg_bench_display = ""
+        cards_html.append(
+            f'<div class="comp-card {mg_css}">'
+            f'<div class="area-name">Media Geral</div>'
+            f'<div class="area-value">{mg_sv:.0f}</div>'
+            f'<div class="area-diff {mg_diff_class}">{mg_diff_display}</div>'
+            f'<div class="bench-val">{mg_bench_display}</div>'
+            f'</div>'
+        )
+
     for key in AREA_KEYS:
         school_val = school.get(key)
         bench_val = bench_data.get(key)
@@ -390,16 +421,17 @@ def _build_comparison_cards(
     return "\n      ".join(cards_html)
 
 
-def _reframe_insight_as_opportunity(insight_text: str) -> Tuple[str, str, str]:
+def _reframe_insight_as_opportunity(insight_text: str, index: int = 0) -> Tuple[str, str, str]:
     """Reframe um insight observacional como oportunidade ou destaque.
 
     Args:
         insight_text: Texto observacional gerado por _detectar_insights.
+        index: Indice do insight na lista (para rotacionar templates).
 
     Returns:
         Tuple de (titulo, texto reframed, css_class).
-        - Insights negativos → oportunidade com sugestao de IA
-        - Insights positivos → destaque com posicionamento
+        - Insights negativos -> oportunidade com sugestao pratica
+        - Insights positivos -> destaque com beneficio de manter vantagem
     """
     negative_signals = [
         "piorou", "regrediu", "encolheu", "queda", "perda",
@@ -408,23 +440,31 @@ def _reframe_insight_as_opportunity(insight_text: str) -> Tuple[str, str, str]:
 
     is_negative = any(signal in insight_text.lower() for signal in negative_signals)
 
-    if is_negative:
-        # Map negative trends to specific IA benefits
-        if "aluno/professor" in insight_text.lower() or "docente" in insight_text.lower():
-            benefit = "ferramentas de IA podem personalizar o aprendizado e aliviar a sobrecarga dos professores"
-        elif "infra" in insight_text.lower():
-            benefit = "uma plataforma digital pode compensar lacunas de infraestrutura fisica"
-        elif "matriculas" in insight_text.lower() and "queda" in insight_text.lower():
-            benefit = "inovacao com IA pode ser um diferencial para atrair e reter alunos"
-        elif "tech" in insight_text.lower():
-            benefit = "a adocao de IA educacional pode acelerar essa transformacao digital"
-        else:
-            benefit = "ferramentas de IA educacional podem ajudar a reverter essa tendencia"
+    # 5 templates rotativos para oportunidades (negative insights)
+    opportunity_templates = [
+        "{obs} — com aprendizado adaptativo e exercicios personalizados, e possivel reverter essa tendencia e posicionar a escola como referencia em inovacao.",
+        "{obs} — a plataforma IAprendo oferece reforco personalizado alinhado a BNCC, ajudando cada aluno no seu ritmo e fortalecendo a confianca dos pais.",
+        "{obs} — tecnologia educacional com exercicios adaptativos pode compensar essa lacuna, atrair mais matriculas e diferenciar a escola na regiao.",
+        "{obs} — com apoio as familias e acompanhamento individualizado, a IAprendo ajuda a transformar esse desafio em oportunidade de crescimento.",
+        "{obs} — exercicios adaptativos e reforco personalizado permitem que cada aluno evolua no seu ritmo, melhorando os resultados e a reputacao da escola.",
+    ]
 
-        reframed = f"{insight_text} — {benefit}."
+    # 5 templates rotativos para destaques (positive insights)
+    highlight_templates = [
+        "{obs} — manter essa vantagem com aprendizado adaptativo pode consolidar a escola como referencia e atrair ainda mais matriculas.",
+        "{obs} — a plataforma IAprendo pode potencializar esse resultado com exercicios personalizados que mantem cada aluno em evolucao constante.",
+        "{obs} — tecnologia educacional alinhada a BNCC ajuda a sustentar esse diferencial e fortalecer a confianca das familias na escola.",
+        "{obs} — com reforco personalizado, a escola pode ampliar essa vantagem e se posicionar como lider em inovacao pedagogica na regiao.",
+        "{obs} — exercicios adaptativos ajudam a manter esse patamar e garantem que os alunos sigam evoluindo de forma consistente.",
+    ]
+
+    if is_negative:
+        template = opportunity_templates[index % len(opportunity_templates)]
+        reframed = template.format(obs=insight_text)
         return ("Oportunidade", reframed, "opportunity")
     else:
-        reframed = f"{insight_text} — uma plataforma de IA pode potencializar essa vantagem."
+        template = highlight_templates[index % len(highlight_templates)]
+        reframed = template.format(obs=insight_text)
         return ("Destaque", reframed, "highlight")
 
 
@@ -477,6 +517,17 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         badges.append(f'<span class="badge">{dep}</span>')
     if area_fraca:
         badges.append(f'<span class="badge warn">Area fraca: {area_fraca}</span>')
+    # --- Rankings (from school_analytics) ---
+    rank_mun = school.get("enem_rank_mun")
+    rank_uf = school.get("enem_rank_uf_dep")
+    rank_br = school.get("enem_rank_br")
+
+    if rank_mun:
+        badges.append(f'<span class="badge">#{int(rank_mun)} em {cidade}</span>')
+    if rank_uf:
+        badges.append(f'<span class="badge">#{int(rank_uf)} no {uf}</span>')
+    if rank_br:
+        badges.append(f'<span class="badge">#{int(rank_br)} no Brasil</span>')
     badges_html = "\n      ".join(badges)
 
     # --- Metricas rapidas (media_geral ALWAYS shown) ---
@@ -485,8 +536,11 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     if gap is not None:
         g = float(gap)
         gap_display = f"{g:+.0f} pts"
+        color = "#10B981" if g >= 0 else "#EF4444"
+        gap_display_html = f'<span style="color:{color}">{g:+.0f} pts</span>'
     else:
         gap_display = "—"
+        gap_display_html = "—"
 
     # --- Fetch benchmark data for comparison cards and footnotes ---
     bench_data: Dict[str, Optional[float]] = {}
@@ -496,7 +550,7 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
             cidade if cidade != "?" else "",
             uf if uf != "?" else "",
             dep if dep != "?" else "",
-            AREA_KEYS,
+            ["enem_media_geral"] + AREA_KEYS,
         )
     except Exception as e:
         logger.debug(f"report_generator: benchmark fetch failed: {e}")
@@ -559,8 +613,8 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         insights_list = traj_data.get("insights_detectados") or []
         if insights_list:
             cards = []
-            for insight in insights_list[:5]:
-                title, reframed, css_class = _reframe_insight_as_opportunity(insight)
+            for idx, insight in enumerate(insights_list[:5]):
+                title, reframed, css_class = _reframe_insight_as_opportunity(insight, index=idx)
                 icon = "💡" if css_class == "opportunity" else "✅"
                 cards.append(
                     f'<div class="insight-card {css_class}">'
@@ -582,7 +636,7 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     <div class="section-title"><span class="icon">✅</span> Oportunidades Identificadas</div>
     <div class="insight-card highlight">
       <div class="card-title">✅ Destaque</div>
-      A escola esta bem posicionada nos indicadores analisados — uma plataforma de IA educacional pode manter essa vantagem e impulsionar ainda mais os resultados.
+      A escola esta bem posicionada nos indicadores analisados — com aprendizado adaptativo e exercicios personalizados, e possivel manter essa vantagem e impulsionar ainda mais os resultados.
     </div>
     <div class="footnote">&#8308; Analises baseadas na evolucao dos indicadores do Censo e ENEM.</div>
   </div>'''
@@ -602,6 +656,7 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         media_geral=media_display,
         presentes=pres_display,
         gap_display=gap_display,
+        gap_display_html=gap_display_html,
         radar_section=radar_section,
         comparison_section=comparison_section,
         trend_section=trend_section,

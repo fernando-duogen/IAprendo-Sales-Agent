@@ -98,6 +98,8 @@ def _fetch_school_data(inep: str) -> Optional[Dict[str, Any]]:
             "enem_area_mais_fraca", "enem_potencial_melhoria",
             "enem_amostra_confiavel", "enem_presentes",
             "peer_mun_nome", "peer_uf_sigla",
+            "enem_rank_mun", "enem_rank_uf_dep", "enem_rank_br",
+            "enem_percentil_uf_dep", "enem_quartil_br",
         ])
         r = db.client.table("school_analytics").select(fields).eq(
             "inep_code", str(inep).strip()
@@ -413,6 +415,7 @@ def generate_trend_chart(
 
     # Buscar benchmark (media do municipio por ano)
     bench_vals = []
+    bench_counts = []
     for year in years:
         try:
             r = db.client.table("school_censo_yearly").select(metric).eq(
@@ -420,8 +423,17 @@ def generate_trend_chart(
             ).eq("city", city).execute()
             vals = [float(row[metric]) for row in (r.data or []) if row.get(metric) is not None]
             bench_vals.append(round(sum(vals) / len(vals), 1) if vals else None)
+            bench_counts.append(len(vals))
         except Exception:
             bench_vals.append(None)
+            bench_counts.append(0)
+
+    # Guard: omit benchmark years with unrepresentative sample
+    if bench_counts:
+        max_count = max(bench_counts) if bench_counts else 0
+        for i, count in enumerate(bench_counts):
+            if max_count > 0 and count < max_count * 0.3:
+                bench_vals[i] = None  # omit this year's benchmark
 
     fig = go.Figure()
 
