@@ -437,16 +437,19 @@ def generate_trend_chart(
 
     fig = go.Figure()
 
-    # Benchmark
+    # Benchmark (com rótulos numéricos em cinza)
     b_valid = [(y, v) for y, v in zip(years, bench_vals) if v is not None]
     if b_valid:
         fig.add_trace(go.Scatter(
             x=[p[0] for p in b_valid],
             y=[p[1] for p in b_valid],
-            mode="lines+markers",
+            mode="lines+markers+text",
             name=f"Media {city}",
             line=dict(color=COLOR_TREND_BENCH, width=2, dash="dot"),
             marker=dict(size=6, color=COLOR_TREND_BENCH),
+            text=[str(int(p[1])) for p in b_valid],
+            textposition="bottom center",
+            textfont=dict(size=9, color=COLOR_TREND_BENCH),
         ))
 
     # Escola

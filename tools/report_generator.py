@@ -299,7 +299,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   <div class="footer" style="display:flex;justify-content:space-between;align-items:center">
     <div>
       Fonte: Microdados ENEM 2024 e Censo Escolar 2020-2025 (INEP/MEC)<br>
-      Analise gerada por IAprendo &bull; {data_geracao}
+      Analise gerada por <a href="https://iaprendo.com.br" target="_blank" style="color:#2563eb;text-decoration:none">IAprendo</a> &bull; {data_geracao}
     </div>
     {robot_html}
   </div>
@@ -567,10 +567,18 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     robot_path = brand_dir / "robot_icon.png"
     if logo_path.exists():
         logo_b64 = _img_to_base64(logo_path.read_bytes())
-        logo_html = f'<img src="{logo_b64}" alt="IAprendo" style="height:45px;border-radius:6px">'
+        logo_html = (
+            f'<a href="https://iaprendo.com.br" target="_blank" style="text-decoration:none">'
+            f'<img src="{logo_b64}" alt="IAprendo" style="height:45px;border-radius:6px">'
+            f'</a>'
+        )
     if robot_path.exists():
         robot_b64 = _img_to_base64(robot_path.read_bytes())
-        robot_html = f'<img src="{robot_b64}" alt="IAprendo" style="height:35px;border-radius:50%">'
+        robot_html = (
+            f'<a href="https://iaprendo.com.br" target="_blank" style="text-decoration:none">'
+            f'<img src="{robot_b64}" alt="IAprendo" style="height:35px;border-radius:50%">'
+            f'</a>'
+        )
 
     # --- Metricas rapidas (media_geral ALWAYS shown) ---
     media_display = f"{media_geral_raw:.1f}" if media_geral_raw is not None else "—"
