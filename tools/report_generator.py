@@ -241,11 +241,19 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
 
   <!-- HEADER -->
   <div class="header">
-    <div class="subtitle">Diagnostico de Performance ENEM 2024</div>
-    <h1>{escola_nome}</h1>
-    <div class="subtitle">{cidade}/{uf} &bull; {dependencia}</div>
-    <div class="badges">
-      {badges_html}
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div class="subtitle">Diagnostico de Performance ENEM 2024</div>
+        <h1>{escola_nome}</h1>
+        <div class="subtitle">{cidade}/{uf} &bull; {dependencia}</div>
+      </div>
+      {logo_html}
+    </div>
+    <div class="badges" style="margin-top:12px">
+      {info_badges_html}
+    </div>
+    <div class="badges" style="margin-top:6px">
+      {ranking_badges_html}
     </div>
   </div>
 
@@ -288,9 +296,12 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   </div>
 
   <!-- FOOTER -->
-  <div class="footer">
-    Fonte: Microdados ENEM 2024 e Censo Escolar 2020-2025 (INEP/MEC)<br>
-    Analise gerada por IAprendo &bull; {data_geracao}
+  <div class="footer" style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      Fonte: Microdados ENEM 2024 e Censo Escolar 2020-2025 (INEP/MEC)<br>
+      Analise gerada por IAprendo &bull; {data_geracao}
+    </div>
+    {robot_html}
   </div>
 
 </div>
@@ -461,11 +472,26 @@ def _reframe_insight_as_opportunity(insight_text: str, index: int = 0) -> Tuple[
     if is_negative:
         template = opportunity_templates[index % len(opportunity_templates)]
         reframed = template.format(obs=insight_text)
-        return ("Oportunidade", reframed, "opportunity")
     else:
         template = highlight_templates[index % len(highlight_templates)]
         reframed = template.format(obs=insight_text)
-        return ("Destaque", reframed, "highlight")
+
+    # Bold em numeros e trechos chave (sem excessos)
+    import re
+    # Bold em valores numericos com unidade (ex: "5.2:1", "+30.2%", "-17.5 pts")
+    reframed = re.sub(
+        r'(\d+[.,]?\d*(?::\d+|%| pts| pontos| escolas| alunos))',
+        r'<b>\1</b>',
+        reframed,
+    )
+    # Bold em palavras-chave de oportunidade/destaque
+    for keyword in ["IAprendo", "aprendizado adaptativo", "exercicios adaptativos",
+                     "reforco personalizado", "tecnologia educacional"]:
+        reframed = reframed.replace(keyword, f"<b>{keyword}</b>", 1)  # so 1x por keyword
+
+    title = "Oportunidade" if is_negative else "Destaque"
+    css_class = "opportunity" if is_negative else "highlight"
+    return (title, reframed, css_class)
 
 
 # ============================================================================
@@ -509,26 +535,42 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     # Fetch media_geral WITHOUT confiavel gate — raw INEP data, always valid
     media_geral_raw = _fetch_media_geral(str(inep))
 
-    # --- Badges (NO "Potencial" badge — that's internal info) ---
-    badges = []
+    # --- Badges em 2 linhas: info (linha 1) + ranking (linha 2) ---
+    info_badges = []
     if presentes:
-        badges.append(f'<span class="badge">{int(presentes)} alunos no ENEM</span>')
+        info_badges.append(f'<span class="badge">{int(presentes)} alunos no ENEM</span>')
     if dep and dep != "?":
-        badges.append(f'<span class="badge">{dep}</span>')
+        info_badges.append(f'<span class="badge">{dep}</span>')
     if area_fraca:
-        badges.append(f'<span class="badge warn">Area fraca: {area_fraca}</span>')
-    # --- Rankings (from school_analytics) ---
+        info_badges.append(f'<span class="badge warn">Area fraca: {area_fraca}</span>')
+    info_badges_html = "\n      ".join(info_badges)
+
+    # Rankings (linha 2)
+    ranking_badges = []
     rank_mun = school.get("enem_rank_mun")
     rank_uf = school.get("enem_rank_uf_dep")
     rank_br = school.get("enem_rank_br")
-
     if rank_mun:
-        badges.append(f'<span class="badge">#{int(rank_mun)} em {cidade}</span>')
+        ranking_badges.append(f'<span class="badge">🏙️ #{int(rank_mun)}ª em {cidade}</span>')
     if rank_uf:
-        badges.append(f'<span class="badge">#{int(rank_uf)} no {uf}</span>')
+        ranking_badges.append(f'<span class="badge">🗺️ #{int(rank_uf)}ª no {uf}</span>')
     if rank_br:
-        badges.append(f'<span class="badge">#{int(rank_br)} no Brasil</span>')
-    badges_html = "\n      ".join(badges)
+        ranking_badges.append(f'<span class="badge">🇧🇷 #{int(rank_br)}ª no Brasil</span>')
+    ranking_badges_html = "\n      ".join(ranking_badges)
+
+    # --- Logo (header) e Robot (footer) ---
+    # Tenta carregar imagens locais; se não existirem, não mostra
+    logo_html = ""
+    robot_html = ""
+    brand_dir = ROOT / "data" / "brand"
+    logo_path = brand_dir / "logo_iaprendo.png"
+    robot_path = brand_dir / "robot_icon.png"
+    if logo_path.exists():
+        logo_b64 = _img_to_base64(logo_path.read_bytes())
+        logo_html = f'<img src="{logo_b64}" alt="IAprendo" style="height:45px;border-radius:6px">'
+    if robot_path.exists():
+        robot_b64 = _img_to_base64(robot_path.read_bytes())
+        robot_html = f'<img src="{robot_b64}" alt="IAprendo" style="height:35px;border-radius:50%">'
 
     # --- Metricas rapidas (media_geral ALWAYS shown) ---
     media_display = f"{media_geral_raw:.1f}" if media_geral_raw is not None else "—"
@@ -652,10 +694,12 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         cidade=cidade,
         uf=uf,
         dependencia=dep,
-        badges_html=badges_html,
+        info_badges_html=info_badges_html,
+        ranking_badges_html=ranking_badges_html,
+        logo_html=logo_html,
+        robot_html=robot_html,
         media_geral=media_display,
         presentes=pres_display,
-        gap_display=gap_display,
         gap_display_html=gap_display_html,
         radar_section=radar_section,
         comparison_section=comparison_section,
