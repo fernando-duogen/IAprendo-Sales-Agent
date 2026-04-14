@@ -344,7 +344,7 @@ def generate_gap_indicator(inep: str) -> Optional[bytes]:
         font=dict(size=48, color=color),
     )
     fig.add_annotation(
-        text=f"<b>{label} do peer</b> em <b>{area_fraca}</b>",
+        text=f"<b>{label} das escolas similares</b> em <b>{area_fraca}</b>",
         xref="paper", yref="paper",
         x=0.5, y=0.3,
         showarrow=False,
@@ -546,7 +546,7 @@ def generate_all_relevant_charts(
             "type": "gap",
             "bytes": gap,
             "filename": f"{inep}/gap_{today}.png",
-            "alt": "Gap vs peer group",
+            "alt": "Diferenca vs escolas similares",
         })
 
     # 3. Trend de matriculas (se tiver serie historica)

@@ -377,7 +377,7 @@ def _build_comparison_cards(
             mg_css = "above" if mg_diff >= 0 else "below"
             mg_diff_class = "positive" if mg_diff >= 0 else "negative"
             mg_diff_display = f"{mg_diff:+.0f} pts"
-            mg_bench_display = f"Benchmark: {mg_bv:.0f}"
+            mg_bench_display = f"Referencia: {mg_bv:.0f}"
         else:
             mg_css = ""
             mg_diff_class = ""
@@ -409,7 +409,7 @@ def _build_comparison_cards(
             css_class = "above" if diff >= 0 else "below"
             diff_class = "positive" if diff >= 0 else "negative"
             diff_display = f"{diff:+.0f} pts"
-            bench_display = f"Benchmark: {bv:.0f}"
+            bench_display = f"Referencia: {bv:.0f}"
         else:
             css_class = ""
             diff_class = ""

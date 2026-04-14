@@ -1265,7 +1265,7 @@ TOOLS = [
         "name": "gerar_relatorio_escola",
         "description": (
             "Gera um One Page Report (pagina HTML) com diagnostico completo de uma "
-            "escola: radar ENEM por area, gap vs peer group, evolucao de matriculas, "
+            "escola: radar ENEM por area, comparacao com escolas similares group, evolucao de matriculas, "
             "e insights automaticos. O report e hospedado como URL publica permanente "
             "que pode ser enviada por email ou WhatsApp para a escola. Use quando "
             "Fernando quiser um material visual para enviar junto com a abordagem."
@@ -2258,7 +2258,7 @@ def _handle_gerar_relatorio_escola(params: Dict) -> str:
                 f"Relatorio gerado para {escola_nome}. "
                 f"Link: {result['html_url']}. "
                 + ("Enviei o link no WhatsApp." if enviado_wpp else "")
-                + " O relatorio inclui radar ENEM, gap vs peer, evolucao de matriculas e insights."
+                + " O relatorio inclui radar ENEM, comparacao com escolas similares, evolucao de matriculas e insights."
             ),
             "dica": "Voce pode incluir este link no email para a escola: 'Preparamos um diagnostico da sua escola, veja aqui: [link]'",
         }, ensure_ascii=False)
@@ -3433,12 +3433,12 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
                         f"acompanhar?'. Tom estrategico."
                     ),
                     "dados_destaque": [
-                        f"Peer group em {mun}: {peer_traj} ({delta_abs:.1f} pts 22-24)"
+                        f"Escolas similares em {mun}: {peer_traj} ({delta_abs:.1f} pts 22-24)"
                     ],
                     "tom_sugerido": "estrategico",
                     "foco": "apresentacao",
                     "baseado_em_analytics": True,
-                    "aviso_etico": "Peer e do GRUPO, nunca da escola individual.",
+                    "aviso_etico": "Dados sao do grupo de escolas similares, nunca da escola individual.",
                 })
 
             # ANGULO 10: contexto socioeconomico do municipio em evolucao

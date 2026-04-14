@@ -1819,7 +1819,7 @@ def _detectar_insights(
                 f"com intervencoes pedagogicas direcionadas."
             )
 
-        # Areas abaixo do benchmark (se temos benchmark)
+        # Areas abaixo da media das escolas similares (se temos benchmark)
         if benchmark_data:
             gaps_por_area: List[tuple] = []
             for key, label in _AREA_NAMES.items():
@@ -1836,7 +1836,7 @@ def _detectar_insights(
             if len(gaps_por_area) >= 3:
                 areas_texto = ", ".join(f"{g[0]} ({g[1]:+d} pts)" for g in gaps_por_area[:3])
                 insights_enem.append(
-                    f"Tres ou mais areas do ENEM abaixo do benchmark: {areas_texto}. "
+                    f"Tres ou mais areas do ENEM abaixo da media das escolas similares: {areas_texto}. "
                     f"Um plano de reforco integrado pode ter impacto rapido."
                 )
             elif gaps_por_area:
