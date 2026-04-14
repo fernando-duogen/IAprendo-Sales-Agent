@@ -594,3 +594,267 @@ def generate_all_relevant_charts(
         })
 
     return charts
+
+
+# ============================================================================
+# COMPARATIVO: Radar com 2 escolas + benchmark
+# ============================================================================
+
+def generate_comparison_radar(
+    inep1: str,
+    inep2: str,
+    benchmark: str = "municipio",
+) -> Optional[bytes]:
+    """Gera radar ENEM com 2 escolas + benchmark (3 traces).
+
+    Args:
+        inep1: INEP da escola-alvo (azul).
+        inep2: INEP da escola de referencia (laranja).
+        benchmark: "municipio", "estado" ou "brasil".
+
+    Returns:
+        PNG bytes ou None.
+    """
+    if go is None:
+        return None
+
+    s1 = _fetch_school_data(inep1)
+    s2 = _fetch_school_data(inep2)
+    if not s1 or not s2:
+        return None
+    if s1.get("enem_amostra_confiavel") is not True or s2.get("enem_amostra_confiavel") is not True:
+        return None
+
+    nome1 = _resolve_school_name(inep1)
+    nome2 = _resolve_school_name(inep2)
+    mun = s1.get("peer_mun_nome") or ""
+    uf = s1.get("peer_uf_sigla") or ""
+    dep = s1.get("enem_dependencia") or ""
+
+    metrics = AREA_KEYS
+    labels = [AREA_LABELS[m] for m in metrics]
+
+    v1 = [float(s1.get(m) or 0) for m in metrics]
+    v2 = [float(s2.get(m) or 0) for m in metrics]
+
+    # Benchmark
+    bench_data, bench_count = _fetch_benchmark(
+        mun if benchmark == "municipio" else "",
+        uf if benchmark in ("municipio", "estado") else "",
+        dep, metrics,
+    )
+    vb = [float(bench_data.get(m) or 0) for m in metrics]
+
+    # Fechar poligonos
+    v1c = v1 + [v1[0]]
+    v2c = v2 + [v2[0]]
+    vbc = vb + [vb[0]]
+    lc = labels + [labels[0]]
+
+    fig = go.Figure()
+
+    # Escola 1 (azul — alvo)
+    fig.add_trace(go.Scatterpolar(
+        r=v1c, theta=lc, fill="toself",
+        name=nome1[:30], line=dict(color=COLOR_SCHOOL, width=3),
+        fillcolor=COLOR_SCHOOL_FILL, opacity=0.85,
+    ))
+
+    # Escola 2 (laranja — referencia)
+    COLOR_SCHOOL2 = "#F97316"
+    COLOR_SCHOOL2_FILL = "rgba(249, 115, 22, 0.12)"
+    fig.add_trace(go.Scatterpolar(
+        r=v2c, theta=lc, fill="toself",
+        name=nome2[:30], line=dict(color=COLOR_SCHOOL2, width=3),
+        fillcolor=COLOR_SCHOOL2_FILL, opacity=0.75,
+    ))
+
+    # Benchmark (cinza tracejado)
+    if any(v > 0 for v in vbc):
+        bench_label = f"Media {dep} {mun}" if benchmark == "municipio" else f"Media {dep} {uf}"
+        fig.add_trace(go.Scatterpolar(
+            r=vbc, theta=lc, fill="none",
+            name=bench_label[:40], line=dict(color=COLOR_BENCHMARK, width=2, dash="dot"),
+            opacity=0.7,
+        ))
+
+    all_vals = [v for v in v1 + v2 + vb if v > 0]
+    max_val = max(all_vals) * 1.1 if all_vals else 800
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, max_val],
+                            tickfont=dict(size=9, color="#999"), gridcolor="#E5E7EB"),
+            angularaxis=dict(tickfont=dict(size=11, color="#333"), gridcolor="#E5E7EB"),
+            bgcolor="white",
+        ),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(size=9)),
+        title=dict(
+            text=f"Comparativo ENEM 2024<br><span style='font-size:11px;color:#666'>"
+                 f"{nome1[:25]} vs {nome2[:25]}</span>",
+            font=dict(size=14, color="#333"), x=0.5, xanchor="center",
+        ),
+        paper_bgcolor="white", plot_bgcolor="white",
+        margin=dict(l=70, r=70, t=75, b=70),
+        height=RADAR_HEIGHT, width=RADAR_WIDTH,
+    )
+
+    return _to_png(fig, RADAR_WIDTH, RADAR_HEIGHT)
+
+
+# ============================================================================
+# COMPARATIVO: Trend com 2 escolas
+# ============================================================================
+
+def generate_comparison_trend(
+    inep1: str,
+    inep2: str,
+    metric: str = "qt_mat_bas",
+    metric_label: str = "Matriculas Totais",
+) -> Optional[bytes]:
+    """Gera grafico de evolucao comparando 2 escolas (variacao %).
+
+    Args:
+        inep1: INEP escola-alvo.
+        inep2: INEP escola referencia.
+        metric: Coluna de school_censo_yearly.
+        metric_label: Label em PT-BR.
+
+    Returns:
+        PNG bytes ou None.
+    """
+    if go is None:
+        return None
+
+    db = _get_db()
+    nome1 = _resolve_school_name(inep1)
+    nome2 = _resolve_school_name(inep2)
+
+    def _fetch_series(inep: str):
+        try:
+            r = db.client.table("school_censo_yearly").select(
+                f"vintage_censo,{metric}"
+            ).eq("inep_code", str(inep).strip()).order("vintage_censo").execute()
+            rows = [row for row in (r.data or []) if row.get(metric) is not None]
+            return [(row["vintage_censo"], float(row[metric])) for row in rows]
+        except Exception:
+            return []
+
+    s1 = _fetch_series(inep1)
+    s2 = _fetch_series(inep2)
+    if len(s1) < 2 and len(s2) < 2:
+        return None
+
+    fig = go.Figure()
+
+    # Converter para variacao %
+    def _to_pct(series):
+        if not series:
+            return []
+        base = max(series[0][1], 1)
+        return [(y, round((v / base - 1) * 100, 1)) for y, v in series]
+
+    s1_pct = _to_pct(s1)
+    s2_pct = _to_pct(s2)
+
+    # Linha de referencia 0%
+    all_years = sorted(set([p[0] for p in s1_pct] + [p[0] for p in s2_pct]))
+    fig.add_trace(go.Scatter(
+        x=all_years, y=[0] * len(all_years),
+        mode="lines", line=dict(color="#E0E0E0", width=1, dash="dash"),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    # Escola 1 (azul)
+    if s1_pct:
+        fig.add_trace(go.Scatter(
+            x=[p[0] for p in s1_pct], y=[p[1] for p in s1_pct],
+            mode="lines+markers+text", name=nome1[:30],
+            line=dict(color=COLOR_TREND_SCHOOL, width=3),
+            marker=dict(size=8, color=COLOR_TREND_SCHOOL),
+            text=[f"{p[1]:+.0f}%" for p in s1_pct],
+            textposition="top center", textfont=dict(size=9, color=COLOR_TREND_SCHOOL),
+        ))
+
+    # Escola 2 (laranja)
+    COLOR_TREND2 = "#F97316"
+    if s2_pct:
+        fig.add_trace(go.Scatter(
+            x=[p[0] for p in s2_pct], y=[p[1] for p in s2_pct],
+            mode="lines+markers+text", name=nome2[:30],
+            line=dict(color=COLOR_TREND2, width=3),
+            marker=dict(size=8, color=COLOR_TREND2),
+            text=[f"{p[1]:+.0f}%" for p in s2_pct],
+            textposition="bottom center", textfont=dict(size=9, color=COLOR_TREND2),
+        ))
+
+    # Range Y com padding
+    all_pct = [p[1] for p in s1_pct] + [p[1] for p in s2_pct]
+    if all_pct:
+        y_pad = max((max(all_pct) - min(all_pct)) * 0.20, 8)
+        y_range = [min(all_pct) - y_pad, max(all_pct) + y_pad]
+    else:
+        y_range = None
+
+    # Subtitulo com valores absolutos
+    sub_parts = []
+    if s1:
+        sub_parts.append(f"{nome1[:20]}: {int(s1[0][1])}\u2192{int(s1[-1][1])}")
+    if s2:
+        sub_parts.append(f"{nome2[:20]}: {int(s2[0][1])}\u2192{int(s2[-1][1])}")
+
+    fig.update_layout(
+        title=dict(
+            text=f"Variacao de {metric_label}<br>"
+                 f"<span style='font-size:10px;color:#666'>{' | '.join(sub_parts)}</span>",
+            font=dict(size=13, color="#333"), x=0.5, xanchor="center",
+        ),
+        xaxis=dict(dtick=1, gridcolor="#F3F4F6", tickfont=dict(size=11)),
+        yaxis=dict(title="Variacao %", gridcolor="#F3F4F6", tickfont=dict(size=11),
+                   ticksuffix="%", range=y_range, zeroline=True, zerolinecolor="#E0E0E0"),
+        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5, font=dict(size=10)),
+        paper_bgcolor="white", plot_bgcolor="white",
+        margin=dict(l=60, r=30, t=70, b=75),
+        height=TREND_HEIGHT, width=TREND_WIDTH,
+    )
+
+    return _to_png(fig, TREND_WIDTH, TREND_HEIGHT)
+
+
+# ============================================================================
+# HELPER: Benchmark por lista de INEPs (para grupo customizado)
+# ============================================================================
+
+def fetch_benchmark_by_ineps(
+    inep_list: List[str],
+    metrics: Optional[List[str]] = None,
+) -> Tuple[Dict[str, Optional[float]], int]:
+    """Calcula media de metricas para um grupo customizado de escolas.
+
+    Args:
+        inep_list: Lista de codigos INEP.
+        metrics: Metricas a calcular (default: AREA_KEYS).
+
+    Returns:
+        Tuple de (dict de medias, contagem de escolas com dados).
+    """
+    if metrics is None:
+        metrics = list(AREA_KEYS)
+    db = _get_db()
+    try:
+        fields = ",".join(metrics + ["inep_code"])
+        r = db.client.table("school_analytics").select(fields).eq(
+            "enem_amostra_confiavel", True
+        ).in_("inep_code", [str(i).strip() for i in inep_list]).execute()
+        rows = r.data or []
+        if not rows:
+            return {}, 0
+        result = {}
+        for m in metrics:
+            vals = [float(row[m]) for row in rows if row.get(m) is not None]
+            result[m] = round(sum(vals) / len(vals), 2) if vals else None
+        return result, len(rows)
+    except Exception as e:
+        logger.warning(f"fetch_benchmark_by_ineps failed: {e}")
+        return {}, 0

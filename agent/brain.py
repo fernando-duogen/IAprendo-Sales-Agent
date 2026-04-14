@@ -1279,6 +1279,26 @@ TOOLS = [
             },
         },
     },
+    # === Comparativo de escolas ===
+    {
+        "name": "comparar_escolas",
+        "description": (
+            "Gera relatorio comparativo entre 2 escolas (ou 1 escola vs grupo). "
+            "Radar ENEM lado a lado, metricas por area, evolucao de matriculas "
+            "e insights focados na escola-alvo (a PRIMEIRA informada). "
+            "IMPORTANTE: antes de gerar, confirme com Fernando qual e a escola-alvo "
+            "(a que tera insights) e qual e a referencia de comparacao."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola1_nome": {"type": "string", "description": "Escola-ALVO (tera insights). Nome ou parte do nome."},
+                "escola1_inep": {"type": "string", "description": "INEP da escola-alvo (se conhecido)"},
+                "escola2_nome": {"type": "string", "description": "Escola de REFERENCIA. Nome ou parte do nome."},
+                "escola2_inep": {"type": "string", "description": "INEP da escola referencia (se conhecido)"},
+            },
+        },
+    },
 ]
 
 
@@ -2265,6 +2285,90 @@ def _handle_gerar_relatorio_escola(params: Dict) -> str:
     except Exception as e:
         logger.error(f"gerar_relatorio_escola error: {e}")
         return json.dumps({"erro": f"Erro ao gerar relatorio: {str(e)[:200]}"})
+
+
+def _handle_comparar_escolas(params: Dict) -> str:
+    """Gera report comparativo entre 2 escolas."""
+    try:
+        # Resolver escola 1 (alvo)
+        p1 = {}
+        if params.get("escola1_inep"):
+            p1["inep"] = params["escola1_inep"]
+        elif params.get("escola1_nome"):
+            p1["escola_nome"] = params["escola1_nome"]
+        else:
+            return json.dumps({"erro": "Informe escola1_nome ou escola1_inep."})
+
+        company1, err1 = _resolve_company_strict(p1, select="id,name,inep_code")
+        if err1:
+            return err1
+        if not company1 or not company1.get("inep_code"):
+            return json.dumps({"erro": "Escola-alvo nao encontrada ou sem INEP."})
+
+        # Resolver escola 2 (referencia)
+        p2 = {}
+        if params.get("escola2_inep"):
+            p2["inep"] = params["escola2_inep"]
+        elif params.get("escola2_nome"):
+            p2["escola_nome"] = params["escola2_nome"]
+        else:
+            return json.dumps({"erro": "Informe escola2_nome ou escola2_inep."})
+
+        company2, err2 = _resolve_company_strict(p2, select="id,name,inep_code")
+        if err2:
+            return err2
+        if not company2 or not company2.get("inep_code"):
+            return json.dumps({"erro": "Escola de referencia nao encontrada ou sem INEP."})
+
+        inep1 = str(company1["inep_code"])
+        inep2 = str(company2["inep_code"])
+        nome1 = company1.get("name", "?")
+        nome2 = company2.get("name", "?")
+
+        # Gerar report comparativo
+        from tools.comparison_report import generate_and_upload_comparison
+        result = generate_and_upload_comparison(inep1, inep2)
+
+        if not result:
+            return json.dumps({
+                "erro": "Nao foi possivel gerar o comparativo. Verifique se ambas as escolas tem dados ENEM.",
+                "escola1": nome1,
+                "escola2": nome2,
+            }, ensure_ascii=False)
+
+        # Enviar link via WhatsApp (best-effort)
+        enviado_wpp = False
+        try:
+            from agent.whatsapp_bridge import WhatsAppBridge
+            bridge = WhatsAppBridge()
+            owner = os.getenv("IALEX_OWNER_NUMBER", "")
+            if owner and bridge.is_connected():
+                bridge.send_message(
+                    owner,
+                    f"\U0001f4ca *Comparativo gerado!*\n\n"
+                    f"\U0001f3eb {nome1} vs {nome2}\n"
+                    f"\U0001f517 {result['html_url']}"
+                )
+                enviado_wpp = True
+        except Exception:
+            pass
+
+        return json.dumps({
+            "sucesso": True,
+            "html_url": result["html_url"],
+            "escola_alvo": nome1,
+            "escola_referencia": nome2,
+            "mensagem": (
+                f"Comparativo gerado: {nome1} vs {nome2}. "
+                f"URL: {result['html_url']}. "
+                + ("Link enviado no WhatsApp." if enviado_wpp else "")
+                + " Inclui radar ENEM, metricas por area, evolucao de matriculas e insights."
+            ),
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error(f"comparar_escolas error: {e}")
+        return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
 def _handle_iniciar_prospeccao(params: Dict) -> str:
@@ -6634,6 +6738,7 @@ TOOL_HANDLERS = {
     "gerar_graficos_escola": _handle_gerar_graficos_escola,
     # One Page Report (HTML) para escola
     "gerar_relatorio_escola": _handle_gerar_relatorio_escola,
+    "comparar_escolas": _handle_comparar_escolas,
 }
 
 # =====================================================================
