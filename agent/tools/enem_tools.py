@@ -1875,6 +1875,39 @@ def _detectar_insights(
                 )
 
     # =====================================================================
+    # INSIGHT SUTIL PARA ESCOLAS BOAS: area menos forte como oportunidade
+    # So ativa quando NAO ha nenhum insight negativo ENEM (escola boa)
+    # =====================================================================
+    if not insights_enem and enem_data and benchmark_data and enem_data.get("enem_amostra_confiavel"):
+        _AREA_NAMES_SUTIL = {
+            "cn": "Ciencias da Natureza",
+            "ch": "Ciencias Humanas",
+            "lc": "Linguagens",
+            "mt": "Matematica",
+            "redacao": "Redacao",
+        }
+        area_gaps = []
+        for key, label in _AREA_NAMES_SUTIL.items():
+            escola_val = enem_data.get(f"enem_media_{key}")
+            bench_val = benchmark_data.get(f"media_{key}")
+            if escola_val and bench_val and float(bench_val) > 0:
+                gap = float(escola_val) - float(bench_val)
+                area_gaps.append((label, gap, int(float(escola_val))))
+
+        if len(area_gaps) >= 3:
+            area_gaps.sort(key=lambda x: x[1])  # menor vantagem primeiro
+            menor = area_gaps[0]
+            maior = area_gaps[-1]
+
+            if menor[1] >= 0:  # todas acima do benchmark = escola boa
+                insights_enem.append(
+                    f"A escola esta acima da media em todas as areas, mas "
+                    f"{menor[0]} tem a menor margem ({menor[1]:+.0f} pts). "
+                    f"Fortalecer essa area pode consolidar a escola entre "
+                    f"as melhores da regiao."
+                )
+
+    # =====================================================================
     # INSIGHTS CRITICOS DE MATRICULAS (prioridade MAXIMA — antes de ENEM)
     # Queda significativa de matriculas e o sinal mais forte de urgencia
     # =====================================================================
