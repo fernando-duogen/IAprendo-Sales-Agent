@@ -137,37 +137,86 @@ class BrevoSender:
 
     def _text_to_html(self, text: str, with_signature: bool = False,
                       chart_urls: list = None) -> str:
-        """Converte texto plano para HTML com links clicaveis, graficos e assinatura."""
+        """Converte texto plano para HTML com links clicaveis, graficos e assinatura.
+
+        Se o body ja contem tags HTML (ex: <img>, <a href>, <div>),
+        preserva essas tags e so converte URLs do texto plano.
+        """
         import re
-        # Primeiro, converter URLs em links HTML
         meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
         meeting_link_text = os.getenv("HUBSPOT_MEETING_LINK_TEXT", "Agendar conversa com Fernando")
 
-        def _url_to_link(match):
-            url = match.group(0)
-            if meeting_link and meeting_link in url:
-                return f'<a href="{url}" style="color:#3BB8C4;font-weight:bold">{meeting_link_text}</a>'
-            return f'<a href="{url}" style="color:#3BB8C4">{url}</a>'
+        # Detectar se o body tem HTML embutido (charts/report inline)
+        _has_html = bool(re.search(r'<(img|a\s+href|div)\s', text))
 
-        text_with_links = re.sub(r'https?://[^\s<>"\')\]]+', _url_to_link, text)
+        if _has_html:
+            # Body ja tem HTML — proteger tags existentes antes de converter URLs
+            # 1. Extrair todos os blocos HTML para placeholders
+            _html_blocks = []
+            def _protect_html(match):
+                _html_blocks.append(match.group(0))
+                return f"__HTML_BLOCK_{len(_html_blocks) - 1}__"
+            # Proteger tags completas: <div...>...</div>, <img.../>, <a...>...</a>
+            protected = re.sub(r'<div\s[^>]*>.*?</div>', _protect_html, text, flags=re.DOTALL)
+            protected = re.sub(r'<img\s[^>]*/>', _protect_html, protected)
+            protected = re.sub(r'<a\s[^>]*>.*?</a>', _protect_html, protected, flags=re.DOTALL)
 
-        # Converter texto do meeting link (sem URL) em hyperlink
-        if meeting_link and meeting_link_text and meeting_link_text in text_with_links and meeting_link not in text_with_links:
-            text_with_links = text_with_links.replace(
-                meeting_link_text,
-                f'<a href="{meeting_link}" style="color:#3BB8C4;font-weight:bold">{meeting_link_text}</a>',
-                1,
-            )
+            # 2. Converter URLs restantes (texto plano) em links
+            def _url_to_link(match):
+                url = match.group(0)
+                if meeting_link and meeting_link in url:
+                    return f'<a href="{url}" style="color:#3BB8C4;font-weight:bold">{meeting_link_text}</a>'
+                return f'<a href="{url}" style="color:#3BB8C4">{url}</a>'
+            protected = re.sub(r'https?://[^\s<>"\')\]]+', _url_to_link, protected)
 
-        # Usar <div> com margin-bottom pequeno em vez de <p> (Outlook friendly)
-        lines = text_with_links.split(chr(10))
-        html_lines = []
-        for line in lines:
-            if line.strip():
-                html_lines.append(f'<div style="margin:0;padding:0;line-height:1.5">{line}</div>')
-            else:
-                html_lines.append('<div style="margin:0;padding:0;height:12px">&nbsp;</div>')
-        body_html = chr(10).join(html_lines)
+            # 3. Converter meeting link text em hyperlink
+            if meeting_link and meeting_link_text and meeting_link_text in protected and meeting_link not in protected:
+                protected = protected.replace(
+                    meeting_link_text,
+                    f'<a href="{meeting_link}" style="color:#3BB8C4;font-weight:bold">{meeting_link_text}</a>',
+                    1,
+                )
+
+            # 4. Restaurar blocos HTML protegidos
+            for i, block in enumerate(_html_blocks):
+                protected = protected.replace(f"__HTML_BLOCK_{i}__", block)
+
+            # 5. Converter quebras de linha em <div> (mas preservar blocos HTML)
+            lines = protected.split(chr(10))
+            html_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    html_lines.append('<div style="margin:0;padding:0;height:12px">&nbsp;</div>')
+                elif stripped.startswith("<div") or stripped.startswith("<img") or stripped.startswith("<a "):
+                    html_lines.append(stripped)  # HTML puro, nao envolver em <div>
+                else:
+                    html_lines.append(f'<div style="margin:0;padding:0;line-height:1.5">{line}</div>')
+            body_html = chr(10).join(html_lines)
+        else:
+            # Body e texto puro — converter tudo normalmente
+            def _url_to_link(match):
+                url = match.group(0)
+                if meeting_link and meeting_link in url:
+                    return f'<a href="{url}" style="color:#3BB8C4;font-weight:bold">{meeting_link_text}</a>'
+                return f'<a href="{url}" style="color:#3BB8C4">{url}</a>'
+            text_with_links = re.sub(r'https?://[^\s<>"\')\]]+', _url_to_link, text)
+
+            if meeting_link and meeting_link_text and meeting_link_text in text_with_links and meeting_link not in text_with_links:
+                text_with_links = text_with_links.replace(
+                    meeting_link_text,
+                    f'<a href="{meeting_link}" style="color:#3BB8C4;font-weight:bold">{meeting_link_text}</a>',
+                    1,
+                )
+
+            lines = text_with_links.split(chr(10))
+            html_lines = []
+            for line in lines:
+                if line.strip():
+                    html_lines.append(f'<div style="margin:0;padding:0;line-height:1.5">{line}</div>')
+                else:
+                    html_lines.append('<div style="margin:0;padding:0;height:12px">&nbsp;</div>')
+            body_html = chr(10).join(html_lines)
 
         # Graficos de insight (se houver e se nao estao ja inline no body)
         charts_html = ""
