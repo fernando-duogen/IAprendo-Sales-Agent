@@ -719,16 +719,29 @@ def _start_scheduler():
 
 
 def start_server(port: int = 5001, debug: bool = False):
-    """Inicia o servidor webhook + scheduler."""
+    """Inicia o servidor webhook + scheduler.
+
+    Quando debug=True, o Flask monitora mudancas nos arquivos .py e
+    reinicia automaticamente o servidor. O scheduler so inicia no
+    processo principal (nao no reloader) para evitar duplicatas.
+    """
     logger.info(f"IAlex webhook server starting on port {port}")
-    _start_scheduler()
-    app.run(host="0.0.0.0", port=port, debug=debug)
+
+    # Com reloader, o Flask spawna 2 processos. O scheduler so deve
+    # rodar no filho (WERKZEUG_RUN_MAIN='true'), nao no pai.
+    import os
+    is_reloader_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+    if not debug or is_reloader_child:
+        _start_scheduler()
+
+    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=debug)
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="IAlex Webhook Server")
     parser.add_argument("--port", type=int, default=5001)
-    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--debug", action="store_true", default=True,
+                        help="Ativa auto-reload quando arquivos mudam (default: True)")
     args = parser.parse_args()
     start_server(port=args.port, debug=args.debug)
