@@ -456,21 +456,23 @@ def _reframe_insight_as_opportunity(insight_text: str, index: int = 0) -> Tuple[
     is_negative = any(signal in insight_text.lower() for signal in negative_signals)
 
     # 5 templates rotativos para oportunidades (negative insights)
+    # REGRA: cada template usa uma abordagem DIFERENTE — sem repetir "aprendizado adaptativo"
     opportunity_templates = [
-        "{obs} — com aprendizado adaptativo e exercicios personalizados, e possivel reverter essa tendencia e posicionar a escola como referencia em inovacao.",
-        "{obs} — a plataforma IAprendo oferece reforco personalizado alinhado a BNCC, ajudando cada aluno no seu ritmo e fortalecendo a confianca dos pais.",
-        "{obs} — tecnologia educacional com exercicios adaptativos pode compensar essa lacuna, atrair mais matriculas e diferenciar a escola na regiao.",
-        "{obs} — com apoio as familias e acompanhamento individualizado, a IAprendo ajuda a transformar esse desafio em oportunidade de crescimento.",
-        "{obs} — exercicios adaptativos e reforco personalizado permitem que cada aluno evolua no seu ritmo, melhorando os resultados e a reputacao da escola.",
+        "{obs} — com exercicios personalizados por aluno, e possivel reverter essa tendencia e posicionar a escola como referencia em qualidade pedagogica.",
+        "{obs} — um plano de reforco alinhado a BNCC, ajustado ao ritmo de cada aluno, pode transformar esse cenario e fortalecer a confianca das familias.",
+        "{obs} — acompanhamento individualizado permite identificar e corrigir lacunas antes que se acumulem, mudando a trajetoria dos resultados.",
+        "{obs} — investir em diagnostico e reforco direcionado por aluno e a forma mais eficaz de reverter esse quadro e recuperar competitividade.",
+        "{obs} — familias valorizam escolas que atuam proativamente sobre pontos fracos. Mostrar que a escola age sobre esses dados e um diferencial real.",
     ]
 
     # 5 templates rotativos para destaques (positive insights)
+    # REGRA: cada template usa uma abordagem DIFERENTE — sem correlacoes forcadas
     highlight_templates = [
-        "{obs} — manter essa vantagem com aprendizado adaptativo pode consolidar a escola como referencia e atrair ainda mais matriculas.",
-        "{obs} — a plataforma IAprendo pode potencializar esse resultado com exercicios personalizados que mantem cada aluno em evolucao constante.",
-        "{obs} — tecnologia educacional alinhada a BNCC ajuda a sustentar esse diferencial e fortalecer a confianca das familias na escola.",
-        "{obs} — com reforco personalizado, a escola pode ampliar essa vantagem e se posicionar como lider em inovacao pedagogica na regiao.",
-        "{obs} — exercicios adaptativos ajudam a manter esse patamar e garantem que os alunos sigam evoluindo de forma consistente.",
+        "{obs} — manter esse patamar exige acompanhamento continuo. Escolas que investem em dados conseguem sustentar vantagens por mais tempo.",
+        "{obs} — esse e um diferencial que as familias percebem. Comunicar esse resultado de forma clara pode atrair novas matriculas.",
+        "{obs} — resultados assim posicionam a escola entre as melhores da regiao e abrem espaco para estrategias de crescimento.",
+        "{obs} — consolidar essa vantagem com ferramentas de acompanhamento individual garante que o progresso seja consistente.",
+        "{obs} — escolas com bons indicadores tem mais facilidade para atrair e reter familias que valorizam qualidade academica.",
     ]
 
     if is_negative:

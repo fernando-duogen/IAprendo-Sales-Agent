@@ -1861,10 +1861,10 @@ def _detectar_insights(
         # Percentual baixo acima de 600
         pct_600 = enem_data.get("enem_pct_acima_600")
         if pct_600 is not None and pct_600 < 30:
-            if float(pct_600) < 0.5:
-                pct_texto = "Nenhum aluno atingiu 600 pontos no ENEM"
+            if float(pct_600) < 1:
+                pct_texto = "Nenhum dos alunos atingiu 600 pontos no ENEM"
             else:
-                pct_texto = f"Apenas {pct_600:.0f}% dos alunos acima de 600 pontos no ENEM"
+                pct_texto = f"Apenas {pct_600:.0f}% dos alunos ultrapassaram 600 pontos no ENEM"
             insights_enem.append(
                 f"{pct_texto} — exercicios adaptativos podem elevar essa faixa, "
                 f"melhorando o posicionamento da escola nos rankings."
@@ -1975,22 +1975,9 @@ def _detectar_insights(
                     f"relativo do Medio frente a outras etapas."
                 )
 
-    # 4. Infra improvement
-    t_infra = _t("infra_score")
-    if t_infra:
-        first_i = _first(t_infra)
-        last_i = _last(t_infra)
-        if first_i is not None and last_i is not None:
-            if last_i > first_i:
-                insights_censo.append(
-                    f"Infraestrutura fisica melhorou: de {int(first_i)} para {int(last_i)} "
-                    f"facilidades (de 4 possiveis: biblioteca, quadra, lab ciencias, alimentacao)."
-                )
-            elif last_i < first_i:
-                insights_censo.append(
-                    f"Infraestrutura fisica regrediu: de {int(first_i)} para {int(last_i)} "
-                    f"facilidades (de 4 possiveis)."
-                )
+    # 4. Infra improvement — REMOVIDO: infraestrutura fisica nao tem correlacao
+    # com a proposta do IAprendo (exercicios adaptativos). Incluir esse insight
+    # forcaria uma conexao que nao existe e enfraquece a argumentacao.
 
     # 5. Docente trend standalone
     if t_doc:
