@@ -169,9 +169,10 @@ class BrevoSender:
                 html_lines.append('<div style="margin:0;padding:0;height:12px">&nbsp;</div>')
         body_html = chr(10).join(html_lines)
 
-        # Graficos de insight (se houver)
+        # Graficos de insight (se houver e se nao estao ja inline no body)
         charts_html = ""
-        if chart_urls:
+        _body_has_inline_charts = '<img src=' in body_html and 'insight-charts' in body_html
+        if chart_urls and not _body_has_inline_charts:
             for chart in chart_urls:
                 url = chart.get("url", "")
                 alt = chart.get("alt", "Grafico de analise")

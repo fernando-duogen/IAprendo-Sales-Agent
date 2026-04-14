@@ -253,12 +253,18 @@ class WriterAgent(BaseAgent):
                         url = _db.upload_chart(ch["filename"], ch["bytes"])
                         if url:
                             chart_urls_list.append({"type": ch["type"], "url": url, "alt": ch.get("alt", "")})
+                            _img_style = ('style="width:100%;max-width:560px;display:block;'
+                                         'margin:0 auto;border-radius:8px"')
+                            _src_tag = (f'<div style="text-align:center;margin:16px 0">'
+                                        f'<img src="{url}" alt="{ch.get("alt", "")}" {_img_style} />'
+                                        f'<p style="color:#999;font-size:11px;margin-top:4px">'
+                                        f'Fonte: ENEM 2024 / Censo Escolar (INEP)</p></div>')
                             if ch["type"] == "radar":
-                                extra_vars["chart_radar"] = url
+                                extra_vars["chart_radar"] = _src_tag
                             elif ch["type"] == "gap":
-                                extra_vars["chart_gap"] = url
+                                extra_vars["chart_gap"] = _src_tag
                             elif ch["type"] == "trend":
-                                extra_vars["chart_trend"] = url
+                                extra_vars["chart_trend"] = _src_tag
                 except Exception as e:
                     logger.debug(f"Template charts generation failed: {e}")
 
@@ -267,7 +273,11 @@ class WriterAgent(BaseAgent):
                     from tools.report_generator import generate_and_upload_report
                     report_result = generate_and_upload_report(str(inep))
                     if report_result:
-                        extra_vars["report_link"] = report_result["html_url"]
+                        _rurl = report_result["html_url"]
+                        extra_vars["report_link"] = (
+                            f'<a href="{_rurl}" style="color:#3BB8C4;font-weight:bold">'
+                            f'Ver diagnostico completo da {school_name}</a>'
+                        )
                 except Exception as e:
                     logger.debug(f"Template report generation failed: {e}")
 
@@ -286,6 +296,10 @@ class WriterAgent(BaseAgent):
         if extra_vars.get("report_link") and "{report_link}" not in body_tpl:
             body += f"\n\nVeja o diagnostico completo da {school_name}: {extra_vars['report_link']}"
 
+        # Se charts foram usados inline no template, nao duplicar no final (Brevo)
+        _charts_inline = any(v in body_tpl for v in ["{chart_radar}", "{chart_gap}", "{chart_trend}"])
+        _queue_charts = [] if _charts_inline else chart_urls_list
+
         if len(subject) > 60:
             subject = subject[:57] + "..."
 
@@ -293,7 +307,7 @@ class WriterAgent(BaseAgent):
             company_id=company_id,
             contact_id=contact.get("id") if contact else None,
             subject=subject, body=body,
-            chart_urls=chart_urls_list if chart_urls_list else None)
+            chart_urls=_queue_charts if _queue_charts else None)
         if not queue_id:
             return None
         logger.info("Mensagem na fila (template)", extra={

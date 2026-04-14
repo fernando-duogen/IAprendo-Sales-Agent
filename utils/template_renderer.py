@@ -31,11 +31,11 @@ TEMPLATE_VARIABLES: Dict[str, str] = {
     "meeting_link": "URL do agendamento HubSpot (link cru, ex: https://meetings...)",
     "meeting_link_text": "Texto clicavel para agendamento (ex: 'Agendar conversa com Fernando'). Vira hyperlink no email.",
     "website": "Site da empresa remetente (config)",
-    # Graficos e Report (gerados automaticamente ao enviar)
-    "chart_radar": "Imagem do radar ENEM (5 areas vs escolas similares). URL publica do PNG.",
-    "chart_gap": "Imagem do indicador de diferenca (area mais fraca vs escolas similares). URL publica do PNG.",
-    "chart_trend": "Imagem da evolucao de matriculas (variacao % desde 2020). URL publica do PNG.",
-    "report_link": "Link do diagnostico completo da escola (One Page Report com dados ENEM + Censo).",
+    # Graficos e Report (gerados automaticamente — inserem imagem/link no email)
+    "chart_radar": "Grafico radar ENEM (5 areas vs escolas similares). Insere a IMAGEM inline no email.",
+    "chart_gap": "Grafico de diferenca (area mais fraca vs escolas similares). Insere a IMAGEM inline.",
+    "chart_trend": "Grafico de evolucao de matriculas (variacao % desde 2020). Insere a IMAGEM inline.",
+    "report_link": "Link clicavel para o diagnostico completo da escola (One Page Report).",
 }
 
 

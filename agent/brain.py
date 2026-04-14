@@ -4524,6 +4524,29 @@ def _calcular_proxima_acao(escola: Dict, contatos: List[Dict], fila: List[Dict])
     }
 
 
+def _chart_inline_img(url: str, alt: str) -> str:
+    """Gera tag HTML <img> para inserir grafico inline no email."""
+    if not url:
+        return ""
+    return (
+        '<div style="text-align:center;margin:16px 0">'
+        f'<img src="{url}" alt="{alt}" '
+        'style="width:100%;max-width:560px;display:block;margin:0 auto;border-radius:8px" />'
+        f'<p style="color:#999;font-size:11px;margin-top:4px">Fonte: ENEM 2024 / Censo Escolar (INEP)</p>'
+        '</div>'
+    )
+
+
+def _report_inline_link(url: str, escola_nome: str) -> str:
+    """Gera link HTML clicavel para o report."""
+    if not url:
+        return ""
+    return (
+        f'<a href="{url}" style="color:#3BB8C4;font-weight:bold">'
+        f'Ver diagnostico completo da {escola_nome}</a>'
+    )
+
+
 def _generate_and_upload_charts(inep: str) -> List[Dict[str, str]]:
     """Gera graficos de insight e faz upload para Supabase Storage.
 
@@ -4654,15 +4677,21 @@ def _handle_gerar_email(params: Dict) -> str:
                 "{company_name}", os.getenv("COMPANY_NAME", "IAprendo")
             ).replace("{meeting_link}", meeting_link).replace(
                 "{meeting_link_text}", meeting_link_text
-            ).replace("{chart_radar}", _chart_radar_url).replace(
-                "{chart_gap}", _chart_gap_url
-            ).replace("{chart_trend}", _chart_trend_url).replace(
-                "{report_link}", report_url
+            ).replace("{chart_radar}", _chart_inline_img(_chart_radar_url, "Performance ENEM por area")
+            ).replace("{chart_gap}", _chart_inline_img(_chart_gap_url, "Diferenca vs escolas similares")
+            ).replace("{chart_trend}", _chart_inline_img(_chart_trend_url, "Evolucao de matriculas")
+            ).replace("{report_link}", _report_inline_link(report_url, escola.get("name", "escola"))
             )
 
             # Fallback: se report_link nao foi usado no template, anexar ao final
             if report_url and "{report_link}" not in (tpl.get("body_template") or ""):
                 body += f"\n\nVeja o diagnostico completo da {escola.get('name', 'escola')}: {report_url}"
+
+            # Se charts foram usados inline no template, nao duplicar no final
+            _tpl_body = tpl.get("body_template") or ""
+            _charts_inline = any(v in _tpl_body for v in ["{chart_radar}", "{chart_gap}", "{chart_trend}"])
+            if _charts_inline:
+                chart_urls = []  # Brevo nao precisa adicionar no final
 
             # Inserir na fila
             queue_data = {
