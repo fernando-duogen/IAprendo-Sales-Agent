@@ -554,7 +554,7 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     # Rankings (linha 2)
     ranking_badges = []
     rank_mun = school.get("enem_rank_mun")
-    rank_uf = school.get("enem_rank_uf_dep")
+    rank_uf = school.get("enem_rank_uf")
     rank_br = school.get("enem_rank_br")
     if rank_mun:
         ranking_badges.append(f'<span class="badge">🏙️ #{int(rank_mun)}ª em {cidade}</span>')
