@@ -5551,14 +5551,36 @@ def _resolve_company_strict(
                 "erro": f"Escola nao encontrada por id/inep '{eid_s}'."
             }, ensure_ascii=False))
 
-    # === Via nome (com disambiguation) ===
+    # === Via nome (busca inteligente por palavras-chave) ===
     nome = params.get("escola_nome") or params.get("nome")
     if nome:
+        # Normalizar: remover acentos e lowercase
+        import unicodedata as _ud
+        _nome_clean = _ud.normalize("NFKD", nome).encode("ASCII", "ignore").decode("ASCII").lower()
+
+        # Stop words: prefixos comuns que nao discriminam escolas
+        _STOP = {"colegio", "col", "escola", "esc", "instituto", "inst",
+                 "centro", "de", "do", "da", "dos", "das", "ensino",
+                 "educacional", "fundamental", "medio", "o", "a", "e",
+                 "sao", "santa", "santo", "em", "na", "no"}
+        _palavras = [p for p in _nome_clean.split() if len(p) >= 2 and p not in _STOP]
+        if not _palavras:
+            _palavras = [p for p in _nome_clean.split() if len(p) >= 2]
+
         try:
-            r = db.client.table("companies").select(select).ilike(
-                "name", f"%{nome}%"
-            ).limit(10).execute()
+            # Buscar com AND de cada palavra significativa (max 3)
+            q = db.client.table("companies").select(select)
+            for _pw in _palavras[:3]:
+                q = q.ilike("name", f"%{_pw}%")
+            r = q.limit(10).execute()
             matches = r.data or []
+
+            # Fallback: se 0 resultados e tinha stop words filtradas, tentar nome original
+            if not matches:
+                r = db.client.table("companies").select(select).ilike(
+                    "name", f"%{nome}%"
+                ).limit(10).execute()
+                matches = r.data or []
         except Exception as e:
             return (None, json.dumps({
                 "erro": f"Falha ao buscar escola por nome: {str(e)[:200]}"
@@ -5567,6 +5589,7 @@ def _resolve_company_strict(
         if len(matches) == 0:
             return (None, json.dumps({
                 "erro": f"Nenhuma escola encontrada com '{nome}' no nome.",
+                "dica": "Tente apenas o sobrenome da escola (ex: 'Kennedy' em vez de 'Colegio Kennedy').",
             }, ensure_ascii=False))
 
         if len(matches) > 1:
