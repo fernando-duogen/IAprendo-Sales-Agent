@@ -4612,7 +4612,30 @@ def _handle_gerar_email(params: Dict) -> str:
             # Extrair primeiro nome do contato
             contact_first = contato_nome.split()[0] if contato_nome else "Diretor(a)"
 
-            # Substituir variáveis no template
+            # Gerar graficos de insight (best-effort, ANTES da substituicao)
+            chart_urls = _generate_and_upload_charts(escola.get("inep_code"))
+            _chart_radar_url = ""
+            _chart_gap_url = ""
+            _chart_trend_url = ""
+            for _cu in chart_urls:
+                if _cu.get("type") == "radar":
+                    _chart_radar_url = _cu.get("url", "")
+                elif _cu.get("type") == "gap":
+                    _chart_gap_url = _cu.get("url", "")
+                elif _cu.get("type") == "trend":
+                    _chart_trend_url = _cu.get("url", "")
+
+            # Gerar One Page Report (best-effort)
+            report_url = ""
+            try:
+                from tools.report_generator import generate_and_upload_report
+                report_result = generate_and_upload_report(str(escola.get("inep_code", "")))
+                if report_result:
+                    report_url = report_result["html_url"]
+            except Exception:
+                pass
+
+            # Substituir variaveis no template (inclui graficos e report)
             subject = (tpl.get("subject_template") or "").replace(
                 "{school_name}", escola.get("name", "")
             ).replace("{contact_name}", contato_nome).replace(
@@ -4631,23 +4654,14 @@ def _handle_gerar_email(params: Dict) -> str:
                 "{company_name}", os.getenv("COMPANY_NAME", "IAprendo")
             ).replace("{meeting_link}", meeting_link).replace(
                 "{meeting_link_text}", meeting_link_text
+            ).replace("{chart_radar}", _chart_radar_url).replace(
+                "{chart_gap}", _chart_gap_url
+            ).replace("{chart_trend}", _chart_trend_url).replace(
+                "{report_link}", report_url
             )
 
-            # Gerar graficos de insight (best-effort)
-            chart_urls = _generate_and_upload_charts(escola.get("inep_code"))
-
-            # Gerar One Page Report (best-effort)
-            report_url = None
-            try:
-                from tools.report_generator import generate_and_upload_report
-                report_result = generate_and_upload_report(str(escola.get("inep_code", "")))
-                if report_result:
-                    report_url = report_result["html_url"]
-            except Exception:
-                pass
-
-            if report_url:
-                # Adicionar o link do report no final do body
+            # Fallback: se report_link nao foi usado no template, anexar ao final
+            if report_url and "{report_link}" not in (tpl.get("body_template") or ""):
                 body += f"\n\nVeja o diagnostico completo da {escola.get('name', 'escola')}: {report_url}"
 
             # Inserir na fila
