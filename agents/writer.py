@@ -221,20 +221,70 @@ class WriterAgent(BaseAgent):
 
     def _apply_template(self, template_data: Dict[str, Any], company: Dict[str, Any],
                         contact: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        """Aplica template padrao com substituicao de variaveis. Custo zero (sem API)."""
+        """Aplica template padrao com substituicao de variaveis.
+
+        Se o template usa variaveis de graficos ({chart_radar}, {chart_gap},
+        {chart_trend}, {report_link}), gera os graficos e report automaticamente
+        antes de substituir. Custo zero de API (sem LLM), mas pode demorar
+        ~30s por escola se precisar gerar graficos (Plotly + upload Supabase).
+        """
+        import json as _json
+
         company_id = company.get("id")
         school_name = company.get("name", "Desconhecida")
         logger.info("Aplicando template", extra={"company_id": company_id, "template": template_data.get("name")})
 
+        body_tpl = template_data.get("body_template") or ""
+        chart_vars = ["{chart_radar}", "{chart_gap}", "{chart_trend}", "{report_link}"]
+        needs_charts = any(v in body_tpl for v in chart_vars)
+
+        # Gerar graficos e report se template usa variaveis (best-effort)
+        extra_vars: Dict[str, str] = {}
+        chart_urls_list: List[Dict[str, str]] = []
+        if needs_charts:
+            inep = company.get("inep_code")
+            if inep:
+                # Graficos
+                try:
+                    from tools.insight_charts import generate_all_relevant_charts
+                    from database.supabase_client import db as _db
+                    charts = generate_all_relevant_charts(str(inep))
+                    for ch in charts:
+                        url = _db.upload_chart(ch["filename"], ch["bytes"])
+                        if url:
+                            chart_urls_list.append({"type": ch["type"], "url": url, "alt": ch.get("alt", "")})
+                            if ch["type"] == "radar":
+                                extra_vars["chart_radar"] = url
+                            elif ch["type"] == "gap":
+                                extra_vars["chart_gap"] = url
+                            elif ch["type"] == "trend":
+                                extra_vars["chart_trend"] = url
+                except Exception as e:
+                    logger.debug(f"Template charts generation failed: {e}")
+
+                # Report
+                try:
+                    from tools.report_generator import generate_and_upload_report
+                    report_result = generate_and_upload_report(str(inep))
+                    if report_result:
+                        extra_vars["report_link"] = report_result["html_url"]
+                except Exception as e:
+                    logger.debug(f"Template report generation failed: {e}")
+
         rendered = render_template(
             subject_template=template_data["subject_template"],
-            body_template=template_data["body_template"],
+            body_template=body_tpl,
             company=company,
             contact=contact or {},
+            extra_variables=extra_vars if extra_vars else None,
         )
 
         subject = rendered["subject"]
         body = rendered["body"]
+
+        # Fallback: se report_link nao foi usado no template, anexar ao final
+        if extra_vars.get("report_link") and "{report_link}" not in body_tpl:
+            body += f"\n\nVeja o diagnostico completo da {school_name}: {extra_vars['report_link']}"
 
         if len(subject) > 60:
             subject = subject[:57] + "..."
@@ -242,14 +292,19 @@ class WriterAgent(BaseAgent):
         queue_id = self._add_to_approval_queue(
             company_id=company_id,
             contact_id=contact.get("id") if contact else None,
-            subject=subject, body=body)
+            subject=subject, body=body,
+            chart_urls=chart_urls_list if chart_urls_list else None)
         if not queue_id:
             return None
-        logger.info("Mensagem na fila (template)", extra={"company_id": company_id, "queue_id": queue_id})
+        logger.info("Mensagem na fila (template)", extra={
+            "company_id": company_id, "queue_id": queue_id,
+            "charts": len(chart_urls_list), "has_report": bool(extra_vars.get("report_link")),
+        })
         return {"company_id": company_id, "company_name": school_name, "queue_id": queue_id,
             "subject": subject,
             "body_preview": body[:150]+"..." if len(body)>150 else body,
-            "reasoning": f"Template: {template_data.get('name', '?')}", "mode": "template"}
+            "reasoning": f"Template: {template_data.get('name', '?')}", "mode": "template",
+            "charts_incluidos": len(chart_urls_list)}
 
     # =========================================================================
     # Formatacao de dados para prompt (modo IA)
@@ -382,15 +437,19 @@ class WriterAgent(BaseAgent):
     # Approval Queue + Parse
     # =========================================================================
 
-    def _add_to_approval_queue(self, company_id: str, contact_id, subject: str, body: str):
+    def _add_to_approval_queue(self, company_id: str, contact_id, subject: str, body: str,
+                               chart_urls: Optional[List[Dict[str, str]]] = None):
         """Adiciona na fila de aprovacao humana. NUNCA envia diretamente."""
         try:
+            import json as _json
             queue_data = {
                 "company_id": company_id, "subject": subject, "body": body,
                 "channel": "email", "status": "pending",
                 "original_subject": subject, "original_body": body,}
             if contact_id:
                 queue_data["contact_id"] = contact_id
+            if chart_urls:
+                queue_data["chart_urls"] = _json.dumps(chart_urls)
             result = db.client.table("approval_queue").insert(queue_data).execute()
             if result.data:
                 queue_id = result.data[0]["id"]

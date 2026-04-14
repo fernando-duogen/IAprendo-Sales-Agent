@@ -106,6 +106,7 @@ def render_template(
     company: Dict[str, Any],
     contact: Dict[str, Any],
     sender_settings: Optional[Dict[str, str]] = None,
+    extra_variables: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
     """Substitui variaveis {variavel} no template.
 
@@ -118,6 +119,8 @@ def render_template(
         company: Dados da escola.
         contact: Dados do contato destinatario.
         sender_settings: Dados do remetente (opcional).
+        extra_variables: Variaveis extras (chart_radar, chart_gap, chart_trend,
+            report_link, etc). Sobrescreve variaveis padrao se houver conflito.
 
     Returns:
         Dict com 'subject' e 'body' ja renderizados.
@@ -133,6 +136,8 @@ def render_template(
         'Ola Maria Silva'
     """
     variables = _build_variables(company, contact, sender_settings)
+    if extra_variables:
+        variables.update(extra_variables)
 
     # defaultdict retorna "" para variaveis nao encontradas
     safe_vars = defaultdict(str, variables)
