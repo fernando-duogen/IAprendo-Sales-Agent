@@ -449,7 +449,7 @@ def _reframe_insight_as_opportunity(insight_text: str, index: int = 0) -> Tuple[
         "piorou", "regrediu", "encolheu", "queda", "perda",
         "superou a contratacao", "pressao financeira",
         # ENEM
-        "abaixo", "gap", "apenas", "fraca", "fraco",
+        "abaixo", "gap", "apenas", "nenhum", "fraca", "fraco", "queda",
         "menor", "deficit", "defasagem",
     ]
 

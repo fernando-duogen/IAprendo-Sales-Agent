@@ -1861,21 +1861,51 @@ def _detectar_insights(
         # Percentual baixo acima de 600
         pct_600 = enem_data.get("enem_pct_acima_600")
         if pct_600 is not None and pct_600 < 30:
+            if float(pct_600) < 0.5:
+                pct_texto = "Nenhum aluno atingiu 600 pontos no ENEM"
+            else:
+                pct_texto = f"Apenas {pct_600:.0f}% dos alunos acima de 600 pontos no ENEM"
             insights_enem.append(
-                f"Apenas {pct_600:.0f}% dos alunos acima de 600 pontos no ENEM — "
-                f"exercicios adaptativos podem elevar essa faixa, melhorando "
-                f"o posicionamento da escola nos rankings."
+                f"{pct_texto} — exercicios adaptativos podem elevar essa faixa, "
+                f"melhorando o posicionamento da escola nos rankings."
             )
 
     # =====================================================================
-    # INSIGHTS CENSO (mantidos como antes)
+    # INSIGHTS CRITICOS DE MATRICULAS (prioridade MAXIMA — antes de ENEM)
+    # Queda significativa de matriculas e o sinal mais forte de urgencia
     # =====================================================================
+    insights_criticos: List[str] = []
 
     def _t(key: str) -> Optional[Dict]:
         return trends.get(key)
 
     def _delta(t: Optional[Dict]) -> Optional[float]:
         return t.get("delta_total_pct") if t else None
+
+    t_mat_check = _t("matriculas_bas")
+    if t_mat_check:
+        d_mat_total = _delta(t_mat_check)
+        first_mat = t_mat_check.get("primeiro_valor")
+        last_mat = t_mat_check.get("ultimo_valor")
+        if d_mat_total is not None and first_mat and last_mat:
+            if d_mat_total < -15:
+                insights_criticos.append(
+                    f"Matriculas em queda acentuada: de {int(first_mat)} para "
+                    f"{int(last_mat)} alunos ({d_mat_total:+.1f}%) nos ultimos anos "
+                    f"— familias estao deixando a escola, e cada ano a base diminui. "
+                    f"Investir em qualidade pedagogica visivel e a forma mais direta "
+                    f"de reverter essa tendencia."
+                )
+            elif d_mat_total < -5:
+                insights_criticos.append(
+                    f"Matriculas em queda moderada: de {int(first_mat)} para "
+                    f"{int(last_mat)} alunos ({d_mat_total:+.1f}%) — tendencia que "
+                    f"merece atencao para nao se agravar."
+                )
+
+    # =====================================================================
+    # INSIGHTS CENSO (complementares — prioridade menor)
+    # =====================================================================
 
     def _first(t: Optional[Dict]) -> Optional[float]:
         return t.get("primeiro_valor") if t else None
@@ -1973,8 +2003,8 @@ def _detectar_insights(
                 + " Possivel sinal de pressao financeira ou reestruturacao."
             )
 
-    # ENEM primeiro (prioridade comercial), depois Censo
-    return insights_enem + insights_censo
+    # Ordem de prioridade: CRITICOS (matriculas) > ENEM > CENSO
+    return insights_criticos + insights_enem + insights_censo
 
 
 def _interpretar_trend_numerico(valores: List[Optional[float]], vintages: List[int]) -> Optional[Dict[str, Any]]:

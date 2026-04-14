@@ -405,6 +405,9 @@ def generate_trend_chart(
     except Exception:
         return None
 
+    # Filtrar anos com dados NULL (ex: Censo 2025 ainda nao publicado)
+    school_series = [row for row in school_series if row.get(metric) is not None]
+
     if len(school_series) < 2:
         return None
 
