@@ -437,8 +437,30 @@ def generate_trend_chart(
 
     fig = go.Figure()
 
-    # Benchmark (com rótulos numéricos em cinza)
-    b_valid = [(y, v) for y, v in zip(years, bench_vals) if v is not None]
+    # Converter para variacao % relativa ao primeiro ano
+    # Escola: pegar primeiro valor valido como base (100%)
+    s_valid_raw = [(y, v) for y, v in zip(years, school_vals) if v is not None]
+    b_valid_raw = [(y, v) for y, v in zip(years, bench_vals) if v is not None]
+
+    s_base = s_valid_raw[0][1] if s_valid_raw else 1
+    b_base = b_valid_raw[0][1] if b_valid_raw else 1
+    s_base = max(s_base, 1)  # evita divisao por zero
+    b_base = max(b_base, 1)
+
+    s_valid = [(y, round((v / s_base - 1) * 100, 1)) for y, v in s_valid_raw]
+    b_valid = [(y, round((v / b_base - 1) * 100, 1)) for y, v in b_valid_raw]
+
+    # Linha de referencia em 0% (sem mudanca)
+    all_years = sorted(set([p[0] for p in s_valid] + [p[0] for p in b_valid]))
+    fig.add_trace(go.Scatter(
+        x=all_years, y=[0] * len(all_years),
+        mode="lines",
+        line=dict(color="#E0E0E0", width=1, dash="dash"),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    # Benchmark (variacao %)
     if b_valid:
         fig.add_trace(go.Scatter(
             x=[p[0] for p in b_valid],
@@ -447,13 +469,12 @@ def generate_trend_chart(
             name=f"Media {city}",
             line=dict(color=COLOR_TREND_BENCH, width=2, dash="dot"),
             marker=dict(size=6, color=COLOR_TREND_BENCH),
-            text=[str(int(p[1])) for p in b_valid],
+            text=[f"{p[1]:+.0f}%" for p in b_valid],
             textposition="bottom center",
             textfont=dict(size=9, color=COLOR_TREND_BENCH),
         ))
 
-    # Escola
-    s_valid = [(y, v) for y, v in zip(years, school_vals) if v is not None]
+    # Escola (variacao %)
     if s_valid:
         fig.add_trace(go.Scatter(
             x=[p[0] for p in s_valid],
@@ -462,26 +483,33 @@ def generate_trend_chart(
             name=nome[:35],
             line=dict(color=COLOR_TREND_SCHOOL, width=3),
             marker=dict(size=8, color=COLOR_TREND_SCHOOL),
-            text=[str(int(p[1])) for p in s_valid],
+            text=[f"{p[1]:+.0f}%" for p in s_valid],
             textposition="top center",
             textfont=dict(size=10, color=COLOR_TREND_SCHOOL),
         ))
 
-    # Calcular range Y com padding para labels nao serem cortados
-    all_vals = [p[1] for p in s_valid] + [p[1] for p in b_valid]
-    if all_vals:
-        y_min_val = min(all_vals)
-        y_max_val = max(all_vals)
-        y_pad = max((y_max_val - y_min_val) * 0.18, 20)
-        y_range = [max(0, y_min_val - y_pad), y_max_val + y_pad]
+    # Range Y com padding
+    all_pct = [p[1] for p in s_valid] + [p[1] for p in b_valid]
+    if all_pct:
+        y_min_val = min(all_pct)
+        y_max_val = max(all_pct)
+        y_pad = max((y_max_val - y_min_val) * 0.20, 8)
+        y_range = [y_min_val - y_pad, y_max_val + y_pad]
     else:
         y_range = None
 
+    # Subtitulo com valores absolutos do primeiro e ultimo ano
+    first_year = s_valid_raw[0][0] if s_valid_raw else "?"
+    last_year = s_valid_raw[-1][0] if s_valid_raw else "?"
+    first_val = int(s_valid_raw[0][1]) if s_valid_raw else "?"
+    last_val = int(s_valid_raw[-1][1]) if s_valid_raw else "?"
+
     fig.update_layout(
         title=dict(
-            text=f"Evolucao {metric_label}<br>"
+            text=f"Variacao de {metric_label} (base {first_year})<br>"
                  f"<span style='font-size:11px;color:#666'>"
-                 f"{nome[:40]} vs Media de {city}</span>",
+                 f"{nome[:35]}: {first_val}\u2192{last_val} alunos | "
+                 f"vs Media de {city}</span>",
             font=dict(size=14, color="#333"),
             x=0.5, xanchor="center",
         ),
@@ -491,10 +519,13 @@ def generate_trend_chart(
             tickfont=dict(size=11),
         ),
         yaxis=dict(
-            title=metric_label,
+            title="Variacao %",
             gridcolor="#F3F4F6",
             tickfont=dict(size=11),
+            ticksuffix="%",
             range=y_range,
+            zeroline=True,
+            zerolinecolor="#E0E0E0",
         ),
         legend=dict(
             orientation="h", yanchor="top", y=-0.25,
