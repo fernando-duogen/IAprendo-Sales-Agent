@@ -98,7 +98,7 @@ def _fetch_school_data(inep: str) -> Optional[Dict[str, Any]]:
             "enem_area_mais_fraca", "enem_potencial_melhoria",
             "enem_amostra_confiavel", "enem_presentes",
             "peer_mun_nome", "peer_uf_sigla",
-            "enem_rank_mun", "enem_rank_uf_dep", "enem_rank_br",
+            "enem_rank_mun", "enem_rank_uf", "enem_rank_br",
             "enem_percentil_uf_dep", "enem_quartil_br",
         ])
         r = db.client.table("school_analytics").select(fields).eq(
