@@ -1859,16 +1859,20 @@ def _detectar_insights(
             )
 
         # Percentual baixo acima de 600
-        pct_600 = enem_data.get("enem_pct_acima_600")
-        if pct_600 is not None and pct_600 < 30:
-            if float(pct_600) < 1:
-                pct_texto = "Nenhum dos alunos atingiu 600 pontos no ENEM"
-            else:
-                pct_texto = f"Apenas {pct_600:.0f}% dos alunos ultrapassaram 600 pontos no ENEM"
-            insights_enem.append(
-                f"{pct_texto} — exercicios adaptativos podem elevar essa faixa, "
-                f"melhorando o posicionamento da escola nos rankings."
-            )
+        pct_600_raw = enem_data.get("enem_pct_acima_600")
+        if pct_600_raw is not None:
+            # Normalizar: se valor < 1, esta em formato decimal (0.72 = 72%)
+            pct_600 = float(pct_600_raw) * 100 if float(pct_600_raw) <= 1 else float(pct_600_raw)
+
+            if pct_600 < 30:
+                if pct_600 < 1:
+                    pct_texto = "Nenhum dos alunos atingiu 600 pontos no ENEM"
+                else:
+                    pct_texto = f"Apenas {pct_600:.0f}% dos alunos ultrapassaram 600 pontos no ENEM"
+                insights_enem.append(
+                    f"{pct_texto} — exercicios adaptativos podem elevar essa faixa, "
+                    f"melhorando o posicionamento da escola nos rankings."
+                )
 
     # =====================================================================
     # INSIGHTS CRITICOS DE MATRICULAS (prioridade MAXIMA — antes de ENEM)
