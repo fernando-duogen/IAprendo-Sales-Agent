@@ -325,11 +325,13 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   {insights_section}
 
   <!-- CTA -->
-  <div class="cta">
-    <h2>Pronto para transformar o aprendizado?</h2>
-    <p>Conheca a IAprendo: exercicios adaptativos, alinhados a BNCC, que ajudam cada aluno no seu ritmo. Melhore os resultados, inove na pedagogia e atraia mais matriculas.</p>
-    <div style="display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap">
-      <a href="{meeting_link}" class="cta-button">Conhecer a IAprendo</a>
+  <div class="cta" style="text-align:left">
+    <div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <h2 style="font-size:20px;margin-bottom:8px">Pronto para transformar o aprendizado?</h2>
+        <p style="font-size:13px;opacity:0.9;margin-bottom:16px">Exercicios adaptativos, alinhados a BNCC, que ajudam cada aluno no seu ritmo.</p>
+        <a href="{meeting_link}" class="cta-button">Conhecer a IAprendo</a>
+      </div>
       {qr_html}
     </div>
   </div>

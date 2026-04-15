@@ -138,10 +138,13 @@ _COMP_TEMPLATE = """<!DOCTYPE html>
   {insights_section}
 
   <!-- CTA -->
-  <div class="cta">
-    <p style="margin-bottom:16px;color:#555;font-size:14px">Pronto para transformar o aprendizado?</p>
-    <div style="display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap">
-      <a href="{meeting_link}">Conhecer a IAprendo</a>
+  <div class="cta" style="text-align:left">
+    <div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <p style="font-size:16px;font-weight:700;margin-bottom:8px">Pronto para transformar o aprendizado?</p>
+        <p style="font-size:13px;color:#666;margin-bottom:16px">Exercicios adaptativos, alinhados a BNCC, que ajudam cada aluno no seu ritmo.</p>
+        <a href="{meeting_link}" style="display:inline-block;padding:12px 28px;background:#2563EB;color:white;border-radius:8px;text-decoration:none;font-weight:700">Conhecer a IAprendo</a>
+      </div>
       {qr_html}
     </div>
   </div>
