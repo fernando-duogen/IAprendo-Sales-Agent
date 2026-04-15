@@ -36,6 +36,42 @@ from utils.logger import logger
 
 
 # ============================================================================
+# QR CODE HELPER (SVG, sem PIL)
+# ============================================================================
+
+def _generate_qr_svg(url: str, size_mm: int = 30) -> str:
+    """Gera QR Code como SVG inline (sem dependencia de PIL).
+
+    Args:
+        url: URL destino do QR code.
+        size_mm: Tamanho em mm.
+
+    Returns:
+        String SVG inline ou string vazia se falhar.
+    """
+    try:
+        import qrcode
+        from qrcode.image.svg import SvgPathImage
+        import io
+
+        qr = qrcode.QRCode(version=1, box_size=10, border=1,
+                           error_correction=qrcode.constants.ERROR_CORRECT_M)
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(image_factory=SvgPathImage)
+        buf = io.BytesIO()
+        img.save(buf)
+        svg = buf.getvalue().decode("utf-8")
+        # Ajustar tamanho
+        svg = svg.replace('width="', f'width="{size_mm}mm" _old_w="', 1)
+        svg = svg.replace('height="', f'height="{size_mm}mm" _old_h="', 1)
+        return svg
+    except Exception as e:
+        logger.debug(f"QR code generation failed: {e}")
+        return ""
+
+
+# ============================================================================
 # TEMPLATE HTML (CSS inline, auto-contido, responsivo)
 # ============================================================================
 
@@ -292,7 +328,10 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   <div class="cta">
     <h2>Pronto para transformar o aprendizado?</h2>
     <p>Conheca a IAprendo: exercicios adaptativos, alinhados a BNCC, que ajudam cada aluno no seu ritmo. Melhore os resultados, inove na pedagogia e atraia mais matriculas.</p>
-    <a href="{meeting_link}" class="cta-button">Conhecer a IAprendo</a>
+    <div style="display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap">
+      <a href="{meeting_link}" class="cta-button">Conhecer a IAprendo</a>
+      {qr_html}
+    </div>
   </div>
 
   <!-- FOOTER -->
@@ -699,8 +738,17 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.debug(f"report_generator: insights failed: {e}")
 
-    # Meeting link
+    # Meeting link + QR Code
     meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "https://iaprendo.com.br/contato")
+    qr_svg = _generate_qr_svg(meeting_link, size_mm=28)
+    qr_html = ""
+    if qr_svg:
+        qr_html = (
+            f'<div style="background:white;padding:8px;border-radius:8px;text-align:center">'
+            f'{qr_svg}'
+            f'<div style="font-size:10px;color:#1e3a5f;margin-top:4px;font-weight:600">Agende aqui</div>'
+            f'</div>'
+        )
 
     # Montar HTML final
     html = _REPORT_TEMPLATE.format(
@@ -720,6 +768,7 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         trend_section=trend_section,
         insights_section=insights_section,
         meeting_link=meeting_link,
+        qr_html=qr_html,
         data_geracao=date.today().strftime("%d/%m/%Y"),
     )
 

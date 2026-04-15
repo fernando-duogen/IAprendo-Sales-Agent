@@ -140,7 +140,10 @@ _COMP_TEMPLATE = """<!DOCTYPE html>
   <!-- CTA -->
   <div class="cta">
     <p style="margin-bottom:16px;color:#555;font-size:14px">Pronto para transformar o aprendizado?</p>
-    <a href="{meeting_link}">Conhecer a IAprendo</a>
+    <div style="display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap">
+      <a href="{meeting_link}">Conhecer a IAprendo</a>
+      {qr_html}
+    </div>
   </div>
 
   <!-- FOOTER -->
@@ -324,6 +327,21 @@ def generate_comparison_report(
 
     meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "https://iaprendo.com.br/contato")
 
+    # QR Code
+    qr_html = ""
+    try:
+        from tools.report_generator import _generate_qr_svg
+        qr_svg = _generate_qr_svg(meeting_link, size_mm=28)
+        if qr_svg:
+            qr_html = (
+                f'<div style="background:white;padding:8px;border-radius:8px;text-align:center">'
+                f'{qr_svg}'
+                f'<div style="font-size:10px;color:#1e3a5f;margin-top:4px;font-weight:600">Agende aqui</div>'
+                f'</div>'
+            )
+    except Exception:
+        pass
+
     html = _COMP_TEMPLATE.format(
         nome1=nome1,
         nome2=nome2,
@@ -342,6 +360,7 @@ def generate_comparison_report(
         trend_section=trend_section,
         insights_section=insights_section,
         meeting_link=meeting_link,
+        qr_html=qr_html,
         data_geracao=date.today().strftime("%d/%m/%Y"),
         logo_html=logo_html,
         robot_html=robot_html,
