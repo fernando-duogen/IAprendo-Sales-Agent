@@ -1,3 +1,5 @@
+name: agente-de-vendas
+
 services:
   postgres:
     container_name: evolution_postgres
