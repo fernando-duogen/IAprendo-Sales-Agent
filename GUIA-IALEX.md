@@ -1,20 +1,40 @@
 # Guia Completo do IAlex — Agente de Vendas IAprendo
 
-> Última atualização: 28/03/2026
+> Última atualização: 20/04/2026
 > Para: Fernando Teixeira
 
 ---
 
 ## O que é o IAlex?
 
-O IAlex é um **agente de vendas inteligente** que funciona via WhatsApp. Ele é seu CRO (Chief Revenue Officer) virtual — busca escolas, qualifica leads, gera emails, acompanha pipeline e muito mais. Tudo pelo WhatsApp, sem precisar abrir nenhum outro sistema.
+O IAlex é um **agente de vendas inteligente** que funciona via WhatsApp. Ele é seu CRO (Chief Revenue Officer) virtual — busca escolas, qualifica leads, gera emails, gera relatórios interativos, acompanha pipeline e muito mais. Tudo pelo WhatsApp, sem precisar abrir nenhum outro sistema.
 
 **Ele tem acesso a:**
 - Base do MEC com **212.386 escolas** de todo o Brasil
-- Banco de dados CRM (Supabase) com suas escolas importadas
+- **185k escolas** com analytics ENEM 2024 (média, ranking, peer group)
+- **Censo 2020-2025** (série histórica de matrículas, docentes, tech, infra)
+- Banco CRM (Supabase) com suas escolas importadas
 - Envio de emails via Brevo
-- HubSpot CRM (sincronização)
-- 34 ferramentas de vendas
+- HubSpot CRM (sincronização bidirecional)
+- **100+ ferramentas** de vendas em 12 categorias
+
+---
+
+## Novidades 2026-04
+
+🎯 **OPR Interativo** — 1 link por escola com seletor de benchmark (Estadual/Municipal/Federal/Privada). Radar, cards e insights atualizam sem recarregar.
+
+⭐ **Skills Aprendidas** — Diga "padroniza isso" após uma resposta aprovada. IAlex salva como modelo reutilizável.
+
+🔥 **Urgency Score F2** — Score unificado 0-100 (engagement + ML + intent + ENEM). Alertas automáticos para tier CRITICAL.
+
+🩺 **Auto-healing** — Sistema se corrige sozinho (restart Baileys, notifica fila parada, etc.) a cada 30 min.
+
+🧠 **Intent Detection com LLM** — Análise semântica de respostas (não só keywords).
+
+🛡️ **Modos de Autonomia** — Manual / Semi-Auto / Full-Auto com guardrails. Em Manual, zero alertas proativos.
+
+📊 **Comparar Escolas** — "Compara Anchieta com Militar" → relatório lado a lado.
 
 ---
 
@@ -23,20 +43,25 @@ O IAlex é um **agente de vendas inteligente** que funciona via WhatsApp. Ele é
 ```
 Você (WhatsApp)
     ↓ mensagem
-WhatsApp Bridge (Node.js, porta 8090)
-    ↓ repassa via HTTP
+Evolution API (Docker, porta 8080) — v2.3.7 com Redis cache
+    ↓ webhook HTTP
 Webhook Server (Python/Flask, porta 5001)
     ↓ processa
-Brain (GPT-4.1-mini + 34 ferramentas)
+Brain (GPT-4.1-mini + 100+ ferramentas)
     ↓ consulta
-Supabase (banco de dados) + CSV MEC (212k escolas)
-    ↓ resposta
+Supabase (banco CRM) + school_analytics (ENEM 185k) + school_censo_yearly (Censo 2020-2025)
+    ↓ resposta via Evolution API
 Você (WhatsApp)
 ```
 
-**São 2 processos que precisam estar rodando:**
-1. `ialex-bridge` — faz a ponte entre WhatsApp e o sistema (Node.js)
-2. `ialex-webhook` — o cérebro que processa mensagens (Python)
+**Serviços que precisam estar rodando:**
+1. **Docker Desktop** (Windows) — daemon dos containers
+2. **Evolution API** (container `evolution_api`, porta 8080) — bridge WhatsApp via Baileys
+3. **Postgres** (container `evolution_postgres`) — persistência da sessão Baileys
+4. **Redis** (container `evolution_redis`) — cache de chaves criptográficas
+5. **IAlex webhook** (Python local, porta 5001) — processa mensagens e responde
+
+**Guard de instância única**: o `start_ialex.py` verifica se a porta 5001 já está em uso antes de iniciar — impede duplicação que causaria mensagens repetidas.
 
 ---
 

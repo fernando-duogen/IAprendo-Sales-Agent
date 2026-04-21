@@ -858,6 +858,53 @@ Ideal para responder perguntas como:
 - "Qual o desvio padrao de redacao por dependencia?"
 """)
 
+    st.divider()
+
+    st.markdown("## OPR Interativo (One Page Report) — Novidade 2026")
+    st.markdown("""
+O **OPR Interativo** e um relatorio HTML visual auto-contido com **seletor de benchmark**.
+Gerado via IAlex (WhatsApp: *"gera OPR do Colegio X"*) ou via Dashboard (botao em Escolas).
+
+### Caracteristicas
+
+- **1 link unico por escola** (permanente, servido via `dados.iaprendo.com.br/reports/{INEP}.html`)
+- **4 abas comparativas** no topo: 🏫 Estaduais / 🏛️ Municipais / 🎖️ Federais / 🏆 Privadas
+- **Clica na aba → atualiza tudo** sem recarregar: radar ENEM, cards, insights, ranking
+- **Badges de oportunidade** em cada aba: 🔴 grande oportunidade / 🟠 moderada / 🟡 proximo / 🟢 destaque
+- **Abas desabilitadas** quando nao ha dados suficientes (ex: cidade sem federais)
+
+### O que cada aba mostra
+
+| Secao | Comportamento |
+|---|---|
+| Visao Geral | Media ENEM (fixa) + alunos presentes (fixo) + **diferenca vs escolas [tipo]** (muda por aba) |
+| Radar ENEM | Compara escola com media das escolas [tipo] da cidade nas 5 areas |
+| Cards de comparacao | 5 cards (CN, CH, LC, MT, Redacao) com valor escola vs benchmark |
+| Insights | Gerados automaticamente a partir dos gaps com aquele benchmark |
+
+### Badges de forca de argumento
+
+Cada aba tem um badge visual indicando a forca do argumento comercial:
+
+| Badge | Condicao | Interpretacao |
+|---|---|---|
+| 🔴 Grande oportunidade | Gap > -50 pts | Melhor angulo de venda — escola muito abaixo do grupo |
+| 🟠 Moderada | Gap -20 a -50 pts | Argumento razoavel — espaco de melhoria visivel |
+| 🟡 Proxima | Gap -20 a 0 pts | Escola proxima do benchmark — argumento sutil |
+| 🟢 Destaque | Gap > 0 pts | Elogio — escola acima do benchmark (use no email!) |
+
+### Tracking via URL
+
+- `URL#estadual`, `URL#privada` etc. abrem ja na aba especifica
+- Util para enviar links focados: *"Veja a comparacao com as privadas: URL#privada"*
+
+### Quando usar
+
+- **Email de prospecao**: incluir link para a escola explorar a performance
+- **Preparacao de reuniao**: Fernando revisa as 4 comparacoes antes de conversar
+- **Material de Marketing**: link publico que pode ser compartilhado no LinkedIn
+""")
+
     if st.button("Ir para Inteligencia", key="intel_go"):
         st.switch_page("pages/7_🎯_Inteligencia.py")
 
@@ -870,8 +917,16 @@ with tab_ialex:
 
     st.markdown("""
 O **IAlex** e o agente de IA conversacional que opera via WhatsApp. Ele tem
-acesso a **73 ferramentas** organizadas em 9 categorias. Voce pode fazer
+acesso a **100+ ferramentas** organizadas em 12 categorias. Voce pode fazer
 tudo que o dashboard faz — e mais — apenas conversando.
+
+> **Novidades recentes (Abril 2026)**:
+> - 🎯 **OPR Interativo**: relatorio HTML com seletor de benchmark (1 link, 4 comparacoes)
+> - ⭐ **Skills Aprendidas**: "padroniza isso" salva modelos de resposta reutilizaveis
+> - 🔥 **Urgency Score F2**: ranking unificado de leads (CRITICAL/HOT/WARM/COLD)
+> - 🩺 **Auto-healing**: sistema se corrige sozinho em problemas conhecidos
+> - 🧠 **Intent Detection com LLM**: analise semantica de respostas (nao so keywords)
+> - 🛡️ **Modos de Autonomia**: Manual / Semi-Auto / Full-Auto com guardrails
 
 ### Como Funciona
 1. Envie uma mensagem no WhatsApp para o numero do IAlex
@@ -888,7 +943,7 @@ tudo que o dashboard faz — e mais — apenas conversando.
 """)
 
     st.divider()
-    st.markdown("## Catalogo de 73 Ferramentas")
+    st.markdown("## Catalogo de 100+ Ferramentas em 12 Categorias")
 
     st.markdown("### 1. Buscar Escolas (6 ferramentas)")
     st.markdown("""
@@ -996,6 +1051,43 @@ tudo que o dashboard faz — e mais — apenas conversando.
 | **Info RAG Emails** | Sobre o RAG de emails | "Como funciona a base de emails?" |
 """)
 
+    st.markdown("### 10. Relatorios e Insights Visuais (3 ferramentas) — NOVO")
+    st.markdown("""
+| Ferramenta | Descricao | Exemplo de uso |
+|---|---|---|
+| **Gerar OPR** | Relatorio HTML interativo (One Page Report) com **seletor de benchmark** (Estadual/Municipal/Federal/Privada) — 1 link unico por escola | "Gera o OPR do Colegio Militar" |
+| **Comparar Escolas** | Relatorio comparativo entre 2 escolas (ou 1 escola vs grupo) com radar, cards e insights | "Compara Anchieta com Militar" |
+| **Gerar Graficos** | 3 PNGs (radar, gap, trend) para inserir em emails | "Gera graficos para Colegio X" |
+
+**Destaque**: o OPR agora e **interativo** — 1 link unico por escola. O usuario pode trocar entre 4 benchmarks (Estaduais/Municipais/Federais/Privadas) sem recarregar. Inclui badges de oportunidade (🔴🟠🟡🟢) em cada aba indicando a forca do argumento comercial.
+""")
+
+    st.markdown("### 11. Urgencia e Priorizacao (3 ferramentas) — F2")
+    st.markdown("""
+| Ferramenta | Descricao | Exemplo de uso |
+|---|---|---|
+| **Score Urgencia** | Score unificado 0-100 (engagement + ML + intent + ENEM) | "Qual a urgencia da escola X?" |
+| **Proximas Acoes** | Lista priorizada de leads com maior urgencia | "Quais sao as proximas acoes?" |
+| **Digest Urgencia** | Resumo diario completo por tier (CRITICAL/HOT/WARM/COLD) | "Me da o digest de urgencia" |
+
+**Tiers**: 🔴 CRITICAL (80-100) → alerta imediato + auto-draft | 🟠 HOT (60-79) → briefing matinal | 🟡 WARM (40-59) → dashboard | ⚫ COLD (<40) → background
+
+**Gate de autonomia**: em modo `manual`, IAlex NAO envia alertas proativos — so calcula scores em background.
+""")
+
+    st.markdown("### 12. Skills Aprendidas e Health (5 ferramentas) — F6")
+    st.markdown("""
+| Ferramenta | Descricao | Exemplo de uso |
+|---|---|---|
+| **Padronizar Resposta** | Salva ultimo padrao aprovado como skill reutilizavel | "Ficou otimo, padroniza isso" |
+| **Listar Skills** | Lista skills aprendidas (ativas ou arquivadas) | "Quais skills voce aprendeu?" |
+| **Arquivar Skill** | Remove skill da rotacao | "Arquiva a skill comparacao_redacao" |
+| **Diagnostico Sistema** | Health check + auto-healing | "Como esta o sistema?" |
+| **Uso APIs** | Quotas e limites de APIs externas | "Quanto ja gastei de API esse mes?" |
+
+**Como funciona**: quando Fernando aprova uma resposta com "padroniza", o IAlex salva o padrao em `learned_skills`. Nas proximas conversas, o IAlex injeta as skills ativas no contexto como referencia de formato/tom. Gerenciamento tambem disponivel em **Configuracoes > aba Skills Aprendidas**.
+""")
+
     st.divider()
 
     with st.expander("Desambiguacao: como o IAlex escolhe a ferramenta certa"):
@@ -1026,40 +1118,49 @@ with tab_config:
 
     st.markdown("""
 A pagina **Configuracoes** permite ajustar o comportamento do sistema sem
-mexer em codigo. Ela esta dividida em 3 areas:
+mexer em codigo. Ela esta dividida em 4 abas:
+
+1. ⚙️ **Configuracoes** — Pipeline automatico + Modo de Autonomia
+2. 🧠 **Memorias** — Fatos, preferencias e insights persistentes
+3. ⭐ **Skills Aprendidas** — Padroes que o IAlex aprendeu (F6)
+4. 🩺 **Diagnostico** — Health check do sistema + auto-healing
 """)
 
-    st.markdown("## 1. Pipeline Automatico")
+    st.markdown("## 1. Modo de Autonomia (topo da aba Configuracoes)")
     st.markdown("""
-Configure o IAlex para rodar o pipeline sozinho em horarios definidos.
+Define **quanto** o IAlex pode fazer sem sua autorizacao. 3 modos disponiveis:
+
+| Modo | Descricao | Quando usar |
+|---|---|---|
+| 🛡️ **Manual** | IAlex nao faz NADA automatico. So responde quando voce pergunta. Zero alertas proativos. | Quando quer silencio total, so interagir por escolha |
+| 🤖 **Semi-Auto** (DEFAULT) | IAlex GERA emails, follow-ups e qualificacoes automaticamente. Mas TUDO vai para fila de aprovacao — nada sai sem seu OK. | **Producao padrao**. Melhor custo-beneficio. |
+| ⚡ **Full-Auto** | IAlex gera E envia automaticamente emails previamente aprovados em batches. Requer **dupla confirmacao** para ativar. | Times de alta velocidade com revisao diaria da fila |
+
+**Gate F2 de alertas**: mesmo em Semi-Auto/Full-Auto, voce recebe alertas de urgencia (CRITICAL, HOT). Em Manual, **TODOS os alertas proativos sao suprimidos** — so calcula scores em background.
+
+**Como trocar**: na aba Configuracoes, clique no card do modo desejado. Full-Auto pede confirmacao textual ("autorizo envio automatico") + registra timestamp.
+""")
+
+    st.markdown("## 2. Pipeline Automatico")
+    st.markdown("""
+Dentro do modo de autonomia escolhido, configure **quando e o que** rodar automaticamente.
 
 ### Parametros
 
 | Parametro | Descricao | Padrao |
 |---|---|---|
 | **Horario de Inicio** | Hora que o pipeline comeca | 09:00 |
-| **Horario de Fim** | Hora que o pipeline para | 18:00 |
 | **Dias da Semana** | Quais dias rodar | Seg a Sex |
-| **Limite Diario** | Maximo de escolas/dia | 10 |
-| **Etapas Ativas** | Quais etapas rodar automaticamente | Qualificar + Enriquecer |
-| **Nivel de Autonomia** | Quanto o IAlex pode decidir sozinho (1-5) | 2 |
-
-### Niveis de Autonomia
-
-| Nivel | Descricao |
-|---|---|
-| **1** | Apenas relata — nao toma nenhuma acao |
-| **2** | Qualifica e enriquece, mas para antes de gerar email |
-| **3** | Gera emails e coloca na fila, mas nao aprova |
-| **4** | Aprova emails simples, pede confirmacao para complexos |
-| **5** | Autonomia total (NAO recomendado para producao) |
-
-**Recomendacao**: Use nivel 2 ou 3 em producao. Nivel 4+ apenas em testes.
+| **Limite Diario** | Maximo de escolas/dia por etapa | 20 qualificacoes, 10 enriquecimentos |
+| **Etapas Ativas** | Quais etapas rodar automaticamente | Qualificar, Enriquecer, Contatos, Escrever |
+| **Send Approved** | Envia emails ja aprovados? | So ativado em **Full-Auto** |
+| **Persona Mode** | Tom fixo ou adaptativo | padrao |
+| **Follow-ups Auto** | Gera follow-ups comportamentais diariamente | Habilitado |
 """)
 
     st.divider()
 
-    st.markdown("## 2. Memoria do IAlex")
+    st.markdown("## 3. Memoria do IAlex")
     st.markdown("""
 A memoria do IAlex armazena informacoes persistentes sobre escolas, contatos
 e preferencias. Isso permite que o agente mantenha contexto entre conversas.
@@ -1083,26 +1184,88 @@ e preferencias. Isso permite que o agente mantenha contexto entre conversas.
 
     st.divider()
 
-    st.markdown("## 3. Health Check")
+    st.markdown("## 4. Skills Aprendidas (F6 — NOVO)")
     st.markdown("""
-O diagnostico do sistema verifica todos os componentes e retorna o status.
+Padroes de resposta que o IAlex aprendeu com suas aprovacoes.
 
-### Componentes Verificados
+### Como criar uma skill
+
+**Via WhatsApp**: apos uma resposta que voce gostou, diga *"padroniza isso"*.
+O IAlex salva o padrao em `learned_skills`.
+
+**Via Dashboard**: na aba Skills Aprendidas, use o formulario "Criar nova skill"
+com nome, tipo, gatilho, conteudo e exemplo.
+
+### Tipos de skill
+
+| Tipo | Uso | Exemplo |
+|---|---|---|
+| 📧 **Email Template** | Padrao de email aprovado | email_pressao_enem |
+| 📊 **Report Format** | Formato de OPR customizado | opr_compacto_diretora |
+| 🔍 **Analysis Pattern** | Estrutura de analise | trajetoria_3anos |
+| 💬 **Response Style** | Tom/formato de resposta | resposta_breve_formal |
+| 📱 **WhatsApp Template** | Mensagem WhatsApp padrao | wa_convite_reuniao |
+
+### Como funcionam
+
+Quando o IAlex processa uma mensagem, ele **injeta as skills ativas** no system prompt
+como referencia. Se o contexto bater com o gatilho de uma skill, ele segue o padrao
+registrado em `template_content`.
+
+### Gestao
+
+- **Listar**: ver todas as skills ativas, seus usos e metricas
+- **Detalhes**: visualizar conteudo, exemplos e gatilho
+- **Arquivar**: desativa a skill (soft delete) — pode reativar depois
+- **Reativar**: volta a incluir no system prompt
+
+### Sincronizacao WhatsApp ↔ Dashboard
+
+Skills criadas por qualquer canal aparecem em ambos. Arquivamento no Dashboard
+tambem afeta o IAlex (skill nao e mais injetada). Coerencia total.
+""")
+
+    st.divider()
+
+    st.markdown("## 5. Health Check e Auto-Healing (F6 Fase 3A — NOVO)")
+    st.markdown("""
+O diagnostico do sistema verifica todos os componentes E **tenta corrigir sozinho**
+problemas conhecidos antes de alertar Fernando.
+
+### Componentes Verificados (10 checks)
 
 | Componente | O que verifica |
 |---|---|
-| **Supabase** | Conexao com o banco de dados |
-| **Claude API** | Chave valida e disponibilidade |
-| **HubSpot** | Token valido e acesso a API |
-| **Brevo/Gmail** | Credenciais de email validas |
-| **Apollo/Snov/Hunter** | APIs de enriquecimento disponiveis |
-| **Google Maps** | API de geocodificacao ativa |
-| **Tabelas do Banco** | Todas as tabelas existem e tem dados |
+| **Supabase** | Latencia do banco (<500ms) |
+| **Schema** | Colunas criticas presentes (migrations up-to-date) |
+| **WhatsApp Bridge** | Evolution API online + instancia conectada |
+| **Flask Webhook** | Porta 5001 respondendo |
+| **Brain Tools** | Consistencia TOOLS vs TOOL_HANDLERS |
+| **Fila de Aprovacao** | Contagem de pendentes + stuck (>7 dias) |
+| **Error Rate 1h** | Picos de erro recentes |
+| **Error Rate 24h** | Tendencia de erros |
+| **API Quotas** | Apollo, Hunter, Snov, Brevo proximo do limite |
+| **Pipeline Config** | Autonomy level e send_approved coerentes |
 
 ### Indicadores
-- **Verde**: Componente funcionando normalmente
-- **Amarelo**: Funcionando com limitacoes (rate limit proximo, etc.)
-- **Vermelho**: Componente indisponivel ou com erro
+- 🟢 **Verde (healthy)**: Componente funcionando normalmente
+- 🟡 **Amarelo (degraded)**: Funcionando com limitacoes (rate limit proximo, etc.)
+- 🔴 **Vermelho (critical)**: Componente indisponivel ou com erro
+
+### Auto-Healing (automatico a cada 30 min)
+
+O sistema **TENTA remediar** antes de pedir ajuda:
+
+| Problema detectado | Acao automatica |
+|---|---|
+| WhatsApp Bridge critical | Restart da instancia `ialex` via Evolution API |
+| Webhook Flask critical | Notifica Fernando (nao pode auto-restart o proprio processo) |
+| Fila parada (>7 dias) | Notifica Fernando para limpar manualmente |
+| Error rate 1h critical | Notifica Fernando para investigar |
+| API quota >90% | Notifica Fernando para upgrade ou aguardar reset |
+
+**Filosofia**: remediar apenas acoes seguras (restart de containers) e notificar
+para acoes ambiguas (intervencao humana necessaria). Frequencia: a cada 30 min.
 """)
 
     if st.button("Ir para Configuracoes", key="config_go"):
