@@ -29,6 +29,10 @@ ENV/
 env/
 .venv
 
+# Artefatos temporarios
+qr_*.png
+test_*.html
+
 # IDE
 .vscode/
 .idea/

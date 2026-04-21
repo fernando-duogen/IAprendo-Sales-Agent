@@ -274,10 +274,15 @@ def _is_from_owner(sender: str) -> bool:
     if clean_sender in authorized_lids:
         return True
 
-    # Checar numeros autorizados (match nos ultimos 10 digitos)
+    # Checar numeros autorizados — comparar ultimos 8 digitos (numero local)
+    # para aceitar tanto formato com nono digito (5551996422564)
+    # quanto sem nono digito (555196422564) que o WhatsApp pode retornar
     digits_sender = "".join(c for c in clean_sender if c.isdigit())
+    sender_tail = digits_sender[-8:] if len(digits_sender) >= 8 else digits_sender
     for auth_num in authorized_numbers:
-        if digits_sender.endswith(auth_num):
+        auth_digits = "".join(c for c in auth_num if c.isdigit())
+        auth_tail = auth_digits[-8:] if len(auth_digits) >= 8 else auth_digits
+        if sender_tail == auth_tail:
             return True
 
     return False
@@ -708,6 +713,82 @@ def send_manual():
     return jsonify(result)
 
 
+# ============================================================================
+# OPR TRACKING (F7 Fase 3)
+# ============================================================================
+
+def _cors_headers():
+    """Headers CORS abertos para tracking do OPR (servido em dominio diferente)."""
+    return {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "3600",
+    }
+
+
+def _hash_ip(ip: str) -> str:
+    """SHA256 do IP (LGPD-compliant)."""
+    import hashlib
+    if not ip:
+        return ""
+    return hashlib.sha256(ip.encode("utf-8")).hexdigest()[:32]
+
+
+@app.route("/track-opr", methods=["POST", "OPTIONS"])
+def track_opr():
+    """Recebe evento de tracking do OPR HTML.
+
+    CORS aberto porque o OPR e servido em dados.iaprendo.com.br (dominio diferente).
+    Eventos suportados: page_load, tab_click, cta_click.
+    """
+    # CORS preflight
+    if request.method == "OPTIONS":
+        return ("", 204, _cors_headers())
+
+    data = request.json or {}
+    inep = str(data.get("inep", "")).strip()
+    event = (data.get("event") or "page_load").strip()
+    benchmark = (data.get("benchmark") or "").strip() or None
+    session_id = (data.get("session_id") or "").strip()[:64]
+
+    if not inep:
+        return jsonify({"error": "inep required"}), 400, _cors_headers()
+
+    try:
+        from database.supabase_client import db
+
+        # Tentar linkar com company_id (se a escola existe no CRM)
+        company_id = None
+        try:
+            comp = db.client.table("companies").select("id").eq(
+                "inep_code", inep
+            ).limit(1).execute()
+            if comp.data:
+                company_id = comp.data[0].get("id")
+        except Exception:
+            pass
+
+        db.client.table("opr_pageviews").insert({
+            "inep": inep,
+            "company_id": company_id,
+            "event_type": event[:30],
+            "benchmark_viewed": benchmark,
+            "session_id": session_id,
+            "user_agent": (request.headers.get("User-Agent") or "")[:500],
+            "referer": (request.headers.get("Referer") or "")[:500],
+            "ip_hash": _hash_ip(request.remote_addr or ""),
+        }).execute()
+
+        logger.info("OPR tracked", extra={
+            "inep": inep, "event": event, "benchmark": benchmark,
+        })
+    except Exception as e:
+        logger.debug(f"OPR track failed: {e}")
+
+    return jsonify({"ok": True}), 200, _cors_headers()
+
+
 def _start_scheduler():
     """Inicia o scheduler de briefings proativos em background."""
     try:
@@ -741,7 +822,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="IAlex Webhook Server")
     parser.add_argument("--port", type=int, default=5001)
-    parser.add_argument("--debug", action="store_true", default=True,
-                        help="Ativa auto-reload quando arquivos mudam (default: True)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Ativa auto-reload quando arquivos mudam")
     args = parser.parse_args()
     start_server(port=args.port, debug=args.debug)

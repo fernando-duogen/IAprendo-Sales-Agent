@@ -123,7 +123,7 @@ class WhatsAppBridge:
             return {"exists": None, "error": str(exc)}
 
     def send_message(self, number: str, text: str) -> Dict[str, Any]:
-        """Envia mensagem de texto via WhatsApp (Baileys bridge).
+        """Envia mensagem de texto via WhatsApp (Evolution API ou Baileys bridge fallback).
 
         Args:
             number: Numero do destinatario (ex: '5551999999999') ou JID completo (ex: '123@lid').
@@ -132,21 +132,32 @@ class WhatsAppBridge:
         Returns:
             Dict com resposta da API ou {} em caso de falha.
         """
-        url = f"{self.bridge_url}/send"
         # Se ja e um JID completo (@lid ou @s.whatsapp.net), enviar direto
         if "@" in number:
             formatted = number
         else:
             formatted = self.format_number(number)
-        body = {
-            "number": formatted,
-            "message": text,
-        }
+
+        # Tentar via Evolution API (porta 8080) — metodo primario
+        evo_url = f"{self.base_url}/message/sendText/{self.instance_name}"
+        body_evo = {"number": formatted, "text": text}
+        try:
+            resp = requests.post(evo_url, json=body_evo, headers=self._headers, timeout=15)
+            resp.raise_for_status()
+            data: Dict[str, Any] = resp.json()
+            logger.info(f"Mensagem enviada via Evolution API para {formatted}.")
+            return {"success": True, **data}
+        except requests.RequestException as exc_evo:
+            logger.warning(f"Evolution API falhou para {formatted}: {exc_evo}")
+
+        # Fallback: Baileys bridge (porta 8090)
+        url = f"{self.bridge_url}/send"
+        body = {"number": formatted, "message": text}
         try:
             resp = requests.post(url, json=body, timeout=15)
-            data: Dict[str, Any] = resp.json()
+            data = resp.json()
             if data.get("success"):
-                logger.info(f"Mensagem enviada para {formatted}.")
+                logger.info(f"Mensagem enviada via bridge para {formatted}.")
             elif data.get("error"):
                 logger.error(f"Erro do bridge: {data['error']}")
             return data

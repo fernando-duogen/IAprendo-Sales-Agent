@@ -15,14 +15,28 @@ services:
       timeout: 3s
       retries: 5
 
+  redis:
+    container_name: evolution_redis
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - evolution_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   evolution-api:
     container_name: evolution_api
-    image: atendai/evolution-api:v2.1.1
+    image: evoapicloud/evolution-api:v2.3.7
     restart: always
     ports:
       - "8080:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-iaprendo-evolution-2026}
@@ -36,8 +50,16 @@ services:
       - DATABASE_SAVE_DATA_CONTACTS=false
       - DATABASE_SAVE_DATA_CHATS=false
       - DATABASE_CONNECTION_URI=postgresql://evolution:evolution123@postgres:5432/evolution
-      - REDIS_ENABLED=false
-      - LOG_LEVEL=WARN
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_REDIS_SAVE_INSTANCES=false
+      - LOG_LEVEL=DEBUG
+      - LOG_COLOR=true
+      - QRCODE_LIMIT=30
+      - QRCODE_COLOR=#198754
+      - CONFIG_SESSION_PHONE_CLIENT=IAprendo
+      - CONFIG_SESSION_PHONE_NAME=Chrome
       - DEL_INSTANCE=false
       - WEBHOOK_GLOBAL_ENABLED=true
       - WEBHOOK_GLOBAL_URL=http://host.docker.internal:5001/webhook
@@ -52,3 +74,4 @@ services:
 volumes:
   evolution_instances:
   evolution_pgdata:
+  evolution_redis:
