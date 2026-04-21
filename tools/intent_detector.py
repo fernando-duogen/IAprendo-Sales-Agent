@@ -123,9 +123,18 @@ class IntentDetector:
             return ""
 
     def _analyze_reply_keywords(self, text: str) -> Dict[str, Any]:
-        """Analisa resposta do destinatario e retorna score + keywords encontradas."""
+        """Analisa resposta do destinatario e retorna score + keywords encontradas.
+        Tenta primeiro via LLM (analise semantica), fallback para keywords fixas.
+        """
         if not text:
             return {"score": 0, "keywords": []}
+
+        # Tentar analise semantica com LLM (mais precisa)
+        llm_result = self._analyze_reply_with_llm(text)
+        if llm_result and llm_result.get("score", 0) > 0:
+            return llm_result
+
+        # Fallback: keywords fixas
         text_lower = text.lower()
         found = []
         score = 0
@@ -134,6 +143,83 @@ class IntentDetector:
                 found.append(kw)
                 score += weight
         return {"score": min(score, 100), "keywords": list(set(found))}
+
+    def _analyze_reply_with_llm(self, text: str) -> Optional[Dict[str, Any]]:
+        """Analisa resposta usando Claude Haiku para classificacao semantica.
+
+        Detecta intencao real alem de keywords — entende contexto, objecoes,
+        perguntas genuinas vs respostas automaticas.
+
+        Returns:
+            Dict com score (0-100), keywords (list), classificacao (str), proxima_acao (str)
+            ou None se LLM nao disponivel/falhar.
+        """
+        if not text or len(text.strip()) < 5:
+            return None
+        try:
+            import os
+            from openai import OpenAI
+
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+            if not client.api_key:
+                return None
+
+            prompt = (
+                "Analise esta resposta de um diretor/coordenador de escola a uma proposta comercial "
+                "da IAprendo (plataforma educacional de IA).\n\n"
+                f"Resposta: \"{text[:500]}\"\n\n"
+                "Classifique em JSON:\n"
+                "{\n"
+                '  "classificacao": "interesse_alto" | "interesse_medio" | "pergunta" | "objecao" | "rejeicao" | "automatica",\n'
+                '  "score": 0-100 (0=rejeicao, 50=neutro, 100=quer comprar),\n'
+                '  "keywords": ["palavras-chave detectadas"],\n'
+                '  "proxima_acao": "sugestao de proxima acao em 1 frase"\n'
+                "}\n\n"
+                "Regras:\n"
+                "- interesse_alto (80-100): pede orcamento, demo, reuniao, quer saber preco\n"
+                "- interesse_medio (50-79): faz perguntas sobre o produto, pede mais info\n"
+                "- pergunta (40-60): pergunta generica, pode ser curiosidade\n"
+                "- objecao (20-40): diz que ja tem solucao, nao e prioridade, sem orcamento\n"
+                "- rejeicao (0-20): nao tem interesse, pede para parar, cancelar\n"
+                "- automatica (0): resposta automatica de ferias, ausencia, etc.\n"
+                "Responda APENAS o JSON."
+            )
+
+            resp = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200,
+                temperature=0,
+            )
+
+            import json
+            raw = resp.choices[0].message.content.strip()
+            # Limpar markdown se houver
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            result = json.loads(raw)
+
+            score = int(result.get("score", 0))
+            keywords = result.get("keywords", [])
+            classificacao = result.get("classificacao", "")
+            proxima_acao = result.get("proxima_acao", "")
+
+            logger.info(
+                f"Intent LLM: {classificacao} (score={score})",
+                extra={"keywords": keywords, "proxima_acao": proxima_acao},
+            )
+
+            return {
+                "score": score,
+                "keywords": keywords,
+                "classificacao": classificacao,
+                "proxima_acao": proxima_acao,
+            }
+        except Exception as e:
+            logger.debug(f"Intent LLM fallback para keywords: {e}")
+            return None
 
     def _compute_signal(self, email: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Analisa um email e retorna sinal de intent (se houver).
@@ -216,6 +302,122 @@ class IntentDetector:
         # Ordenar por score descendente
         signals.sort(key=lambda s: s["score"], reverse=True)
         return signals
+
+    # ============================================================
+    # CLASSIFICACAO LLM PUBLICA (F7 - Inbox de Respostas)
+    # ============================================================
+    def classify_replies(self, days: int = 30, use_llm: bool = True,
+                         min_score: int = 50) -> List[Dict[str, Any]]:
+        """Retorna replies recentes com classificacao LLM (cache 1h em memoria).
+
+        Usado pelo Inbox de Respostas no dashboard.
+
+        Args:
+            days: janela temporal.
+            use_llm: usa GPT-4.1-mini (semantico); se False, so keywords.
+            min_score: filtro minimo (so replies com score >= esse).
+
+        Returns:
+            Lista de dicts com: queue_id, company_id, company_name, contact_name,
+            subject, reply_text (preview 300 chars), replied_at, classificacao,
+            acao_sugerida, score, keywords, reasons.
+        """
+        signals = self.detect_all_signals(days=days)
+        results = []
+
+        for s in signals:
+            # So replies (tem replied_at)
+            if not s.get("reply_preview"):
+                continue
+            if s.get("score", 0) < min_score:
+                continue
+
+            queue_id = s.get("queue_id")
+            reply_text = s.get("reply_preview", "")
+
+            # Cache de classificacao (evita re-chamar LLM)
+            cached = self._get_cached_classification(queue_id) if queue_id else None
+            if cached:
+                classification = cached
+            else:
+                # Classificar
+                if use_llm and reply_text:
+                    classification = self._analyze_reply_with_llm(reply_text) or {}
+                else:
+                    classification = self._analyze_reply_keywords(reply_text)
+
+                # Salvar cache 1h
+                if queue_id and classification:
+                    self._cache_classification(queue_id, classification)
+
+            # Enrich com info de escola/contato
+            enriched = self.enrich_signal_with_context(s) if hasattr(self, "enrich_signal_with_context") else s
+
+            results.append({
+                "queue_id": queue_id,
+                "company_id": s.get("company_id"),
+                "company_name": enriched.get("company_name", "?"),
+                "city": enriched.get("city", ""),
+                "contact_name": enriched.get("contact_name", ""),
+                "subject": s.get("subject", "")[:80],
+                "reply_text": reply_text[:300],
+                "replied_at": s.get("sent_at", ""),  # timestamp do email (replied_at fica implicito)
+                "score": s.get("score", 0),
+                "level": s.get("level", ""),
+                "keywords": classification.get("keywords", []),
+                "classificacao": classification.get("classificacao", "sem_classificacao"),
+                "acao_sugerida": classification.get("proxima_acao", ""),
+                "reasons": s.get("reasons", []),
+            })
+
+        return results
+
+    def _get_cached_classification(self, queue_id: str) -> Optional[Dict[str, Any]]:
+        """Retorna classificacao cacheada (TTL 1h) ou None."""
+        try:
+            from integrations.memory import memory
+            if not memory.is_available():
+                return None
+            marker = f"[INTENT_CLS:{queue_id}]"
+            existing = memory.search(marker, limit=3)
+            for mem in existing:
+                content = mem.get("content", "")
+                if marker not in content:
+                    continue
+                # Parse JSON payload after marker
+                try:
+                    import json as _json
+                    payload_str = content.split(marker, 1)[1].strip()
+                    payload = _json.loads(payload_str)
+                    # Verificar TTL 1h
+                    ts = payload.get("_cached_at", 0)
+                    import time as _t
+                    if _t.time() - ts < 3600:
+                        return payload
+                except Exception:
+                    continue
+            return None
+        except Exception:
+            return None
+
+    def _cache_classification(self, queue_id: str, classification: Dict[str, Any]) -> None:
+        """Cacheia classificacao por 1h em conversation_memory."""
+        try:
+            from integrations.memory import memory
+            if not memory.is_available():
+                return
+            import json as _json, time as _t
+            payload = {**classification, "_cached_at": _t.time()}
+            marker = f"[INTENT_CLS:{queue_id}]"
+            content = f"{marker} {_json.dumps(payload, ensure_ascii=False)}"
+            memory.remember(
+                content=content,
+                scope="global",
+                category="insight",
+                importance=1,  # baixa prioridade, eh so cache
+            )
+        except Exception:
+            pass
 
     # ============================================================
     # DEDUPLICACAO VIA MEMORY

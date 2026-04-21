@@ -378,3 +378,151 @@ def run_health_check() -> Dict[str, Any]:
             "total": len(statuses),
         },
     }
+
+
+# ============================================================================
+# Auto-healing (F6 Fase 3A)
+# ============================================================================
+
+def auto_heal(check_result: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """Tenta remediar problemas detectados automaticamente.
+
+    Estrategia conservadora: so age em casos de falha conhecida e com fix seguro.
+    Para casos ambiguos, apenas notifica Fernando (nao mexe no sistema).
+
+    Args:
+        check_result: resultado de run_health_check(). Se None, executa o check.
+
+    Returns:
+        Dict com: healed (list), notified (list), skipped (list), overall_after (str)
+    """
+    import os
+
+    if check_result is None:
+        check_result = run_health_check()
+
+    healed: List[Dict[str, str]] = []
+    notified: List[Dict[str, str]] = []
+    skipped: List[Dict[str, str]] = []
+
+    checks = check_result.get("checks", {})
+
+    # 1) Bridge WhatsApp critical → tenta restart via Evolution API
+    bridge_check = checks.get("bridge_whatsapp", {})
+    if bridge_check.get("status") == "critical":
+        try:
+            evo_url = os.getenv("EVOLUTION_URL", "http://localhost:8080").rstrip("/")
+            api_key = os.getenv("EVOLUTION_API_KEY", "iaprendo-evolution-2026")
+            resp = requests.post(
+                f"{evo_url}/instance/restart/ialex",
+                headers={"apikey": api_key},
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                healed.append({
+                    "check": "bridge_whatsapp",
+                    "action": "restart_ialex_instance",
+                    "detail": "Instancia ialex restartada via Evolution API",
+                })
+                logger.info("Auto-heal: instancia ialex restartada")
+            else:
+                skipped.append({
+                    "check": "bridge_whatsapp",
+                    "reason": f"restart endpoint retornou HTTP {resp.status_code}",
+                })
+        except Exception as e:
+            skipped.append({
+                "check": "bridge_whatsapp",
+                "reason": f"erro ao tentar restart: {str(e)[:100]}",
+            })
+
+    # 2) Webhook Flask critical → apenas notifica (nao pode auto-restart o proprio processo)
+    webhook_check = checks.get("webhook_flask", {})
+    if webhook_check.get("status") == "critical":
+        notified.append({
+            "check": "webhook_flask",
+            "action": "notify_owner",
+            "detail": "Webhook Flask caiu. Precisa restart manual do IAlex.",
+        })
+
+    # 3) Fila parada (>7 dias) → notifica Fernando
+    queue_check = checks.get("queue_state", {})
+    if queue_check.get("status") in ("degraded", "critical"):
+        meta = queue_check.get("meta", {}) or {}
+        stuck = meta.get("stuck_count", 0) if isinstance(meta, dict) else 0
+        if stuck > 0:
+            notified.append({
+                "check": "queue_state",
+                "action": "notify_stuck_queue",
+                "detail": f"{stuck} emails na fila ha mais de 7 dias.",
+            })
+
+    # 4) Error rate 1h critical → notifica (nao mexe, precisa investigacao)
+    err_1h = checks.get("error_rate_1h", {})
+    if err_1h.get("status") == "critical":
+        notified.append({
+            "check": "error_rate_1h",
+            "action": "notify_error_spike",
+            "detail": err_1h.get("detail", "Pico de erros na ultima hora"),
+        })
+
+    # 5) API quota >90% → notifica (fallback ja existe no enricher)
+    quota_check = checks.get("api_quotas", {})
+    if quota_check.get("status") == "degraded":
+        notified.append({
+            "check": "api_quotas",
+            "action": "notify_quota_warning",
+            "detail": quota_check.get("detail", "Alguma API perto do limite"),
+        })
+
+    # Enviar notificacoes agregadas via WhatsApp (se houver)
+    if notified:
+        try:
+            from agent.whatsapp_bridge import WhatsAppBridge
+            owner = os.getenv("IALEX_OWNER_NUMBER", "")
+            if owner:
+                lines = ["🛡️ Auto-healing report:"]
+                if healed:
+                    lines.append("\n✅ Remediado automaticamente:")
+                    for h in healed:
+                        lines.append(f"  • {h['check']}: {h['detail']}")
+                lines.append("\n⚠️ Precisa da sua atencao:")
+                for n in notified:
+                    lines.append(f"  • {n['check']}: {n['detail']}")
+                if skipped:
+                    lines.append("\n⏭️ Tentei remediar mas falhou:")
+                    for s in skipped:
+                        lines.append(f"  • {s['check']}: {s['reason']}")
+                bridge = WhatsAppBridge()
+                bridge.send_message(owner, "\n".join(lines))
+        except Exception as e:
+            logger.warning(f"Auto-heal: falha ao notificar owner: {e}")
+
+    # Re-run health check se algo foi remediado, pra ver o estado apos fix
+    overall_after = check_result.get("overall", "unknown")
+    if healed:
+        try:
+            time.sleep(3)  # dar tempo do restart propagar
+            new_result = run_health_check()
+            overall_after = new_result.get("overall", overall_after)
+        except Exception:
+            pass
+
+    return {
+        "healed": healed,
+        "notified": notified,
+        "skipped": skipped,
+        "overall_before": check_result.get("overall", "unknown"),
+        "overall_after": overall_after,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+if __name__ == "__main__":
+    import json as _json
+    result = run_health_check()
+    print(_json.dumps(result, indent=2, default=str))
+    if result.get("overall") in ("degraded", "critical"):
+        print("\n--- Triggering auto-heal ---")
+        heal_result = auto_heal(result)
+        print(_json.dumps(heal_result, indent=2, default=str))

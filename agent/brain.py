@@ -1264,11 +1264,19 @@ TOOLS = [
     {
         "name": "gerar_relatorio_escola",
         "description": (
-            "Gera um One Page Report (pagina HTML) com diagnostico completo de uma "
-            "escola: radar ENEM por area, comparacao com escolas similares group, evolucao de matriculas, "
-            "e insights automaticos. O report e hospedado como URL publica permanente "
-            "que pode ser enviada por email ou WhatsApp para a escola. Use quando "
-            "Fernando quiser um material visual para enviar junto com a abordagem."
+            "Gera o OPR (One Page Report) INTERATIVO — uma PAGINA HTML visual com diagnostico "
+            "completo de uma escola + seletor de benchmark (Estadual/Municipal/Federal/Privada). "
+            "O report e hospedado como URL publica permanente UNICA por escola. "
+            "Ao abrir, o usuario pode trocar entre 4 comparacoes (escolas estaduais, municipais, "
+            "federais, privadas da cidade) — o radar, cards e insights atualizam dinamicamente "
+            "sem recarregar pagina. "
+            "ESTE E O UNICO TOOL QUE GERA O RELATORIO/OPR EM HTML. "
+            "Use SEMPRE que Fernando disser 'gera OPR', 'gera relatorio', 'gera diagnostico', "
+            "'faz o one page report' ou qualquer variacao pedindo o documento visual da escola. "
+            "NAO confundir com analise em texto — este tool gera o ARQUIVO HTML com graficos. "
+            "IMPORTANTE: o link e UNICO por escola (nao gera multiplos arquivos). Se Fernando pedir "
+            "para comparar com escolas de OUTRA dependencia, use benchmark_dep para abrir aquela "
+            "aba como default (mas o link continua unico). Valores: Privada, Estadual, Municipal, Federal."
         ),
         "input_schema": {
             "type": "object",
@@ -1276,6 +1284,12 @@ TOOLS = [
                 "inep": {"type": "string", "description": "Codigo INEP da escola"},
                 "escola_nome": {"type": "string", "description": "Nome da escola"},
                 "escola_id": {"type": "string", "description": "UUID da escola em companies"},
+                "benchmark_dep": {
+                    "type": "string",
+                    "description": "Dependencia administrativa para o benchmark (Privada, Estadual, Municipal, Federal). "
+                                   "Se omitido, usa a mesma dependencia da escola. Use quando Fernando pedir "
+                                   "para comparar com escolas de outro tipo (ex: 'compara com as privadas').",
+                },
             },
         },
     },
@@ -1297,6 +1311,96 @@ TOOLS = [
                 "escola2_nome": {"type": "string", "description": "Escola de REFERENCIA. Nome ou parte do nome."},
                 "escola2_inep": {"type": "string", "description": "INEP da escola referencia (se conhecido)"},
             },
+        },
+    },
+    # === Skills aprendidas (F6 Fase 2 - auto-aprendizado) ===
+    {
+        "name": "padronizar_resposta",
+        "description": (
+            "Salva o padrao da ULTIMA resposta do IAlex como skill reutilizavel. "
+            "Use quando Fernando disser 'padroniza isso', 'salva esse modelo', 'usa sempre esse formato', "
+            "'ficou otimo, padroniza' ou similar. Extrai a estrutura/tom/formato da ultima mensagem "
+            "aprovada e salva em learned_skills para ser reutilizada em contextos similares. "
+            "Quando salvar, confirme com Fernando o NOME e TIPO da skill."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nome": {
+                    "type": "string",
+                    "description": "Nome curto e descritivo da skill (ex: 'email_angulo_enem_privadas', 'comparacao_redacao_compacta')",
+                },
+                "descricao": {
+                    "type": "string",
+                    "description": "1 frase explicando QUANDO usar essa skill",
+                },
+                "tipo": {
+                    "type": "string",
+                    "enum": ["email_template", "report_format", "analysis_pattern", "response_style", "whatsapp_template", "other"],
+                    "description": "Tipo da skill: email_template = template de email; report_format = formato de relatorio; analysis_pattern = padrao de analise; response_style = tom/estilo de resposta WhatsApp; whatsapp_template = template WhatsApp; other = outros",
+                },
+                "gatilho": {
+                    "type": "string",
+                    "description": "Palavras-chave/contexto que acionam essa skill (ex: 'comparar + redacao', 'email + angulo ENEM + privada')",
+                },
+                "conteudo": {
+                    "type": "string",
+                    "description": "O PADRAO em si: template/instrucao/formato. Se Fernando nao especificar, extraia da ultima resposta do IAlex.",
+                },
+                "exemplo_input": {
+                    "type": "string",
+                    "description": "Exemplo do pedido que gerou o padrao (ex: 'compara anchieta com militar so em redacao')",
+                },
+                "exemplo_output": {
+                    "type": "string",
+                    "description": "Exemplo do resultado aprovado (pode ser trecho da ultima resposta)",
+                },
+                "aplica_a": {
+                    "type": "object",
+                    "description": "Contexto onde se aplica. Ex: {'segmento': 'privada', 'tamanho': '500+', 'nivel': 'medio'}",
+                },
+            },
+            "required": ["nome", "tipo", "conteudo"],
+        },
+    },
+    {
+        "name": "listar_skills",
+        "description": (
+            "Lista as skills/modelos que o IAlex ja aprendeu com Fernando. "
+            "Use quando Fernando perguntar 'quais skills voce tem?', 'o que voce aprendeu?', "
+            "'quais modelos salvos?' ou quando o IAlex precisar consultar skills existentes "
+            "antes de responder (para manter consistencia). Retorna nome, descricao, tipo e metricas de uso."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tipo": {
+                    "type": "string",
+                    "enum": ["email_template", "report_format", "analysis_pattern", "response_style", "whatsapp_template", "other", "todos"],
+                    "description": "Filtrar por tipo (default: todos)",
+                },
+                "busca": {
+                    "type": "string",
+                    "description": "Buscar no nome/descricao (opcional)",
+                },
+            },
+        },
+    },
+    {
+        "name": "arquivar_skill",
+        "description": (
+            "Arquiva uma skill que nao deve mais ser usada. Use quando Fernando disser "
+            "'remove essa skill', 'arquiva o modelo X', 'nao quero mais esse padrao'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nome": {
+                    "type": "string",
+                    "description": "Nome da skill a arquivar",
+                },
+            },
+            "required": ["nome"],
         },
     },
 ]
@@ -2228,60 +2332,78 @@ def _handle_gerar_graficos_escola(params: Dict) -> str:
 
 def _handle_gerar_relatorio_escola(params: Dict) -> str:
     """Gera One Page Report (HTML) para uma escola e faz upload."""
-    company, err = _resolve_company_strict(params, select="id,name,inep_code")
-    if err:
-        return err
-    if not company:
-        return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
+    # Aceitar INEP direto (mesmo se escola nao esta no CRM — para fallback school_analytics)
+    inep_direto = (params.get("inep") or "").strip()
+    if inep_direto and inep_direto.isdigit():
+        # Tentar resolver nome via school_analytics
+        escola_nome = inep_direto
+        try:
+            from tools.insight_charts import _resolve_school_name
+            escola_nome = _resolve_school_name(inep_direto) or inep_direto
+        except Exception:
+            pass
+        inep = inep_direto
+    else:
+        company, err = _resolve_company_strict(params, select="id,name,inep_code")
+        if err:
+            return err
+        if not company:
+            return json.dumps({"erro": "Informe escola_id, inep ou escola_nome."})
 
-    inep = company.get("inep_code")
-    escola_nome = company.get("name", "?")
+        inep = company.get("inep_code")
+        escola_nome = company.get("name", "?")
+        dep = company.get("enem_dependencia", "")
 
-    if not inep:
-        return json.dumps({"erro": f"Escola '{escola_nome}' sem INEP no CRM."})
+        if not inep:
+            return json.dumps({"erro": f"Escola '{escola_nome}' sem INEP no CRM."})
+
+    benchmark_dep = (params.get("benchmark_dep") or "").strip() or None
 
     try:
         from tools.report_generator import generate_and_upload_report
-        result = generate_and_upload_report(str(inep))
+        result = generate_and_upload_report(str(inep), benchmark_dep=benchmark_dep)
         if not result:
             return json.dumps({"erro": "Nao foi possivel gerar o relatorio (dados insuficientes)."})
 
-        # Best-effort: enviar link via WhatsApp para Fernando
-        enviado_wpp = False
-        try:
-            import os
-            from agent.whatsapp_bridge import WhatsAppBridge
-            bridge = WhatsAppBridge()
-            owner = os.getenv("IALEX_OWNER_NUMBER", "")
-            if owner:
-                msg = (
-                    f"📊 *Relatorio {escola_nome}*\n\n"
-                    f"🔗 {result['html_url']}\n\n"
-                    f"Abra o link para ver o diagnostico completo."
-                )
-                send_result = bridge.send_message(owner, msg)
-                enviado_wpp = bool(send_result.get("success"))
-        except Exception:
-            pass
+        # Nota: NAO envia mensagem direta aqui — o LLM gera uma resposta
+        # mais completa (com link + info da escola + sugestao de abordagem)
+        # que e enviada pelo fluxo normal do webhook. Evita mensagem duplicada.
 
         logger.info("gerar_relatorio_escola_ok", extra={
             "inep": inep, "escola": escola_nome,
         })
+
+        bench_info = f" (aba default: {benchmark_dep})" if benchmark_dep else ""
+        highlights = result.get("highlights") or {}
 
         return json.dumps({
             "sucesso": True,
             "escola": escola_nome,
             "inep": str(inep),
             "html_url": result["html_url"],
-            "enviado_whatsapp": enviado_wpp,
+            "benchmark_dep_default": benchmark_dep or "dep da escola",
+            "media_geral": result.get("media_geral"),
+            "highlights_comparacao": highlights,
             "mensagem": (
-                f"Relatorio gerado para {escola_nome}. "
-                f"Link: {result['html_url']}. "
-                + ("Enviei o link no WhatsApp." if enviado_wpp else "")
-                + " O relatorio inclui radar ENEM, comparacao com escolas similares, evolucao de matriculas e insights."
+                f"OPR interativo gerado para {escola_nome}{bench_info}. "
+                f"Link: {result['html_url']} — com seletor de benchmark "
+                f"(Estaduais/Municipais/Federais/Privadas)."
             ),
-            "dica": "Voce pode incluir este link no email para a escola: 'Preparamos um diagnostico da sua escola, veja aqui: [link]'",
-        }, ensure_ascii=False)
+            "instrucoes_para_resposta_ao_fernando": (
+                "Ao responder ao Fernando, componha UMA mensagem balanceada (max 6-8 linhas) "
+                "com esta estrutura: "
+                "(1) Link do OPR; "
+                "(2) Elogio — citar o 'ponto_forte' em highlights_comparacao (ex: 'A escola esta "
+                "+X pts acima das estaduais em Matematica — muito bem posicionada'); "
+                "(3) Oportunidade — citar o 'maior_oportunidade' (ex: 'Quando comparada com as "
+                "privadas, ha uma diferenca de -Y pts — esse e um espaco onde a escola pode crescer'); "
+                "(4) Sugestao de acao — 'Vale olhar a aba [X] no OPR para ver os insights especificos'. "
+                "Tom: consultor de negocios (nao vendedor). Evite jargao. Portugues natural."
+            ),
+            "dica_tecnica": (
+                "Link UNICO por escola. #privada no fim da URL abre direto na aba Privadas."
+            ),
+        }, ensure_ascii=False, default=str)
     except Exception as e:
         logger.error(f"gerar_relatorio_escola error: {e}")
         return json.dumps({"erro": f"Erro ao gerar relatorio: {str(e)[:200]}"})
@@ -5691,6 +5813,36 @@ def _resolve_company_strict(
             }, ensure_ascii=False))
 
         if len(matches) == 0:
+            # Fallback: buscar em school_analytics (escola pode existir no ENEM
+            # mas nao estar importada no CRM ainda)
+            try:
+                sa_q = db.client.table("school_analytics").select(
+                    "co_entidade, no_entidade, peer_mun_nome, peer_uf_sigla, enem_dependencia"
+                )
+                for _pw in _palavras[:3]:
+                    sa_q = sa_q.ilike("no_entidade", f"%{_pw}%")
+                sa_result = sa_q.limit(5).execute()
+                sa_matches = sa_result.data or []
+                if sa_matches:
+                    sugestoes = []
+                    for sa in sa_matches[:3]:
+                        sugestoes.append(
+                            f"- {sa.get('no_entidade', '?')} (INEP {sa.get('co_entidade', '?')}, "
+                            f"{sa.get('peer_mun_nome', '?')}/{sa.get('peer_uf_sigla', '?')}, "
+                            f"{sa.get('enem_dependencia', '?')})"
+                        )
+                    return (None, json.dumps({
+                        "erro": f"Escola '{nome}' nao esta no CRM, mas encontrei na base ENEM/Censo.",
+                        "escolas_encontradas": "\n".join(sugestoes),
+                        "dica": (
+                            "Para gerar o OPR, posso usar o INEP diretamente. "
+                            "Chame novamente com o parametro inep. "
+                            "Ex: gerar_relatorio_escola(inep='43105009')"
+                        ),
+                    }, ensure_ascii=False))
+            except Exception:
+                pass
+
             return (None, json.dumps({
                 "erro": f"Nenhuma escola encontrada com '{nome}' no nome.",
                 "dica": "Tente apenas o sobrenome da escola (ex: 'Kennedy' em vez de 'Colegio Kennedy').",
@@ -6643,6 +6795,184 @@ def _handle_rodar_pipeline_automatico_agora(params: Dict) -> str:
         return json.dumps({"erro": f"Erro ao disparar pipeline: {str(e)[:200]}"})
 
 
+# ===========================================================================
+# HANDLERS: Skills aprendidas (F6 Fase 2)
+# ===========================================================================
+
+def _handle_padronizar_resposta(params: Dict) -> str:
+    """Salva uma skill/padrao aprendido em learned_skills.
+
+    Tambem invalida o cache do system prompt para que a nova skill seja
+    injetada nas proximas conversas.
+    """
+    try:
+        nome = (params.get("nome") or "").strip()
+        tipo = (params.get("tipo") or "other").strip()
+        conteudo = (params.get("conteudo") or "").strip()
+
+        if not nome or not conteudo:
+            return json.dumps({
+                "erro": "Para salvar uma skill, preciso de nome e conteudo. "
+                        "Pode me dizer como quer chamar essa skill e qual e o padrao exato?"
+            }, ensure_ascii=False)
+
+        descricao = (params.get("descricao") or "").strip()
+        gatilho = (params.get("gatilho") or "").strip()
+        exemplo_input = (params.get("exemplo_input") or "").strip()
+        exemplo_output = (params.get("exemplo_output") or "").strip()
+        aplica_a = params.get("aplica_a") or {}
+
+        skill_data = {
+            "name": nome,
+            "description": descricao or None,
+            "skill_type": tipo,
+            "trigger_pattern": gatilho or None,
+            "template_content": conteudo,
+            "example_input": exemplo_input or None,
+            "example_output": exemplo_output or None,
+            "applies_to": aplica_a if isinstance(aplica_a, dict) else {},
+            "status": "active",
+            "created_by": "fernando",
+        }
+
+        # Verificar se ja existe skill com esse nome (ativa) — se sim, faz update
+        existing = db.client.table("learned_skills").select("id").eq("name", nome).neq(
+            "status", "archived"
+        ).limit(1).execute()
+
+        if existing.data:
+            skill_id = existing.data[0]["id"]
+            skill_data["updated_at"] = "now()"
+            db.client.table("learned_skills").update(skill_data).eq("id", skill_id).execute()
+            action = "atualizada"
+        else:
+            result = db.client.table("learned_skills").insert(skill_data).execute()
+            skill_id = result.data[0]["id"] if result.data else None
+            action = "criada"
+
+        # Invalidar cache de system prompt (proximas conversas vao recarregar skills)
+        try:
+            global _skills_cache, _skills_cache_ts
+            _skills_cache = None
+            _skills_cache_ts = 0
+        except NameError:
+            pass
+
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": f"Skill '{nome}' ({tipo}) {action} com sucesso.",
+            "skill_id": skill_id,
+            "hint": "Quando eu detectar um contexto similar, vou usar esse padrao como referencia.",
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao salvar skill: {str(e)[:200]}"}, ensure_ascii=False)
+
+
+def _handle_listar_skills(params: Dict) -> str:
+    """Lista skills aprendidas (todas ou filtradas)."""
+    try:
+        tipo = (params.get("tipo") or "todos").strip()
+        busca = (params.get("busca") or "").strip()
+
+        query = db.client.table("learned_skills").select(
+            "id, name, description, skill_type, trigger_pattern, metrics, status, created_at"
+        ).eq("status", "active")
+
+        if tipo and tipo != "todos":
+            query = query.eq("skill_type", tipo)
+
+        if busca:
+            query = query.or_(f"name.ilike.%{busca}%,description.ilike.%{busca}%")
+
+        result = query.order("created_at", desc=True).limit(50).execute()
+        skills = result.data or []
+
+        if not skills:
+            return json.dumps({
+                "total": 0,
+                "mensagem": "Nenhuma skill aprendida ainda. Quando voce aprovar um padrao e pedir 'padroniza isso', eu salvo.",
+            }, ensure_ascii=False)
+
+        resumo = []
+        for s in skills:
+            metrics = s.get("metrics") or {}
+            resumo.append({
+                "nome": s["name"],
+                "tipo": s["skill_type"],
+                "descricao": s.get("description") or "",
+                "gatilho": s.get("trigger_pattern") or "",
+                "usos": metrics.get("times_used", 0),
+            })
+
+        return json.dumps({
+            "total": len(skills),
+            "skills": resumo,
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao listar skills: {str(e)[:200]}"}, ensure_ascii=False)
+
+
+def _handle_arquivar_skill(params: Dict) -> str:
+    """Arquiva uma skill (soft delete)."""
+    try:
+        nome = (params.get("nome") or "").strip()
+        if not nome:
+            return json.dumps({"erro": "Preciso do nome da skill"}, ensure_ascii=False)
+
+        existing = db.client.table("learned_skills").select("id").eq("name", nome).neq(
+            "status", "archived"
+        ).limit(1).execute()
+
+        if not existing.data:
+            return json.dumps({"erro": f"Skill '{nome}' nao encontrada"}, ensure_ascii=False)
+
+        skill_id = existing.data[0]["id"]
+        db.client.table("learned_skills").update({
+            "status": "archived",
+            "updated_at": "now()",
+        }).eq("id", skill_id).execute()
+
+        # Invalidar cache
+        try:
+            global _skills_cache, _skills_cache_ts
+            _skills_cache = None
+            _skills_cache_ts = 0
+        except NameError:
+            pass
+
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": f"Skill '{nome}' arquivada.",
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao arquivar skill: {str(e)[:200]}"}, ensure_ascii=False)
+
+
+# Cache de skills para injection no system prompt (TTL 5 min)
+_skills_cache: Optional[List[Dict]] = None
+_skills_cache_ts: float = 0
+_SKILLS_CACHE_TTL = 300  # 5 min
+
+
+def _get_active_skills_cached() -> List[Dict]:
+    """Retorna skills ativas com cache de 5 min (evita query a cada mensagem)."""
+    global _skills_cache, _skills_cache_ts
+    import time as _t
+    now = _t.time()
+    if _skills_cache is not None and (now - _skills_cache_ts) < _SKILLS_CACHE_TTL:
+        return _skills_cache
+    try:
+        result = db.client.table("learned_skills").select(
+            "name, description, skill_type, trigger_pattern, template_content"
+        ).eq("status", "active").limit(30).execute()
+        _skills_cache = result.data or []
+        _skills_cache_ts = now
+        return _skills_cache
+    except Exception as e:
+        logger.debug(f"Falha ao buscar skills: {e}")
+        return []
+
+
 TOOL_HANDLERS = {
     # Busca e gestão de escolas
     "consultar_escolas": _handle_consultar_escolas,
@@ -6739,6 +7069,10 @@ TOOL_HANDLERS = {
     # One Page Report (HTML) para escola
     "gerar_relatorio_escola": _handle_gerar_relatorio_escola,
     "comparar_escolas": _handle_comparar_escolas,
+    # Skills aprendidas (F6 Fase 2 - auto-aprendizado)
+    "padronizar_resposta": _handle_padronizar_resposta,
+    "listar_skills": _handle_listar_skills,
+    "arquivar_skill": _handle_arquivar_skill,
 }
 
 # =====================================================================
@@ -8265,6 +8599,40 @@ class Brain:
                         parts.append(memory.format_for_context(school_mems))
             except Exception:
                 pass
+
+            # 3. Skills aprendidas (F6 Fase 2) — injetar como referencia de formato/tom
+            try:
+                skills = _get_active_skills_cached()
+                if skills:
+                    parts.append("\n== SKILLS APRENDIDAS (padroes que Fernando aprovou) ==")
+                    parts.append(
+                        "Use estas skills como REFERENCIA quando o contexto for similar. "
+                        "Quando o gatilho bater com o pedido, siga o padrao registrado em 'conteudo'.\n"
+                    )
+                    type_emoji = {
+                        "email_template": "📧",
+                        "report_format": "📊",
+                        "analysis_pattern": "🔍",
+                        "response_style": "💬",
+                        "whatsapp_template": "📱",
+                        "other": "🎯",
+                    }
+                    for sk in skills[:15]:  # max 15 skills no prompt
+                        emoji = type_emoji.get(sk.get("skill_type"), "🎯")
+                        name = sk.get("name", "")
+                        desc = sk.get("description") or ""
+                        gatilho = sk.get("trigger_pattern") or ""
+                        conteudo = sk.get("template_content") or ""
+                        # Truncar conteudo longo
+                        if len(conteudo) > 500:
+                            conteudo = conteudo[:500] + "..."
+                        parts.append(
+                            f"{emoji} **{name}** ({sk.get('skill_type')})\n"
+                            f"  Quando: {desc or gatilho or 'geral'}\n"
+                            f"  Padrao:\n{conteudo}\n"
+                        )
+            except Exception as e:
+                logger.debug(f"Falha ao injetar skills no prompt: {e}")
 
             return "\n".join(parts)
         except Exception as e:

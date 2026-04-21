@@ -33,6 +33,8 @@ class IALexScheduler:
             return
 
         # Agendar tarefas
+        # Briefing matinal UNICO as 08:00 (inclui urgency digest integrado)
+        # Nao separar em 08:00 + 08:15 para evitar mensagens duplicadas
         schedule.every().day.at("08:00").do(self._morning_briefing)
         schedule.every().day.at("12:00").do(self._midday_check)
         schedule.every().day.at("17:00").do(self._end_of_day)
@@ -49,9 +51,11 @@ class IALexScheduler:
         schedule.every(30).minutes.do(self._check_buying_signals)
         # Score de urgencia unificado (F2) — a cada 30 min, DEPOIS dos sub-scores
         schedule.every(30).minutes.do(self._update_urgency_scores)
-        # Digest de urgencia diario (F2) — 08:15 (apos briefing matinal 08:00)
-        digest_time = os.getenv("URGENCY_DIGEST_TIME", "08:15")
-        schedule.every().day.at(digest_time).do(self._send_urgency_digest)
+        # NOTA: digest de urgencia NAO e mais agendado separadamente —
+        # foi integrado ao _morning_briefing() para enviar UMA so mensagem
+        # Auto-healing (F6 Fase 3A) — a cada 30 min, apos urgency
+        # Detecta problemas e tenta remediar (restart bridge, notifica Fernando)
+        schedule.every(30).minutes.do(self._auto_heal_system)
         # Retreino semanal do modelo preditivo (domingo 03:00)
         schedule.every().sunday.at("03:00").do(self._retrain_predictive_model)
 
@@ -477,8 +481,18 @@ class IALexScheduler:
             logger.error(f"Erro no envio agendado: {e}")
 
     def _morning_briefing(self):
-        """Envia briefing matinal as 8h (com urgency highlights F2)."""
+        """Envia briefing matinal UNICO as 8h.
+
+        Combina: briefing geral + urgency highlights + urgency digest + trends.
+        Tudo em UMA so mensagem para nao sobrecarregar Fernando.
+        Respeita autonomia: em modo MANUAL, nao envia.
+        """
         try:
+            from integrations.pipeline_config import pipeline_config
+            if pipeline_config.get_autonomy_level() == "manual":
+                logger.debug("Briefing matinal suprimido (modo manual)")
+                return
+
             from agent.brain import Brain
             brain = Brain()
             briefing = brain.get_morning_briefing()
@@ -499,8 +513,29 @@ class IALexScheduler:
             except Exception:
                 pass
 
+            # F2: integrar urgency digest (antes era enviado separado as 08:15)
+            digest_section = ""
+            try:
+                from tools.proactive_actions import proactive_engine
+                digest = proactive_engine.generate_daily_digest()
+                if digest:
+                    digest_section = f"\n\n---\n\n{digest}"
+                # Trends de tier
+                trends = proactive_engine.detect_and_format_trends()
+                if trends:
+                    digest_section += f"\n\n{trends}"
+                # Inatividade
+                from config.settings import settings as _s
+                inactive = proactive_engine.detect_inactivity(days=_s.URGENCY_INACTIVITY_DAYS)
+                inactivity_msg = proactive_engine.format_inactivity_for_whatsapp(inactive)
+                if inactivity_msg:
+                    digest_section += f"\n\n{inactivity_msg}"
+            except Exception:
+                pass
+
             if briefing:
-                self._send_to_owner(f"\u2600\ufe0f *Bom dia, Fernando!*\n\n{briefing}{urgency_line}")
+                full_msg = f"\u2600\ufe0f *Bom dia, Fernando!*\n\n{briefing}{urgency_line}{digest_section}"
+                self._send_to_owner(full_msg)
         except Exception as e:
             logger.error(f"Erro no briefing matinal: {e}")
 
@@ -616,6 +651,9 @@ class IALexScheduler:
         """Recalcula scores de urgencia unificados (F2).
         Roda a cada 30 min, DEPOIS de dynamic_scores e buying_signals.
         Se detectar novo lead CRITICAL, envia alerta WhatsApp imediato.
+
+        Respeita autonomia: em modo MANUAL, recalcula scores (database) mas
+        NAO envia alertas WhatsApp proativos.
         """
         try:
             from tools.urgency_scorer import urgency_scorer
@@ -627,6 +665,10 @@ class IALexScheduler:
                 logger.info(f"Urgency scores: {updated} atualizado(s)", extra=by_tier)
 
             # Alertar IMEDIATAMENTE sobre novos CRITICALs (tier changes)
+            # Gate de autonomia: em modo MANUAL, nao envia alertas proativos
+            from integrations.pipeline_config import pipeline_config
+            is_manual = pipeline_config.get_autonomy_level() == "manual"
+
             tier_changes = result.get("tier_changes", [])
             new_critical = [
                 c for c in tier_changes
@@ -644,13 +686,16 @@ class IALexScheduler:
                 except Exception:
                     pass
 
-                self._send_to_owner(
-                    f"\U0001f534 *ALERTA URGENCIA CRITICA!*\n\n"
-                    f"\U0001f3eb *{name}*\n"
-                    f"\U0001f4c8 Score: {c.get('urgency_score', '?')}/100\n"
-                    f"\u2b06\ufe0f Era {c.get('old_tier', '?')} → agora CRITICAL\n\n"
-                    f"_Acao imediata recomendada. Pergunte 'proximas acoes' para ver sugestoes._"
-                )
+                if not is_manual:
+                    self._send_to_owner(
+                        f"\U0001f534 *ALERTA URGENCIA CRITICA!*\n\n"
+                        f"\U0001f3eb *{name}*\n"
+                        f"\U0001f4c8 Score: {c.get('urgency_score', '?')}/100\n"
+                        f"\u2b06\ufe0f Era {c.get('old_tier', '?')} → agora CRITICAL\n\n"
+                        f"_Acao imediata recomendada. Pergunte 'proximas acoes' para ver sugestoes._"
+                    )
+                else:
+                    logger.info(f"Urgency alert SUPRIMIDO (modo manual): {name} -> CRITICAL")
 
             # Notificar via dashboard
             if new_critical:
@@ -668,11 +713,49 @@ class IALexScheduler:
         except Exception as e:
             logger.debug(f"Urgency scores skip: {e}")
 
+    # ============================================================
+    # AUTO-HEALING (F6 Fase 3A)
+    # ============================================================
+
+    def _auto_heal_system(self):
+        """Roda health check e tenta remediar problemas automaticamente.
+
+        Acoes seguras: restart da instancia Baileys, notificacoes ao Fernando.
+        Acoes ambiguas ou perigosas: apenas notifica (sem agir).
+        """
+        try:
+            from tools.health_check import run_health_check, auto_heal
+            result = run_health_check()
+
+            # So executa auto-heal se houver problemas
+            if result.get("overall") not in ("degraded", "critical"):
+                logger.debug("Auto-heal: sistema saudavel, nada a fazer")
+                return
+
+            heal_result = auto_heal(result)
+            healed = heal_result.get("healed", [])
+            notified = heal_result.get("notified", [])
+
+            if healed or notified:
+                logger.info(
+                    f"Auto-heal: {len(healed)} remediado(s), {len(notified)} notificacoes",
+                    extra={"healed": healed, "notified": notified},
+                )
+        except Exception as e:
+            logger.debug(f"Auto-heal skip: {e}")
+
     def _send_urgency_digest(self):
         """Envia digest de urgencia diario as 08:15 (apos briefing matinal).
         Inclui leads por tier, tendencias e alertas de inatividade.
+
+        Respeita autonomia: em modo MANUAL, nao envia digest proativo.
         """
         try:
+            from integrations.pipeline_config import pipeline_config
+            if pipeline_config.get_autonomy_level() == "manual":
+                logger.debug("Urgency digest suprimido (modo manual)")
+                return
+
             from tools.proactive_actions import proactive_engine
 
             parts: list = []
