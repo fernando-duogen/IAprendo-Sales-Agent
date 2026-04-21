@@ -142,7 +142,7 @@ _COMP_TEMPLATE = """<!DOCTYPE html>
     <div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
       <div style="flex:1;min-width:200px">
         <p style="font-size:16px;font-weight:700;margin-bottom:8px">Pronto para transformar o aprendizado?</p>
-        <p style="font-size:13px;color:#666;margin-bottom:16px">Exercicios adaptativos, alinhados a BNCC, que ajudam cada aluno no seu ritmo.</p>
+        <p style="font-size:13px;color:#666;margin-bottom:16px">Exercícios adaptativos, alinhados à BNCC, que ajudam cada aluno no seu ritmo.</p>
         <a href="{meeting_link}" style="display:inline-block;padding:12px 28px;background:#2563EB;color:white;border-radius:8px;text-decoration:none;font-weight:700">Conhecer a IAprendo</a>
       </div>
       {qr_html}
@@ -255,11 +255,11 @@ def generate_comparison_report(
             cards_html = "\n      ".join(area_cards)
             areas_section = f'''
   <div class="section">
-    <div class="section-title"><span class="icon">📊</span> Comparacao por Area</div>
+    <div class="section-title"><span class="icon">📊</span> Comparação por Área</div>
     <div class="area-grid">
       {cards_html}
     </div>
-    <div class="footnote">Azul: {nome1[:25]} | Laranja: {nome2[:25]}. Diferenca em pontos.</div>
+    <div class="footnote">Azul: {nome1[:25]} | Laranja: {nome2[:25]}. Diferença em pontos.</div>
   </div>'''
 
     # --- TREND ---
@@ -269,10 +269,10 @@ def generate_comparison_report(
         trend_b64 = _img_to_base64(trend_png)
         trend_section = f'''
   <div class="section">
-    <div class="section-title"><span class="icon">📈</span> Evolucao de Matriculas (2020-2025)</div>
+    <div class="section-title"><span class="icon">📈</span> Evolução de Matrículas (2020-2025)</div>
     <div class="chart-container">
-      <img src="{trend_b64}" alt="Evolucao comparativa de matriculas" />
-      <div class="chart-caption">Variacao percentual desde o primeiro ano disponivel</div>
+      <img src="{trend_b64}" alt="Evolução comparativa de matrículas" />
+      <div class="chart-caption">Variação percentual desde o primeiro ano disponível</div>
     </div>
     <div class="footnote">Fonte: Censo Escolar INEP 2020-2025.</div>
   </div>'''

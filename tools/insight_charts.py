@@ -51,21 +51,21 @@ COLOR_TREND_BENCH = "#9CA3AF"
 
 # Labels PT-BR para as 5 areas do ENEM
 AREA_LABELS = {
-    "enem_media_mt": "Matematica",
-    "enem_media_cn": "Ciencias\nda Natureza",
-    "enem_media_ch": "Ciencias\nHumanas",
+    "enem_media_mt": "Matemática",
+    "enem_media_cn": "Ciências\nda Natureza",
+    "enem_media_ch": "Ciências\nHumanas",
     "enem_media_lc": "Linguagens",
-    "enem_media_redacao": "Redacao",
+    "enem_media_redacao": "Redação",
 }
 AREA_KEYS = list(AREA_LABELS.keys())
 
 # Labels PT-BR para as 5 competencias da redacao
 COMP_LABELS = {
     "enem_redacao_comp1_media": "C1: Norma\nCulta",
-    "enem_redacao_comp2_media": "C2: Compreensao\ndo Tema",
-    "enem_redacao_comp3_media": "C3: Argumentacao",
-    "enem_redacao_comp4_media": "C4: Coesao\nTextual",
-    "enem_redacao_comp5_media": "C5: Proposta\nde Intervencao",
+    "enem_redacao_comp2_media": "C2: Compreensão\ndo Tema",
+    "enem_redacao_comp3_media": "C3: Argumentação",
+    "enem_redacao_comp4_media": "C4: Coesão\nTextual",
+    "enem_redacao_comp5_media": "C5: Proposta\nde Intervenção",
 }
 COMP_KEYS = list(COMP_LABELS.keys())
 
@@ -155,13 +155,19 @@ def _resolve_school_name(inep: str) -> str:
         return f"INEP {inep}"
 
 
-def _to_png(fig: "go.Figure", width: int, height: int) -> Optional[bytes]:
-    """Exporta Plotly figure para PNG bytes."""
+def _to_png(fig: "go.Figure", width: int, height: int, scale: Optional[float] = None) -> Optional[bytes]:
+    """Exporta Plotly figure para PNG bytes.
+
+    Args:
+        scale: Override do EXPORT_SCALE global. Use 1 para PNGs menores
+            (~3-4x mais leves), util quando embute multiplos PNGs no mesmo HTML.
+    """
     if go is None:
         return None
     try:
         return fig.to_image(
-            format="png", width=width, height=height, scale=EXPORT_SCALE
+            format="png", width=width, height=height,
+            scale=scale if scale is not None else EXPORT_SCALE,
         )
     except Exception as e:
         logger.warning(f"insight_charts: to_image failed: {e}")
@@ -176,6 +182,8 @@ def generate_radar_chart(
     inep: str,
     benchmark: str = "municipio",
     include_comps: bool = False,
+    benchmark_dep: Optional[str] = None,
+    scale: Optional[float] = None,
 ) -> Optional[bytes]:
     """Gera radar ENEM 5 areas (+ opcionalmente 5 competencias redacao).
 
@@ -183,6 +191,8 @@ def generate_radar_chart(
         inep: Codigo INEP da escola.
         benchmark: "municipio" (default), "estado" ou "brasil".
         include_comps: Se True, gera segundo radar com competencias de redacao.
+        benchmark_dep: Dependencia forçada para benchmark (ex: "Privada").
+            Se None, usa a mesma dependencia da escola.
 
     Returns:
         PNG bytes ou None se dados insuficientes.
@@ -206,11 +216,12 @@ def generate_radar_chart(
     if not any(v is not None for v in school_vals):
         return None
 
-    # Benchmark
+    # Benchmark (permite forçar dependência diferente)
+    bench_dep = benchmark_dep if benchmark_dep else dep
     bench_data, bench_count = _fetch_benchmark(
         municipio if benchmark == "municipio" else "",
         uf if benchmark in ("municipio", "estado") else "",
-        dep,
+        bench_dep,
         metrics,
     )
     bench_vals = [bench_data.get(m) for m in metrics]
@@ -226,12 +237,15 @@ def generate_radar_chart(
     l_closed = labels + [labels[0]]
 
     # Benchmark label (sem jargao "peer", com contagem de escolas)
+    # Pluralizar: Federal→federais, Privada→privadas, etc.
+    _dep_plural_map = {"Federal": "federais", "Estadual": "estaduais", "Municipal": "municipais", "Privada": "privadas"}
+    bench_dep_plural = _dep_plural_map.get(bench_dep, bench_dep.lower() + "s" if bench_dep else "")
     if benchmark == "municipio":
-        bench_label = f"Media de {bench_count} escolas {dep} de {municipio}"
+        bench_label = f"Média de {bench_count} escolas {bench_dep_plural} de {municipio}"
     elif benchmark == "estado":
-        bench_label = f"Media de {bench_count} escolas {dep} do {uf}"
+        bench_label = f"Média de {bench_count} escolas {bench_dep_plural} do {uf}"
     else:
-        bench_label = f"Media de {bench_count} escolas {dep} Brasil"
+        bench_label = f"Média de {bench_count} escolas {bench_dep_plural} Brasil"
 
     # Construir figura
     fig = go.Figure()
@@ -299,7 +313,7 @@ def generate_radar_chart(
         width=RADAR_WIDTH,
     )
 
-    return _to_png(fig, RADAR_WIDTH, RADAR_HEIGHT)
+    return _to_png(fig, RADAR_WIDTH, RADAR_HEIGHT, scale=scale)
 
 
 # ============================================================================
@@ -509,10 +523,10 @@ def generate_trend_chart(
 
     fig.update_layout(
         title=dict(
-            text=f"Variacao de {metric_label} (base {first_year})<br>"
+            text=f"Variação de {metric_label} (base {first_year})<br>"
                  f"<span style='font-size:11px;color:#666'>"
                  f"{nome[:35]}: {first_val}\u2192{last_val} alunos | "
-                 f"vs Media de {city}</span>",
+                 f"vs Média de {city}</span>",
             font=dict(size=14, color="#333"),
             x=0.5, xanchor="center",
         ),
@@ -522,7 +536,7 @@ def generate_trend_chart(
             tickfont=dict(size=11),
         ),
         yaxis=dict(
-            title="Variacao %",
+            title="Variação %",
             gridcolor="#F3F4F6",
             tickfont=dict(size=11),
             ticksuffix="%",
@@ -806,12 +820,12 @@ def generate_comparison_trend(
 
     fig.update_layout(
         title=dict(
-            text=f"Variacao de {metric_label}<br>"
+            text=f"Variação de {metric_label}<br>"
                  f"<span style='font-size:10px;color:#666'>{' | '.join(sub_parts)}</span>",
             font=dict(size=13, color="#333"), x=0.5, xanchor="center",
         ),
         xaxis=dict(dtick=1, gridcolor="#F3F4F6", tickfont=dict(size=11)),
-        yaxis=dict(title="Variacao %", gridcolor="#F3F4F6", tickfont=dict(size=11),
+        yaxis=dict(title="Variação %", gridcolor="#F3F4F6", tickfont=dict(size=11),
                    ticksuffix="%", range=y_range, zeroline=True, zerolinecolor="#E0E0E0"),
         legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5, font=dict(size=10)),
         paper_bgcolor="white", plot_bgcolor="white",

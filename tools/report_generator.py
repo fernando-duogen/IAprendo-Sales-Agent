@@ -36,6 +36,19 @@ from utils.logger import logger
 
 
 # ============================================================================
+# HELPERS
+# ============================================================================
+
+def _pluralize_dep(dep: str) -> str:
+    """Pluraliza nome da dependência: Federal→federais, Privada→privadas, etc."""
+    mapping = {
+        "Federal": "federais", "Estadual": "estaduais",
+        "Municipal": "municipais", "Privada": "privadas",
+    }
+    return mapping.get(dep, dep.lower() + "s" if dep else "")
+
+
+# ============================================================================
 # QR CODE HELPER (SVG, sem PIL)
 # ============================================================================
 
@@ -80,7 +93,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Diagnostico ENEM 2024 — {escola_nome}</title>
+<title>Diagnóstico ENEM 2024 — {escola_nome}</title>
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
@@ -270,6 +283,50 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
     .comparison-grid {{ grid-template-columns: repeat(2, 1fr); }}
     .header h1 {{ font-size: 18px; }}
   }}
+  /* Benchmark Switcher */
+  .benchmark-switcher {{
+    display: flex; gap: 8px; align-items: center; padding: 16px 20px;
+    background: #f0f4f8; border-radius: 8px; margin: 20px 32px 8px;
+    flex-wrap: wrap;
+  }}
+  .benchmark-switcher .switcher-label {{
+    font-size: 13px; color: #475569; font-weight: 600; margin-right: 4px;
+  }}
+  .benchmark-switcher .tab {{
+    padding: 8px 14px; border: 1px solid #cbd5e1; background: white;
+    border-radius: 20px; cursor: pointer; font-size: 13px;
+    transition: all .2s; font-weight: 600; color: #334155;
+    display: inline-flex; align-items: center; gap: 6px;
+    -webkit-tap-highlight-color: transparent;
+  }}
+  .benchmark-switcher .tab:hover:not(:disabled) {{
+    background: #f1f5f9; border-color: #94a3b8;
+  }}
+  .benchmark-switcher .tab.active {{
+    background: #1e3a8a; color: #ffffff; border-color: #1e3a8a;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(30,58,138,0.35);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }}
+  .benchmark-switcher .tab:disabled {{
+    opacity: 0.4; cursor: not-allowed;
+  }}
+  .benchmark-switcher .tab .badge-icon {{
+    font-size: 11px;
+  }}
+  .variant {{ display: block; }}
+  .variant.hidden {{ display: none; }}
+  @media (max-width: 600px) {{
+    .benchmark-switcher {{ margin: 16px; padding: 12px; }}
+    .benchmark-switcher .tab {{
+      padding: 8px 12px; font-size: 13px; font-weight: 700;
+    }}
+    .benchmark-switcher .tab.active {{
+      background: #1e3a8a; color: #ffffff;
+      font-weight: 800;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }}
+  }}
 </style>
 </head>
 <body>
@@ -293,43 +350,21 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- METRICAS RAPIDAS -->
-  <div class="section">
-    <div class="section-title"><span class="icon">📊</span> Visao Geral</div>
-    <div class="metrics-grid">
-      <div class="metric-box">
-        <div class="value">{media_geral}</div>
-        <div class="label">Media Geral ENEM</div>
-      </div>
-      <div class="metric-box">
-        <div class="value">{presentes}</div>
-        <div class="label">Alunos Presentes</div>
-      </div>
-      <div class="metric-box">
-        <div class="value">{gap_display_html}</div>
-        <div class="label">Diferenca vs Escolas Similares</div>
-      </div>
-    </div>
-  </div>
+  <!-- BENCHMARK SWITCHER (topo — define contexto de tudo abaixo) -->
+  {switcher_html}
 
-  <!-- RADAR ENEM -->
-  {radar_section}
+  <!-- VARIANTES (Visão Geral + radar + cards + insights — tudo dependente do benchmark) -->
+  {variants_html}
 
-  <!-- COMPARACAO POR AREA -->
-  {comparison_section}
-
-  <!-- EVOLUCAO MATRICULAS -->
+  <!-- EVOLUCAO MATRICULAS (dep-independente, fora do switcher) -->
   {trend_section}
-
-  <!-- INSIGHTS -->
-  {insights_section}
 
   <!-- CTA -->
   <div class="cta" style="text-align:left">
     <div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
       <div style="flex:1;min-width:200px">
         <h2 style="font-size:20px;margin-bottom:8px">Pronto para transformar o aprendizado?</h2>
-        <p style="font-size:13px;opacity:0.9;margin-bottom:16px">Exercicios adaptativos, alinhados a BNCC, que ajudam cada aluno no seu ritmo.</p>
+        <p style="font-size:13px;opacity:0.9;margin-bottom:16px">Exercícios adaptativos, alinhados à BNCC, que ajudam cada aluno no seu ritmo.</p>
         <a href="{meeting_link}" class="cta-button">Conhecer a IAprendo</a>
       </div>
       {qr_html}
@@ -340,12 +375,85 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   <div class="footer" style="display:flex;justify-content:space-between;align-items:center">
     <div>
       Fonte: Microdados ENEM 2024 e Censo Escolar 2020-2025 (INEP/MEC)<br>
-      Analise gerada por <a href="https://iaprendo.com.br" target="_blank" style="color:#2563eb;text-decoration:none">IAprendo</a> &bull; {data_geracao}
+      Análise gerada por <a href="https://iaprendo.com.br" target="_blank" style="color:#2563eb;text-decoration:none">IAprendo</a> &bull; {data_geracao}
     </div>
     {robot_html}
   </div>
 
 </div>
+<script>
+  (function() {{
+    var tabs = document.querySelectorAll('.benchmark-switcher .tab');
+    var variants = document.querySelectorAll('.variant');
+    var defaultDep = '{default_dep}';
+    var OPR_INEP = '{inep}';
+    var TRACK_URL = '{track_url}';
+
+    // Session ID persistente (agrupa eventos do mesmo visitante)
+    function genUUID() {{
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return 'sid-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+    }}
+    var sid;
+    try {{
+      sid = localStorage.getItem('opr_sid');
+      if (!sid) {{ sid = genUUID(); localStorage.setItem('opr_sid', sid); }}
+    }} catch(e) {{ sid = genUUID(); }}
+
+    // Tracking fire-and-forget
+    function track(event, benchmark) {{
+      if (!TRACK_URL) return;
+      try {{
+        fetch(TRACK_URL, {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{
+            inep: OPR_INEP,
+            event: event,
+            benchmark: benchmark || '',
+            session_id: sid,
+          }}),
+          mode: 'cors',
+          keepalive: true,
+        }}).catch(function() {{}});
+      }} catch(e) {{}}
+    }}
+
+    function selectTab(dep) {{
+      tabs.forEach(function(t) {{ t.classList.toggle('active', t.dataset.dep === dep); }});
+      variants.forEach(function(v) {{ v.classList.toggle('hidden', v.getAttribute('data-dep') !== dep); }});
+      try {{ history.replaceState(null, '', '#' + dep.toLowerCase()); }} catch(e) {{}}
+    }}
+
+    tabs.forEach(function(t) {{
+      if (t.dataset.noData === '1') {{ t.disabled = true; return; }}
+      t.addEventListener('click', function() {{
+        selectTab(t.dataset.dep);
+        track('tab_click', t.dataset.dep);
+      }});
+    }});
+
+    // CTA tracking ("Conhecer a IAprendo" button)
+    document.querySelectorAll('.cta-button').forEach(function(b) {{
+      b.addEventListener('click', function() {{
+        var activeTab = document.querySelector('.benchmark-switcher .tab.active');
+        var activeDep = activeTab ? activeTab.dataset.dep : defaultDep;
+        track('cta_click', activeDep);
+      }});
+    }});
+
+    // Init: seleciona tab default ou via hash
+    var hash = (location.hash || '').replace('#', '').toLowerCase();
+    var match = Array.from(tabs).find(function(t) {{
+      return !t.disabled && t.dataset.dep.toLowerCase() === hash;
+    }});
+    var initialDep = match ? match.dataset.dep : defaultDep;
+    selectTab(initialDep);
+
+    // Track page_load inicial (apos init)
+    track('page_load', initialDep);
+  }})();
+</script>
 </body>
 </html>"""
 
@@ -394,11 +502,11 @@ def _build_comparison_cards(
     from tools.insight_charts import AREA_KEYS, AREA_LABELS
 
     area_display_names = {
-        "enem_media_mt": "Matematica",
-        "enem_media_cn": "Ciencias da Natureza",
-        "enem_media_ch": "Ciencias Humanas",
+        "enem_media_mt": "Matemática",
+        "enem_media_cn": "Ciências da Natureza",
+        "enem_media_ch": "Ciências Humanas",
         "enem_media_lc": "Linguagens",
-        "enem_media_redacao": "Redacao",
+        "enem_media_redacao": "Redação",
     }
 
     cards_html = []
@@ -418,7 +526,7 @@ def _build_comparison_cards(
             mg_css = "above" if mg_diff >= 0 else "below"
             mg_diff_class = "positive" if mg_diff >= 0 else "negative"
             mg_diff_display = f"{mg_diff:+.0f} pts"
-            mg_bench_display = f"Referencia: {mg_bv:.0f}"
+            mg_bench_display = f"Referência: {mg_bv:.0f}"
         else:
             mg_css = ""
             mg_diff_class = ""
@@ -450,7 +558,7 @@ def _build_comparison_cards(
             css_class = "above" if diff >= 0 else "below"
             diff_class = "positive" if diff >= 0 else "negative"
             diff_display = f"{diff:+.0f} pts"
-            bench_display = f"Referencia: {bv:.0f}"
+            bench_display = f"Referência: {bv:.0f}"
         else:
             css_class = ""
             diff_class = ""
@@ -499,21 +607,21 @@ def _reframe_insight_as_opportunity(insight_text: str, index: int = 0) -> Tuple[
     # 5 templates rotativos para oportunidades (negative insights)
     # REGRA: cada template usa uma abordagem DIFERENTE — sem repetir "aprendizado adaptativo"
     opportunity_templates = [
-        "{obs} — com exercicios personalizados por aluno, e possivel reverter essa tendencia e posicionar a escola como referencia em qualidade pedagogica.",
-        "{obs} — um plano de reforco alinhado a BNCC, ajustado ao ritmo de cada aluno, pode transformar esse cenario e fortalecer a confianca das familias.",
-        "{obs} — acompanhamento individualizado permite identificar e corrigir lacunas antes que se acumulem, mudando a trajetoria dos resultados.",
-        "{obs} — investir em diagnostico e reforco direcionado por aluno e a forma mais eficaz de reverter esse quadro e recuperar competitividade.",
-        "{obs} — familias valorizam escolas que atuam proativamente sobre pontos fracos. Mostrar que a escola age sobre esses dados e um diferencial real.",
+        "{obs} — com exercícios personalizados por aluno, é possível reverter essa tendência e posicionar a escola como referência em qualidade pedagógica.",
+        "{obs} — um plano de reforço alinhado à BNCC, ajustado ao ritmo de cada aluno, pode transformar esse cenário e fortalecer a confiança das famílias.",
+        "{obs} — acompanhamento individualizado permite identificar e corrigir lacunas antes que se acumulem, mudando a trajetória dos resultados.",
+        "{obs} — investir em diagnóstico e reforço direcionado por aluno é a forma mais eficaz de reverter esse quadro e recuperar competitividade.",
+        "{obs} — famílias valorizam escolas que atuam proativamente sobre pontos fracos. Mostrar que a escola age sobre esses dados é um diferencial real.",
     ]
 
     # 5 templates rotativos para destaques (positive insights)
     # REGRA: cada template usa uma abordagem DIFERENTE — sem correlacoes forcadas
     highlight_templates = [
-        "{obs} — manter esse patamar exige acompanhamento continuo. Escolas que investem em dados conseguem sustentar vantagens por mais tempo.",
-        "{obs} — esse e um diferencial que as familias percebem. Comunicar esse resultado de forma clara pode atrair novas matriculas.",
-        "{obs} — resultados assim posicionam a escola entre as melhores da regiao e abrem espaco para estrategias de crescimento.",
+        "{obs} — manter esse patamar exige acompanhamento contínuo. Escolas que investem em dados conseguem sustentar vantagens por mais tempo.",
+        "{obs} — esse é um diferencial que as famílias percebem. Comunicar esse resultado de forma clara pode atrair novas matrículas.",
+        "{obs} — resultados assim posicionam a escola entre as melhores da região e abrem espaço para estratégias de crescimento.",
         "{obs} — consolidar essa vantagem com ferramentas de acompanhamento individual garante que o progresso seja consistente.",
-        "{obs} — escolas com bons indicadores tem mais facilidade para atrair e reter familias que valorizam qualidade academica.",
+        "{obs} — escolas com bons indicadores têm mais facilidade para atrair e reter famílias que valorizam qualidade acadêmica.",
     ]
 
     if is_negative:
@@ -532,8 +640,8 @@ def _reframe_insight_as_opportunity(insight_text: str, index: int = 0) -> Tuple[
         reframed,
     )
     # Bold em palavras-chave de oportunidade/destaque
-    for keyword in ["IAprendo", "aprendizado adaptativo", "exercicios adaptativos",
-                     "reforco personalizado", "tecnologia educacional"]:
+    for keyword in ["IAprendo", "aprendizado adaptativo", "exercícios adaptativos",
+                     "reforço personalizado", "tecnologia educacional"]:
         reframed = reframed.replace(keyword, f"<b>{keyword}</b>", 1)  # so 1x por keyword
 
     title = "Oportunidade" if is_negative else "Destaque"
@@ -545,11 +653,13 @@ def _reframe_insight_as_opportunity(insight_text: str, index: int = 0) -> Tuple[
 # GERADOR PRINCIPAL
 # ============================================================================
 
-def generate_report(inep: str) -> Optional[Dict[str, Any]]:
+def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Gera o HTML do One Page Report para uma escola.
 
     Args:
         inep: Codigo INEP da escola.
+        benchmark_dep: Dependencia administrativa forçada para o benchmark
+            (ex: "Privada"). Se None, usa a mesma dependencia da escola.
 
     Returns:
         Dict com {"html": str, "escola_nome": str, "inep": str} ou None se dados insuficientes.
@@ -589,7 +699,7 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
     if dep and dep != "?":
         info_badges.append(f'<span class="badge">{dep}</span>')
     if area_fraca:
-        info_badges.append(f'<span class="badge warn">Area fraca: {area_fraca}</span>')
+        info_badges.append(f'<span class="badge warn">Área fraca: {area_fraca}</span>')
     info_badges_html = "\n      ".join(info_badges)
 
     # Rankings (linha 2)
@@ -639,106 +749,269 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         gap_display = "—"
         gap_display_html = "—"
 
-    # --- Fetch benchmark data for comparison cards and footnotes ---
-    bench_data: Dict[str, Optional[float]] = {}
-    bench_count = 0
+    # --- Gerar TREND (dep-independente, so 1x) ---
+    trend_png = generate_trend_chart(str(inep), "qt_mat_bas", "Matrículas Totais")
+
+    # --- SWITCHER: Construir 4 variantes (Estadual, Municipal, Federal, Privada) em paralelo ---
+    # Dependencia default: respeita benchmark_dep se fornecido, senao usa dep da escola
+    default_dep = benchmark_dep if benchmark_dep else (dep if dep != "?" else "Privada")
+
+    # Buscar trends e censo_series uma vez (dep-independente) para reusar no _detectar_insights
+    trends_data: Dict = {}
+    censo_series: List[Dict] = []
     try:
-        bench_data, bench_count = _fetch_benchmark(
-            cidade if cidade != "?" else "",
-            uf if uf != "?" else "",
-            dep if dep != "?" else "",
-            ["enem_media_geral"] + AREA_KEYS,
-        )
+        from agent.tools.enem_tools import get_insight_ingredients
+        _ingredients = get_insight_ingredients(str(inep))
+        trends_data = _ingredients.get("trends") or {}
+        censo_series = _ingredients.get("censo_series") or []
     except Exception as e:
-        logger.debug(f"report_generator: benchmark fetch failed: {e}")
+        logger.debug(f"report_generator: insight ingredients fetch failed: {e}")
 
-    # --- Gerar charts (radar + trend gated by confiavel; trend always attempted) ---
-    radar_png = generate_radar_chart(str(inep), benchmark="municipio") if confiavel else None
-    trend_png = generate_trend_chart(str(inep), "qt_mat_bas", "Matriculas Totais")
+    def _build_variant(dep_name: str) -> Dict[str, Any]:
+        """Constroi uma variante completa (visao_geral + radar + cards + insights + badge) para uma dependencia."""
+        try:
+            # 1. Benchmark data
+            v_bench_data, v_bench_count = _fetch_benchmark(
+                cidade if cidade != "?" else "",
+                uf if uf != "?" else "",
+                dep_name,
+                ["enem_media_geral"] + AREA_KEYS,
+            )
+        except Exception:
+            v_bench_data, v_bench_count = {}, 0
 
-    # --- RADAR SECTION ---
-    radar_section = ""
-    if radar_png:
-        radar_b64 = _img_to_base64(radar_png)
-        bench_caption = f"Media das {bench_count} escolas {dep} de {cidade}" if bench_count > 0 else f"Media das escolas {dep} de {cidade}"
-        radar_section = f'''
+        v_dep_plural = _pluralize_dep(dep_name)
+        has_data = v_bench_count >= 3
+
+        # Computar gap vs este benchmark (dinamico, diferente do enem_gap_vs_peer_2024)
+        # Usa media_geral_raw (fetch direto da base ENEM) porque school_analytics
+        # pode ter enem_media_geral=None para algumas escolas
+        v_gap_display_html = "—"
+        v_gap_num: Optional[float] = None
+        if has_data and v_bench_data.get("enem_media_geral") and media_geral_raw is not None:
+            v_gap_num = float(media_geral_raw) - float(v_bench_data["enem_media_geral"])
+            color = "#10B981" if v_gap_num >= 0 else "#EF4444"
+            v_gap_display_html = f'<span style="color:{color}">{v_gap_num:+.0f} pts</span>'
+
+        # 2. Visao Geral (dentro da variante — gap atualiza com benchmark)
+        v_visao_geral_html = f'''
   <div class="section">
-    <div class="section-title"><span class="icon">🎯</span> Performance por Area</div>
-    <div class="chart-container">
-      <img src="{radar_b64}" alt="Radar ENEM 5 areas" />
-      <div class="chart-caption">Azul: {nome[:30]} &bull; Cinza: {bench_caption}</div>
+    <div class="section-title"><span class="icon">📊</span> Visão Geral</div>
+    <div class="metrics-grid">
+      <div class="metric-box">
+        <div class="value">{media_display}</div>
+        <div class="label">Média Geral ENEM</div>
+      </div>
+      <div class="metric-box">
+        <div class="value">{pres_display}</div>
+        <div class="label">Alunos Presentes</div>
+      </div>
+      <div class="metric-box">
+        <div class="value">{v_gap_display_html}</div>
+        <div class="label">Diferença vs Escolas {v_dep_plural.title()}</div>
+      </div>
     </div>
-    <div class="footnote">&#185; Fonte: Microdados ENEM 2024 (INEP). Comparacao com {bench_count} escolas {dep} de {cidade}.</div>
   </div>'''
 
-    # --- COMPARISON CARDS SECTION (5 areas, escola vs benchmark) ---
-    comparison_section = ""
-    if bench_data and any(school.get(k) is not None for k in AREA_KEYS):
-        cards_inner = _build_comparison_cards(school, bench_data, bench_count, dep, cidade)
-        if cards_inner:
-            bench_caption_comp = f"escolas {dep} de {cidade}" if cidade != "?" else "escolas do mesmo perfil"
-            comparison_section = f'''
+        # 3. Radar PNG (so se escola tem amostra confiavel E tem dados de benchmark)
+        v_radar_html = ""
+        if confiavel and has_data:
+            try:
+                # scale=1 porque temos 4 PNGs no mesmo HTML — prioriza leveza sobre retina
+                v_radar_png = generate_radar_chart(str(inep), benchmark="municipio", benchmark_dep=dep_name, scale=1)
+                if v_radar_png:
+                    v_radar_b64 = _img_to_base64(v_radar_png)
+                    v_caption = f"Média de {v_bench_count} escolas {v_dep_plural} de {cidade}"
+                    v_radar_html = f'''
   <div class="section">
-    <div class="section-title"><span class="icon">📊</span> Comparacao com Escolas do Mesmo Perfil</div>
+    <div class="section-title"><span class="icon">🎯</span> Performance por Área</div>
+    <div class="chart-container">
+      <img src="{v_radar_b64}" alt="Radar ENEM 5 áreas" />
+      <div class="chart-caption">Azul: {nome[:30]} &bull; Cinza: {v_caption}</div>
+    </div>
+    <div class="footnote">&#185; Fonte: Microdados ENEM 2024 (INEP). Comparação com {v_bench_count} escolas {v_dep_plural} de {cidade}.</div>
+  </div>'''
+            except Exception as exc:
+                logger.debug(f"variant {dep_name} radar fail: {exc}")
+
+        # 3. Comparison cards
+        v_cards_html = ""
+        if v_bench_data and has_data and any(school.get(k) is not None for k in AREA_KEYS):
+            try:
+                cards_inner = _build_comparison_cards(school, v_bench_data, v_bench_count, dep_name, cidade)
+                if cards_inner:
+                    v_cards_html = f'''
+  <div class="section">
+    <div class="section-title"><span class="icon">📊</span> Comparação com Escolas {v_dep_plural.title()} de {cidade}</div>
     <div class="comparison-grid">
       {cards_inner}
     </div>
-    <div class="footnote">&#178; Escolas similares = mesma dependencia administrativa ({dep}) + mesmo municipio ({cidade}).</div>
+    <div class="footnote">&#178; Referência: {v_bench_count} escolas {v_dep_plural} de {cidade}.</div>
   </div>'''
+            except Exception as exc:
+                logger.debug(f"variant {dep_name} cards fail: {exc}")
 
-    # --- TREND SECTION ---
+        # 4. Insights regenerados com esse benchmark
+        v_insights_html = ""
+        try:
+            from agent.tools.enem_tools import _detectar_insights
+            v_bench_for_insights = {
+                "media_geral": v_bench_data.get("enem_media_geral") if v_bench_data else None,
+                "media_cn": v_bench_data.get("enem_media_cn") if v_bench_data else None,
+                "media_ch": v_bench_data.get("enem_media_ch") if v_bench_data else None,
+                "media_lc": v_bench_data.get("enem_media_lc") if v_bench_data else None,
+                "media_mt": v_bench_data.get("enem_media_mt") if v_bench_data else None,
+                "media_redacao": v_bench_data.get("enem_media_redacao") if v_bench_data else None,
+            } if v_bench_data else None
+            v_insights_list = _detectar_insights(
+                trends_data, censo_series,
+                enem_data=school, benchmark_data=v_bench_for_insights
+            )
+            if v_insights_list:
+                cards = []
+                for idx, insight in enumerate(v_insights_list[:5]):
+                    title, reframed, css_class = _reframe_insight_as_opportunity(insight, index=idx)
+                    icon = "💡" if css_class == "opportunity" else "✅"
+                    cards.append(
+                        f'<div class="insight-card {css_class}">'
+                        f'<div class="card-title">{icon} {title}</div>'
+                        f'{reframed}'
+                        f'</div>'
+                    )
+                cards_html = "\n    ".join(cards)
+                v_insights_html = f'''
+  <div class="section">
+    <div class="section-title"><span class="icon">💡</span> Oportunidades vs Escolas {v_dep_plural.title()}</div>
+    {cards_html}
+    <div class="footnote">&#8308; Análises baseadas na evolução dos indicadores do Censo e ENEM.</div>
+  </div>'''
+            else:
+                v_insights_html = f'''
+  <div class="section">
+    <div class="section-title"><span class="icon">✅</span> Destaque vs Escolas {v_dep_plural.title()}</div>
+    <div class="insight-card highlight">
+      <div class="card-title">✅ Destaque</div>
+      A escola está bem posicionada em relação às escolas {v_dep_plural} de {cidade} — com aprendizado adaptativo e exercícios personalizados, é possível manter essa vantagem e impulsionar ainda mais os resultados.
+    </div>
+    <div class="footnote">&#8308; Análises baseadas na evolução dos indicadores do Censo e ENEM.</div>
+  </div>'''
+        except Exception as exc:
+            logger.debug(f"variant {dep_name} insights fail: {exc}")
+
+        # 5. Badge de oportunidade (baseado no gap geral)
+        badge_icon = ""
+        badge_label = ""
+        if has_data and v_bench_data.get("enem_media_geral") and media_geral_raw is not None:
+            gap = float(media_geral_raw) - float(v_bench_data["enem_media_geral"])
+            if gap >= 0:
+                badge_icon = "🟢"  # Destaque
+                badge_label = "destaque"
+            elif gap >= -20:
+                badge_icon = "🟡"  # Gap pequeno
+                badge_label = "proximo"
+            elif gap >= -50:
+                badge_icon = "🟠"  # Oportunidade moderada
+                badge_label = "oportunidade"
+            else:
+                badge_icon = "🔴"  # Grande oportunidade
+                badge_label = "grande oportunidade"
+
+        return {
+            "dep": dep_name,
+            "dep_plural": v_dep_plural,
+            "has_data": has_data,
+            "bench_count": v_bench_count,
+            "gap_num": v_gap_num,
+            "bench_media_geral": v_bench_data.get("enem_media_geral") if v_bench_data else None,
+            "visao_geral_html": v_visao_geral_html,
+            "radar_html": v_radar_html,
+            "cards_html": v_cards_html,
+            "insights_html": v_insights_html,
+            "badge_icon": badge_icon,
+            "badge_label": badge_label,
+        }
+
+    # Gerar 4 variantes em paralelo (economiza ~30s vs sequencial)
+    from concurrent.futures import ThreadPoolExecutor
+    dependencias = ["Estadual", "Municipal", "Federal", "Privada"]
+    variants: Dict[str, Dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=4) as _ex:
+        _futures = {d: _ex.submit(_build_variant, d) for d in dependencias}
+        for d, f in _futures.items():
+            try:
+                variants[d] = f.result(timeout=60)
+            except Exception as exc:
+                logger.warning(f"variant {d} timeout/fail: {exc}")
+                variants[d] = {
+                    "dep": d, "dep_plural": _pluralize_dep(d),
+                    "has_data": False, "bench_count": 0,
+                    "radar_html": "", "cards_html": "", "insights_html": "",
+                    "badge_icon": "", "badge_label": "",
+                }
+
+    # Construir HTML do switcher
+    _labels = {
+        "Estadual": "Estaduais", "Municipal": "Municipais",
+        "Federal": "Federais", "Privada": "Privadas",
+    }
+    # Se default_dep nao tem dados, fallback pra primeira dep com dados
+    if not variants.get(default_dep, {}).get("has_data", False):
+        for _d in dependencias:
+            if variants.get(_d, {}).get("has_data", False):
+                default_dep = _d
+                break
+
+    tabs_html_list = []
+    for d in dependencias:
+        v = variants.get(d, {})
+        label = _labels[d]
+        disabled_attr = ' data-no-data="1" title="Sem escolas suficientes nessa categoria"' if not v.get("has_data") else ""
+        badge = f'<span class="badge-icon">{v.get("badge_icon", "")}</span>' if v.get("badge_icon") else ""
+        tabs_html_list.append(
+            f'<button class="tab" data-dep="{d}"{disabled_attr}>{label} {badge}</button>'
+        )
+    switcher_html = f'''
+<div class="benchmark-switcher" role="tablist">
+  <span class="switcher-label">📊 Comparar com escolas:</span>
+  {"".join(tabs_html_list)}
+</div>'''
+
+    # Construir variantes embutidas (Visão Geral + radar + cards + insights)
+    variants_html_list = []
+    for d in dependencias:
+        v = variants.get(d, {})
+        content = (
+            v.get("visao_geral_html", "")
+            + v.get("radar_html", "")
+            + v.get("cards_html", "")
+            + v.get("insights_html", "")
+        )
+        if not v.get("has_data"):
+            # Sem dados: mostrar so Visao Geral (com gap em "—") + aviso
+            content = v.get("visao_geral_html", "") + f'''
+  <div class="section">
+    <div class="insight-card">
+      <div class="card-title">ℹ️ Poucos dados para esta comparação</div>
+      Apenas {v.get("bench_count", 0)} escolas {_labels[d].lower()} de {cidade} têm dados ENEM confiáveis —
+      insuficiente para gerar um benchmark estatístico. Tente outra comparação usando as abas acima.
+    </div>
+  </div>'''
+        variants_html_list.append(f'<div class="variant" data-dep="{d}">{content}</div>')
+    variants_html = "\n".join(variants_html_list)
+
+    # --- TREND SECTION (dep-independente, fora do switcher) ---
     trend_section = ""
     if trend_png:
         trend_b64 = _img_to_base64(trend_png)
         trend_section = f'''
   <div class="section">
-    <div class="section-title"><span class="icon">📈</span> Evolucao de Matriculas (2020-2025)</div>
+    <div class="section-title"><span class="icon">📈</span> Evolução de Matrículas (2020-2025)</div>
     <div class="chart-container">
-      <img src="{trend_b64}" alt="Evolucao de matriculas" />
+      <img src="{trend_b64}" alt="Evolução de matrículas" />
       <div class="chart-caption">Fonte: Censo Escolar INEP 2020-2025</div>
     </div>
     <div class="footnote">&#179; Fonte: Censo Escolar INEP 2020-2025.</div>
   </div>'''
-
-    # --- INSIGHTS SECTION (reframed as opportunities) ---
-    insights_section = ""
-    try:
-        from agent.tools.enem_tools import _handle_analisar_trajetoria_escola
-        import json
-        traj_raw = _handle_analisar_trajetoria_escola({"inep": str(inep)})
-        traj_data = json.loads(traj_raw)
-        insights_list = traj_data.get("insights_detectados") or []
-        if insights_list:
-            cards = []
-            for idx, insight in enumerate(insights_list[:5]):
-                title, reframed, css_class = _reframe_insight_as_opportunity(insight, index=idx)
-                icon = "💡" if css_class == "opportunity" else "✅"
-                cards.append(
-                    f'<div class="insight-card {css_class}">'
-                    f'<div class="card-title">{icon} {title}</div>'
-                    f'{reframed}'
-                    f'</div>'
-                )
-            cards_html = "\n    ".join(cards)
-            insights_section = f'''
-  <div class="section">
-    <div class="section-title"><span class="icon">💡</span> Oportunidades Identificadas</div>
-    {cards_html}
-    <div class="footnote">&#8308; Analises baseadas na evolucao dos indicadores do Censo e ENEM.</div>
-  </div>'''
-        else:
-            # No specific insights — show a positive fallback
-            insights_section = f'''
-  <div class="section">
-    <div class="section-title"><span class="icon">✅</span> Oportunidades Identificadas</div>
-    <div class="insight-card highlight">
-      <div class="card-title">✅ Destaque</div>
-      A escola esta bem posicionada nos indicadores analisados — com aprendizado adaptativo e exercicios personalizados, e possivel manter essa vantagem e impulsionar ainda mais os resultados.
-    </div>
-    <div class="footnote">&#8308; Analises baseadas na evolucao dos indicadores do Censo e ENEM.</div>
-  </div>'''
-    except Exception as e:
-        logger.debug(f"report_generator: insights failed: {e}")
 
     # Meeting link + QR Code
     meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "https://iaprendo.com.br/contato")
@@ -752,6 +1025,9 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
             f'</div>'
         )
 
+    # Tracking URL (env var pra dev/prod)
+    track_url = os.getenv("OPR_TRACK_URL", "")
+
     # Montar HTML final
     html = _REPORT_TEMPLATE.format(
         escola_nome=nome,
@@ -762,17 +1038,62 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         ranking_badges_html=ranking_badges_html,
         logo_html=logo_html,
         robot_html=robot_html,
-        media_geral=media_display,
-        presentes=pres_display,
-        gap_display_html=gap_display_html,
-        radar_section=radar_section,
-        comparison_section=comparison_section,
+        switcher_html=switcher_html,
+        variants_html=variants_html,
+        default_dep=default_dep,
         trend_section=trend_section,
-        insights_section=insights_section,
         meeting_link=meeting_link,
         qr_html=qr_html,
         data_geracao=date.today().strftime("%d/%m/%Y"),
+        inep=str(inep),
+        track_url=track_url,
     )
+
+    # Computar highlights de comparacao (para LLM usar no pitch balanceado)
+    # - Maior oportunidade: benchmark onde o gap e mais negativo (escola atras)
+    # - Ponto forte: benchmark onde o gap e mais positivo (escola acima)
+    _labels_pt = {"Estadual": "estaduais", "Municipal": "municipais", "Federal": "federais", "Privada": "privadas"}
+    _gaps = [(d, v.get("gap_num"), v.get("bench_count", 0)) for d, v in variants.items() if v.get("has_data") and v.get("gap_num") is not None]
+    highlights: Dict[str, Any] = {}
+    if _gaps:
+        # Maior oportunidade = gap mais negativo (ou menos positivo)
+        _gaps_sorted = sorted(_gaps, key=lambda x: x[1])
+        pior = _gaps_sorted[0]
+        melhor = _gaps_sorted[-1]
+        highlights = {
+            "maior_oportunidade": {
+                "benchmark": pior[0],
+                "benchmark_pt": _labels_pt.get(pior[0], pior[0].lower()),
+                "gap": round(pior[1], 1),
+                "bench_count": pior[2],
+                "interpretacao": (
+                    f"A escola esta {abs(round(pior[1]))} pontos ABAIXO da media das "
+                    f"{pior[2]} escolas {_labels_pt.get(pior[0], '').lower()} de {cidade}"
+                    if pior[1] < 0 else
+                    f"A escola esta {round(pior[1])} pontos ACIMA da media das "
+                    f"{pior[2]} escolas {_labels_pt.get(pior[0], '').lower()} de {cidade}"
+                ),
+            },
+            "ponto_forte": {
+                "benchmark": melhor[0],
+                "benchmark_pt": _labels_pt.get(melhor[0], melhor[0].lower()),
+                "gap": round(melhor[1], 1),
+                "bench_count": melhor[2],
+                "interpretacao": (
+                    f"A escola esta {round(melhor[1])} pontos ACIMA da media das "
+                    f"{melhor[2]} escolas {_labels_pt.get(melhor[0], '').lower()} de {cidade}"
+                    if melhor[1] >= 0 else
+                    f"A escola esta {abs(round(melhor[1]))} pontos abaixo da media das "
+                    f"{melhor[2]} escolas {_labels_pt.get(melhor[0], '').lower()} de {cidade} "
+                    f"(essa e a comparacao mais favoravel)"
+                ),
+            },
+            "todos_gaps": [
+                {"benchmark": d, "benchmark_pt": _labels_pt.get(d, d.lower()),
+                 "gap": round(g, 1), "bench_count": c}
+                for d, g, c in _gaps_sorted
+            ],
+        }
 
     return {
         "html": html,
@@ -780,6 +1101,8 @@ def generate_report(inep: str) -> Optional[Dict[str, Any]]:
         "inep": str(inep),
         "cidade": cidade,
         "uf": uf,
+        "media_geral": media_geral_raw,
+        "highlights": highlights,
     }
 
 
@@ -801,17 +1124,22 @@ _GITHUB_PAGES_BASE = os.getenv(
 _REPORTS_DIR = ROOT / "docs" / "reports"
 
 
-def generate_and_upload_report(inep: str) -> Optional[Dict[str, str]]:
+def generate_and_upload_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[Dict[str, str]]:
     """Gera report HTML e faz upload para Supabase Storage.
 
     O report e servido como HTML publico via Supabase Storage CDN.
     Tambem salva copia local em docs/reports/ como backup.
 
+    Args:
+        inep: Codigo INEP da escola.
+        benchmark_dep: Dependencia administrativa forçada para o benchmark
+            (ex: "Privada"). Se None, usa a mesma dependencia da escola.
+
     Returns:
         Dict com {"html_url": str, "escola_nome": str, "inep": str}
         ou None se falhar.
     """
-    result = generate_report(inep)
+    result = generate_report(inep, benchmark_dep=benchmark_dep)
     if not result:
         return None
 
@@ -845,6 +1173,8 @@ def generate_and_upload_report(inep: str) -> Optional[Dict[str, str]]:
             "inep": result["inep"],
             "cidade": result.get("cidade"),
             "uf": result.get("uf"),
+            "media_geral": result.get("media_geral"),
+            "highlights": result.get("highlights", {}),
         }
     except Exception as e:
         logger.error(f"report_generate failed: {e}")

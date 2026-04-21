@@ -1803,20 +1803,20 @@ def _detectar_insights(
     # =====================================================================
     if enem_data and enem_data.get("enem_amostra_confiavel"):
         _AREA_NAMES = {
-            "cn": "Ciencias da Natureza",
-            "ch": "Ciencias Humanas",
+            "cn": "Ciências da Natureza",
+            "ch": "Ciências Humanas",
             "lc": "Linguagens",
-            "mt": "Matematica",
-            "redacao": "Redacao",
+            "mt": "Matemática",
+            "redacao": "Redação",
         }
 
         # Gap geral vs peer
         gap_geral = enem_data.get("enem_gap_vs_peer_2024")
         if gap_geral is not None and gap_geral < -15:
             insights_enem.append(
-                f"Performance geral {abs(int(gap_geral))} pontos abaixo da media "
-                f"das escolas similares — indica espaco significativo para melhoria "
-                f"com intervencoes pedagogicas direcionadas."
+                f"Performance geral {abs(int(gap_geral))} pontos abaixo da média "
+                f"das escolas similares — indica espaço significativo para melhoria "
+                f"com intervenções pedagógicas direcionadas."
             )
 
         # Areas abaixo da media das escolas similares (se temos benchmark)
@@ -1836,26 +1836,26 @@ def _detectar_insights(
             if len(gaps_por_area) >= 3:
                 areas_texto = ", ".join(f"{g[0]} ({g[1]:+d} pts)" for g in gaps_por_area[:3])
                 insights_enem.append(
-                    f"Tres ou mais areas do ENEM abaixo da media das escolas similares: {areas_texto}. "
-                    f"Um plano de reforco integrado pode ter impacto rapido."
+                    f"Três ou mais áreas do ENEM abaixo da média das escolas similares: {areas_texto}. "
+                    f"Um plano de reforço integrado pode ter impacto rápido."
                 )
             elif gaps_por_area:
                 for label, gap, escola_val, bench_val in gaps_por_area[:2]:
                     insights_enem.append(
-                        f"{label}: {abs(gap)} pontos abaixo da media das escolas "
-                        f"similares ({escola_val} vs {bench_val}) — area com "
-                        f"potencial de ganho rapido com exercicios focados."
+                        f"{label}: {abs(gap)} pontos abaixo da média das escolas "
+                        f"similares ({escola_val} vs {bench_val}) — área com "
+                        f"potencial de ganho rápido com exercícios focados."
                     )
 
-        # Redacao fraca (sinal forte — pais e gestores prestam muita atencao)
+        # Redação fraca (sinal forte — pais e gestores prestam muita atenção)
         redacao = enem_data.get("enem_media_redacao")
         bench_redacao = benchmark_data.get("media_redacao") if benchmark_data else None
         if redacao and bench_redacao and (redacao - bench_redacao) < -30:
             gap_red = int(redacao - bench_redacao)
             insights_enem.append(
-                f"Redacao {abs(gap_red)} pontos abaixo do esperado para escolas deste perfil "
-                f"({int(redacao)} vs {int(bench_redacao)}) — competencia textual e "
-                f"sensivel para familias e impacta diretamente o score geral."
+                f"Redação {abs(gap_red)} pontos abaixo do esperado para escolas deste perfil "
+                f"({int(redacao)} vs {int(bench_redacao)}) — competência textual é "
+                f"sensível para famílias e impacta diretamente o score geral."
             )
 
         # Percentual baixo acima de 600
@@ -1870,7 +1870,7 @@ def _detectar_insights(
                 else:
                     pct_texto = f"Apenas {pct_600:.0f}% dos alunos ultrapassaram 600 pontos no ENEM"
                 insights_enem.append(
-                    f"{pct_texto} — exercicios adaptativos podem elevar essa faixa, "
+                    f"{pct_texto} — exercícios adaptativos podem elevar essa faixa, "
                     f"melhorando o posicionamento da escola nos rankings."
                 )
 
@@ -1880,11 +1880,11 @@ def _detectar_insights(
     # =====================================================================
     if not insights_enem and enem_data and benchmark_data and enem_data.get("enem_amostra_confiavel"):
         _AREA_NAMES_SUTIL = {
-            "cn": "Ciencias da Natureza",
-            "ch": "Ciencias Humanas",
+            "cn": "Ciências da Natureza",
+            "ch": "Ciências Humanas",
             "lc": "Linguagens",
-            "mt": "Matematica",
-            "redacao": "Redacao",
+            "mt": "Matemática",
+            "redacao": "Redação",
         }
         area_gaps = []
         for key, label in _AREA_NAMES_SUTIL.items():
@@ -1901,10 +1901,10 @@ def _detectar_insights(
 
             if menor[1] >= 0:  # todas acima do benchmark = escola boa
                 insights_enem.append(
-                    f"A escola esta acima da media em todas as areas, mas "
+                    f"A escola está acima da média em todas as áreas, mas "
                     f"{menor[0]} tem a menor margem ({menor[1]:+.0f} pts). "
-                    f"Fortalecer essa area pode consolidar a escola entre "
-                    f"as melhores da regiao."
+                    f"Fortalecer essa área pode consolidar a escola entre "
+                    f"as melhores da região."
                 )
 
     # =====================================================================
@@ -1927,17 +1927,17 @@ def _detectar_insights(
         if d_mat_total is not None and first_mat and last_mat:
             if d_mat_total < -15:
                 insights_criticos.append(
-                    f"Matriculas em queda acentuada: de {int(first_mat)} para "
-                    f"{int(last_mat)} alunos ({d_mat_total:+.1f}%) nos ultimos anos "
-                    f"— familias estao deixando a escola, e cada ano a base diminui. "
-                    f"Investir em qualidade pedagogica visivel e a forma mais direta "
-                    f"de reverter essa tendencia."
+                    f"Matrículas em queda acentuada: de {int(first_mat)} para "
+                    f"{int(last_mat)} alunos ({d_mat_total:+.1f}%) nos últimos anos "
+                    f"— famílias estão deixando a escola, e cada ano a base diminui. "
+                    f"Investir em qualidade pedagógica visível é a forma mais direta "
+                    f"de reverter essa tendência."
                 )
             elif d_mat_total < -5:
                 insights_criticos.append(
-                    f"Matriculas em queda moderada: de {int(first_mat)} para "
-                    f"{int(last_mat)} alunos ({d_mat_total:+.1f}%) — tendencia que "
-                    f"merece atencao para nao se agravar."
+                    f"Matrículas em queda moderada: de {int(first_mat)} para "
+                    f"{int(last_mat)} alunos ({d_mat_total:+.1f}%) — tendência que "
+                    f"merece atenção para não se agravar."
                 )
 
     # =====================================================================
@@ -1963,21 +1963,21 @@ def _detectar_insights(
             if first_r and last_r:
                 if d_ratio < -5 and d_mat > 0:
                     insights_censo.append(
-                        f"A relacao aluno/professor melhorou (de {first_r:.1f}:1 para "
-                        f"{last_r:.1f}:1) enquanto as matriculas cresceram {d_mat:+.1f}% "
+                        f"A relação aluno/professor melhorou (de {first_r:.1f}:1 para "
+                        f"{last_r:.1f}:1) enquanto as matrículas cresceram {d_mat:+.1f}% "
                         f"— a escola contratou docentes em ritmo maior que o crescimento de alunos."
                     )
                 elif d_ratio > 5 and d_mat > 0:
                     insights_censo.append(
-                        f"As matriculas cresceram {d_mat:+.1f}% mas a relacao aluno/professor "
+                        f"As matrículas cresceram {d_mat:+.1f}% mas a relação aluno/professor "
                         f"piorou (de {first_r:.1f}:1 para {last_r:.1f}:1) — o crescimento "
-                        f"de alunos superou a contratacao de docentes."
+                        f"de alunos superou a contratação de docentes."
                     )
                 elif d_ratio < -5 and d_mat < -3:
                     insights_censo.append(
-                        f"A relacao aluno/professor melhorou (de {first_r:.1f}:1 para "
-                        f"{last_r:.1f}:1) mas com matriculas em queda ({d_mat:+.1f}%) — "
-                        f"a melhora pode ser por perda de alunos, nao por investimento em equipe."
+                        f"A relação aluno/professor melhorou (de {first_r:.1f}:1 para "
+                        f"{last_r:.1f}:1) mas com matrículas em queda ({d_mat:+.1f}%) — "
+                        f"a melhora pode ser por perda de alunos, não por investimento em equipe."
                     )
 
     # 2. Tech transformation
@@ -1989,12 +1989,12 @@ def _detectar_insights(
         if d_tech is not None and first_tech is not None and last_tech is not None:
             if d_tech > 30 and first_tech < 4:
                 insights_censo.append(
-                    f"Salto tecnologico: tech score subiu de {first_tech:.1f} para "
-                    f"{last_tech:.1f} (escala 0-10) — possivel transformacao digital no periodo."
+                    f"Salto tecnológico: tech score subiu de {first_tech:.1f} para "
+                    f"{last_tech:.1f} (escala 0-10) — possível transformação digital no período."
                 )
             elif last_tech >= 8:
                 insights_censo.append(
-                    f"Escola com bom nivel tecnologico (score {last_tech:.1f}/10)."
+                    f"Escola com bom nível tecnológico (score {last_tech:.1f}/10)."
                 )
 
     # 3. Enrollment composition shift
@@ -2007,9 +2007,9 @@ def _detectar_insights(
         if d_pct_med is not None and first_pct is not None and last_pct is not None:
             if d_pct_med > 15:
                 insights_censo.append(
-                    f"Mudanca de perfil: % de matriculas no Ensino Medio subiu de "
+                    f"Mudança de perfil: % de matrículas no Ensino Médio subiu de "
                     f"{first_pct:.1f}% para {last_pct:.1f}% do total — crescimento "
-                    f"relativo do Medio frente a outras etapas."
+                    f"relativo do Médio frente a outras etapas."
                 )
 
     # 4. Infra improvement — REMOVIDO: infraestrutura fisica nao tem correlacao
@@ -2022,9 +2022,9 @@ def _detectar_insights(
         d_mat_val = _delta(t_mat) if t_mat else None
         if d_doc is not None and d_doc < -10 and (d_mat_val is None or d_mat_val > -3):
             insights_censo.append(
-                f"Corpo docente encolheu {d_doc:+.1f}% no periodo"
-                + (f" enquanto matriculas variaram apenas {d_mat_val:+.1f}%." if d_mat_val is not None else ".")
-                + " Possivel sinal de pressao financeira ou reestruturacao."
+                f"Corpo docente encolheu {d_doc:+.1f}% no período"
+                + (f" enquanto matrículas variaram apenas {d_mat_val:+.1f}%." if d_mat_val is not None else ".")
+                + " Possível sinal de pressão financeira ou reestruturação."
             )
 
     # Ordem de prioridade: CRITICOS (matriculas) > ENEM > CENSO
@@ -2066,6 +2066,60 @@ def _interpretar_trend_numerico(valores: List[Optional[float]], vintages: List[i
         "delta_recente_pct": recente,
         "n_pontos": len(pairs),
     }
+
+
+def get_insight_ingredients(inep: str) -> Dict[str, Any]:
+    """Retorna trends + censo_series + enem_data necessarios para _detectar_insights.
+
+    Helper publico para consumidores que precisam regenerar insights com
+    benchmarks diferentes (ex: OPR interativo com switcher de benchmark).
+
+    Returns:
+        Dict com keys: 'trends', 'censo_series', 'enem_data'.
+        Se falhar, retorna dict vazio.
+    """
+    try:
+        censo_data = db.client.table("school_censo_yearly").select("*").eq(
+            "inep_code", str(inep)
+        ).order("vintage_censo").execute()
+        censo_series_raw = censo_data.data or []
+        if not censo_series_raw:
+            return {"trends": {}, "censo_series": [], "enem_data": None}
+
+        censo_vintages = sorted([r.get("vintage_censo") for r in censo_series_raw if r.get("vintage_censo")])
+        censo_clean: List[Dict] = []
+        for row in censo_series_raw:
+            clean = {k: v for k, v in row.items() if v is not None}
+            derived = _compute_derived_metrics(clean)
+            clean.update({k: v for k, v in derived.items() if v is not None})
+            censo_clean.append(clean)
+
+        def _col(col):
+            return [r.get(col) for r in censo_clean]
+
+        trends_dict = {
+            "matriculas_bas": _interpretar_trend_numerico(_col("qt_mat_bas"), censo_vintages) if censo_clean else None,
+            "matriculas_medio": _interpretar_trend_numerico(_col("qt_mat_med"), censo_vintages) if censo_clean else None,
+            "matriculas_fund_af": _interpretar_trend_numerico(_col("qt_mat_fund_af"), censo_vintages) if censo_clean else None,
+            "docentes": _interpretar_trend_numerico(_col("qt_doc_bas"), censo_vintages) if censo_clean else None,
+            "alunos_por_docente": _interpretar_trend_numerico(_col("_alunos_por_docente"), censo_vintages) if censo_clean else None,
+            "alunos_por_docente_fund": _interpretar_trend_numerico(_col("_alunos_por_docente_fund"), censo_vintages) if censo_clean else None,
+            "alunos_por_docente_med": _interpretar_trend_numerico(_col("_alunos_por_docente_med"), censo_vintages) if censo_clean else None,
+            "tech_score": _interpretar_trend_numerico(_col("_tech_score"), censo_vintages) if censo_clean else None,
+            "infra_score": _interpretar_trend_numerico(_col("_infra_score"), censo_vintages) if censo_clean else None,
+            "pct_matriculas_medio": _interpretar_trend_numerico(_col("_pct_mat_medio"), censo_vintages) if censo_clean else None,
+        }
+
+        enem_data = _fetch_school_analytics_by_inep(str(inep))
+
+        return {
+            "trends": trends_dict,
+            "censo_series": censo_clean,
+            "enem_data": enem_data,
+        }
+    except Exception as e:
+        logger.debug(f"get_insight_ingredients failed for {inep}: {e}")
+        return {"trends": {}, "censo_series": [], "enem_data": None}
 
 
 def _handle_analisar_trajetoria_escola(params: Dict) -> str:
