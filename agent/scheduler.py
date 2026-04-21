@@ -10,6 +10,7 @@ import time
 import threading
 import schedule
 from datetime import datetime, timedelta
+from typing import Dict, Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

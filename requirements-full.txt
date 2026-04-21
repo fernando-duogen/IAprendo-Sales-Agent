@@ -8,6 +8,7 @@
 
 # IA & LLM
 anthropic>=0.39.0                    # Claude API (Haiku 4.5 + Sonnet 4.5)
+openai>=1.50.0                       # OpenAI SDK (usado em agent/brain.py para intent classifier)
 
 # Database
 supabase>=2.9.0                      # PostgreSQL via Supabase
@@ -17,6 +18,7 @@ psycopg2-binary>=2.9.9              # PostgreSQL adapter
 requests>=2.31.0                     # HTTP client
 httpx>=0.27.0                        # Async HTTP (usado pelo Anthropic SDK)
 urllib3>=2.2.0                       # HTTP utilities
+flask>=3.0.0                         # Webhook server do IAlex (agent/webhook_server.py)
 
 # Email
 brevo-python>=1.0.0                  # Brevo API (versão correta disponível)
@@ -55,6 +57,7 @@ pydantic-settings>=2.1.0            # Settings management
 # Dashboard (Streamlit)
 streamlit>=1.31.0                   # Dashboard UI
 plotly>=5.19.0                      # Interactive charts
+kaleido>=0.2.1                      # Plotly -> PNG export (insight charts para email)
 pydeck>=0.8.1                       # Map visualization (Deck.gl)
 altair>=5.2.0                       # Declarative charts
 
