@@ -541,9 +541,10 @@ def render_diagnostico() -> None:
 # =============================================================================
 # TABS: Configuracoes + Memorias + Diagnostico
 # =============================================================================
-tab_config, tab_memorias, tab_diag = st.tabs([
+tab_config, tab_memorias, tab_skills, tab_diag = st.tabs([
     "⚙️ Configuracoes",
     "🧠 Memorias",
+    "⭐ Skills Aprendidas",
     "🩺 Diagnostico",
 ])
 
@@ -1214,6 +1215,181 @@ with tab_config:
 
 with tab_memorias:
     render_memorias()
+
+with tab_skills:
+    # =========================================================================
+    # ABA: Skills Aprendidas (F6 Fase 2)
+    # Gestao das skills que o IAlex aprendeu via WhatsApp ("padroniza isso")
+    # =========================================================================
+    section_header("Skills Aprendidas", "auto_awesome")
+
+    st.caption(
+        "Skills sao padroes que o IAlex aprendeu e reutiliza automaticamente. "
+        "Voce pode criar skills aqui ou via WhatsApp dizendo *'padroniza isso'*."
+    )
+
+    try:
+        from database.supabase_client import db as _db_skills
+
+        # --- KPIs ---
+        all_skills = _db_skills.client.table("learned_skills").select(
+            "id, name, description, skill_type, trigger_pattern, template_content, "
+            "example_input, example_output, applies_to, metrics, status, created_at, updated_at"
+        ).order("created_at", desc=True).execute().data or []
+
+        active_skills = [s for s in all_skills if s.get("status") == "active"]
+        archived_skills = [s for s in all_skills if s.get("status") == "archived"]
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            metric_card("Ativas", str(len(active_skills)), COLORS.get("success", "#2E7D32"), "check_circle")
+        with c2:
+            total_uses = sum((s.get("metrics") or {}).get("times_used", 0) for s in active_skills)
+            metric_card("Usos totais", str(total_uses), COLORS.get("primary", "#1976D2"), "trending_up")
+        with c3:
+            types_count = len(set(s.get("skill_type", "") for s in active_skills))
+            metric_card("Tipos", str(types_count), COLORS.get("info", "#1565C0"), "category")
+        with c4:
+            metric_card("Arquivadas", str(len(archived_skills)), COLORS.get("warning", "#F57F17"), "archive")
+
+        st.divider()
+
+        # --- Tabela de skills ativas ---
+        if active_skills:
+            type_emoji = {
+                "email_template": "📧 Email",
+                "report_format": "📊 Report",
+                "analysis_pattern": "🔍 Analise",
+                "response_style": "💬 Resposta",
+                "whatsapp_template": "📱 WhatsApp",
+                "other": "🎯 Outro",
+            }
+
+            rows = []
+            for s in active_skills:
+                metrics = s.get("metrics") or {}
+                rows.append({
+                    "Nome": s.get("name", ""),
+                    "Tipo": type_emoji.get(s.get("skill_type", ""), s.get("skill_type", "")),
+                    "Descricao": (s.get("description") or "")[:80],
+                    "Gatilho": (s.get("trigger_pattern") or "")[:50],
+                    "Usos": metrics.get("times_used", 0),
+                    "Criada em": (s.get("created_at") or "")[:10],
+                    "id": s.get("id"),
+                })
+
+            df_skills = pd.DataFrame(rows)
+
+            st.subheader("Skills Ativas")
+            st.dataframe(
+                df_skills.drop(columns=["id"]),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Usos": st.column_config.NumberColumn("Usos", format="%d"),
+                },
+            )
+
+            # --- Detalhes + acoes ---
+            with st.expander("Ver detalhes / Arquivar skill"):
+                selected_name = st.selectbox(
+                    "Selecione uma skill",
+                    options=[s.get("name", "") for s in active_skills],
+                    key="skill_detail_select",
+                )
+                if selected_name:
+                    skill = next((s for s in active_skills if s.get("name") == selected_name), None)
+                    if skill:
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.markdown(f"**Tipo:** {type_emoji.get(skill.get('skill_type', ''), skill.get('skill_type', ''))}")
+                            st.markdown(f"**Gatilho:** {skill.get('trigger_pattern') or '(nenhum)'}")
+                            st.markdown(f"**Descricao:** {skill.get('description') or '(sem descricao)'}")
+                        with col_b:
+                            metrics = skill.get("metrics") or {}
+                            st.markdown(f"**Usos:** {metrics.get('times_used', 0)}")
+                            st.markdown(f"**Criada:** {(skill.get('created_at') or '')[:16]}")
+                            st.markdown(f"**Atualizada:** {(skill.get('updated_at') or '')[:16]}")
+
+                        st.markdown("**Conteudo/Template:**")
+                        st.code(skill.get("template_content", ""), language=None)
+
+                        if skill.get("example_input"):
+                            st.markdown("**Exemplo de input:**")
+                            st.text(skill["example_input"][:300])
+                        if skill.get("example_output"):
+                            st.markdown("**Exemplo de output:**")
+                            st.text(skill["example_output"][:500])
+
+                        if st.button("Arquivar esta skill", type="secondary", key=f"archive_{skill.get('id')}"):
+                            _db_skills.client.table("learned_skills").update({
+                                "status": "archived",
+                            }).eq("id", skill["id"]).execute()
+                            st.success(f"Skill '{selected_name}' arquivada!")
+                            st.rerun()
+        else:
+            alert_banner(
+                "Nenhuma skill aprendida ainda. Diga ao IAlex pelo WhatsApp: "
+                "*'padroniza isso'* depois de uma resposta que voce gostou, "
+                "ou crie uma skill abaixo.",
+                "info",
+            )
+
+        st.divider()
+
+        # --- Criar nova skill ---
+        with st.expander("Criar nova skill"):
+            with st.form("create_skill_form", clear_on_submit=True):
+                sk_name = st.text_input("Nome da skill *", placeholder="ex: email_pressao_enem")
+                sk_type = st.selectbox("Tipo", [
+                    "email_template", "report_format", "analysis_pattern",
+                    "response_style", "whatsapp_template", "other",
+                ])
+                sk_desc = st.text_input("Descricao", placeholder="Breve descricao do padrao")
+                sk_trigger = st.text_input("Gatilho (keywords)", placeholder="ex: pressao, enem, competitivo")
+                sk_content = st.text_area("Conteudo/Template *", height=150,
+                    placeholder="O padrao que o IAlex deve seguir quando o contexto bater...")
+                sk_ex_in = st.text_input("Exemplo de input (opcional)", placeholder="O que o usuario pede")
+                sk_ex_out = st.text_area("Exemplo de output (opcional)", height=100,
+                    placeholder="Como o IAlex deve responder")
+
+                submitted = st.form_submit_button("Criar Skill", type="primary")
+                if submitted:
+                    if not sk_name or not sk_content:
+                        st.error("Nome e conteudo sao obrigatorios.")
+                    else:
+                        _db_skills.client.table("learned_skills").insert({
+                            "name": sk_name.strip(),
+                            "description": sk_desc.strip() or None,
+                            "skill_type": sk_type,
+                            "trigger_pattern": sk_trigger.strip() or None,
+                            "template_content": sk_content.strip(),
+                            "example_input": sk_ex_in.strip() or None,
+                            "example_output": sk_ex_out.strip() or None,
+                            "status": "active",
+                            "created_by": "dashboard",
+                        }).execute()
+                        st.success(f"Skill '{sk_name}' criada com sucesso!")
+                        st.rerun()
+
+        # --- Skills arquivadas ---
+        if archived_skills:
+            with st.expander(f"Skills arquivadas ({len(archived_skills)})"):
+                for s in archived_skills[:10]:
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.text(f"{s.get('name', '')} ({s.get('skill_type', '')})")
+                    with col2:
+                        if st.button("Reativar", key=f"reactivate_{s.get('id')}"):
+                            _db_skills.client.table("learned_skills").update({
+                                "status": "active",
+                            }).eq("id", s["id"]).execute()
+                            st.success(f"Skill '{s.get('name')}' reativada!")
+                            st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro ao carregar skills: {e}")
+        st.info("Verifique se a tabela 'learned_skills' foi criada no Supabase.")
 
 with tab_diag:
     render_diagnostico()

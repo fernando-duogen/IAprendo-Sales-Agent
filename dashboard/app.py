@@ -217,13 +217,19 @@ try:
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # === HOT LEADS (F2 - Urgency) ===
-    section_header("Leads Quentes", "local_fire_department")
+    # === PAINEL DIARIO ACIONAVEL (F7 - Action Panel) ===
     try:
-        from dashboard.helpers.urgency_widgets import hot_leads_widget
-        hot_leads_widget()
+        from dashboard.helpers.morning_panel import render_action_panel
+        render_action_panel()
     except Exception as e:
-        st.caption(f"Urgency indisponivel: {e}")
+        st.caption(f"Painel diario indisponivel: {e}")
+        # Fallback: widget antigo de hot leads
+        try:
+            from dashboard.helpers.urgency_widgets import hot_leads_widget
+            section_header("Leads Quentes", "local_fire_department")
+            hot_leads_widget()
+        except Exception:
+            pass
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 

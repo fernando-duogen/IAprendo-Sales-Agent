@@ -117,10 +117,11 @@ with tab_aprovacao:
     st.markdown("")
 
     # --- Sub-tabs dentro de Aprovacao ---
-    aprov_tab_pending, aprov_tab_approved, aprov_tab_sent = st.tabs([
+    aprov_tab_pending, aprov_tab_approved, aprov_tab_sent, aprov_tab_inbox = st.tabs([
         f"Pendentes ({total})",
         f"Aprovadas ({approved_count})",
         f"Enviadas ({sent_count})",
+        "🧠 Inbox de Respostas",
     ])
 
     # ---- Sub-tab: Aprovadas (aguardando envio) ----
@@ -967,6 +968,125 @@ with tab_aprovacao:
                     if st.button("Cancelar", key=f"cancel_test_{queue_id}"):
                         st.session_state[f"show_test_{queue_id}"] = False
                         st.rerun()
+
+
+    # =========================================================================
+    # SUB-TAB: INBOX DE RESPOSTAS (F7 - Classificacao LLM de replies)
+    # =========================================================================
+    with aprov_tab_inbox:
+        section_header("Inbox de Respostas", "mark_chat_unread")
+        st.caption(
+            "Respostas recebidas classificadas automaticamente pelo LLM. "
+            "Cada linha mostra a intencao detectada e uma acao sugerida."
+        )
+
+        # Filtros
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            inbox_periodo = st.selectbox(
+                "Periodo",
+                options=[7, 30, 90],
+                format_func=lambda x: f"Ultimos {x} dias",
+                index=1,
+                key="inbox_periodo",
+            )
+        with col_f2:
+            inbox_filter_class = st.selectbox(
+                "Classificacao",
+                options=["todas", "interesse_alto", "interesse_medio", "pergunta", "objecao", "rejeicao", "automatica"],
+                format_func=lambda x: {
+                    "todas": "Todas",
+                    "interesse_alto": "🟢 Interesse alto",
+                    "interesse_medio": "🟡 Interesse medio",
+                    "pergunta": "❓ Pergunta",
+                    "objecao": "🟠 Objecao",
+                    "rejeicao": "🔴 Rejeicao",
+                    "automatica": "⚫ Automatica",
+                }.get(x, x),
+                index=0,
+                key="inbox_filter_class",
+            )
+        with col_f3:
+            inbox_use_llm = st.toggle("Usar LLM (mais preciso)", value=True, key="inbox_use_llm")
+
+        # Carregar replies classificadas
+        try:
+            from tools.intent_detector import intent_detector
+            with st.spinner("Classificando respostas..."):
+                replies = intent_detector.classify_replies(
+                    days=inbox_periodo, use_llm=inbox_use_llm, min_score=50
+                )
+        except Exception as e:
+            st.error(f"Erro ao carregar replies: {e}")
+            replies = []
+
+        # Filtro de classificacao
+        if inbox_filter_class != "todas":
+            replies = [r for r in replies if r.get("classificacao") == inbox_filter_class]
+
+        if not replies:
+            st.info("Nenhuma resposta encontrada nos filtros selecionados.")
+        else:
+            # KPIs
+            class_colors = {
+                "interesse_alto": "🟢",
+                "interesse_medio": "🟡",
+                "pergunta": "❓",
+                "objecao": "🟠",
+                "rejeicao": "🔴",
+                "automatica": "⚫",
+                "sem_classificacao": "⚪",
+            }
+
+            from collections import Counter
+            dist = Counter(r.get("classificacao", "sem_classificacao") for r in replies)
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("Total replies", len(replies))
+            with c2:
+                st.metric("🟢 Interesse alto", dist.get("interesse_alto", 0))
+            with c3:
+                st.metric("🟠 Objecoes", dist.get("objecao", 0))
+            with c4:
+                st.metric("🔴 Rejeicoes", dist.get("rejeicao", 0))
+
+            st.divider()
+
+            # Listagem
+            for idx, rep in enumerate(replies[:50]):
+                cls = rep.get("classificacao", "sem_classificacao")
+                icon = class_colors.get(cls, "⚪")
+                with st.container():
+                    col_main, col_action = st.columns([5, 1])
+                    with col_main:
+                        st.markdown(
+                            f"<div style='padding:12px 14px; margin:6px 0; "
+                            f"background:#F8F9FA; border-left:4px solid #2563eb; border-radius:6px'>"
+                            f"<div style='display:flex; justify-content:space-between; align-items:baseline'>"
+                            f"<b>{icon} {rep.get('company_name', '?')}</b>"
+                            f"<span style='color:#888; font-size:12px'>{rep.get('replied_at', '')[:16]}</span>"
+                            f"</div>"
+                            f"<div style='color:#666; font-size:13px; margin:4px 0'>"
+                            f"<b>{rep.get('contact_name', '?')}</b> em resposta a: "
+                            f"<i>{rep.get('subject', '')}</i>"
+                            f"</div>"
+                            f"<div style='color:#333; font-size:13px; margin:8px 0; "
+                            f"padding:8px; background:white; border-radius:4px; font-style:italic'>"
+                            f'"{rep.get("reply_text", "")[:250]}..."'
+                            f"</div>"
+                            f"<div style='font-size:12px; color:#555'>"
+                            f"<b>Classificacao:</b> {cls} (score {rep.get('score', '?')}) | "
+                            f"<b>Acao sugerida:</b> {rep.get('acao_sugerida', 'N/A')}"
+                            f"</div>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with col_action:
+                        if st.button("Gerar resposta", key=f"inbox_respond_{rep.get('queue_id', idx)}", use_container_width=True):
+                            st.session_state["inbox_generate_queue_id"] = rep.get("queue_id")
+                            st.session_state["inbox_generate_company_id"] = rep.get("company_id")
+                            st.toast("IAlex esta gerando resposta... verificar aba Pendentes em ~10s", icon="🤖")
 
 
 # =============================================================================

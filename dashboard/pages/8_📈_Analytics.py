@@ -838,3 +838,145 @@ else:
         )
     else:
         st.info("Nenhuma oportunidade oculta detectada (ou todas ja estao bem qualificadas).")
+
+
+# ============================================================================
+# OPR TRACKING (F7 Fase 3)
+# ============================================================================
+
+st.divider()
+section_header("OPR Tracking", "analytics")
+
+st.caption(
+    "Rastreamento dos relatorios OPR gerados. Cada abertura e clique em aba "
+    "e um sinal de intencao do destinatario."
+)
+
+try:
+    from database.supabase_client import db
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    # Filtro de periodo
+    periodo_dias = st.selectbox(
+        "Periodo",
+        options=[7, 30, 90, 365],
+        format_func=lambda x: f"Ultimos {x} dias",
+        index=1,
+        key="opr_periodo",
+    )
+    cutoff = (_dt.now(_tz.utc) - _td(days=periodo_dias)).isoformat()
+
+    # Query raw events
+    try:
+        events_r = db.client.table("opr_pageviews").select(
+            "id, inep, company_id, event_type, benchmark_viewed, session_id, viewed_at"
+        ).gt("viewed_at", cutoff).execute()
+        events = events_r.data or []
+    except Exception as _e:
+        if "opr_pageviews" in str(_e).lower() or "does not exist" in str(_e).lower():
+            alert_banner(
+                "Tabela `opr_pageviews` ainda nao foi criada. "
+                "Rode o SQL em `database/migrations/016_opr_pageviews.sql` no Supabase.",
+                "warning",
+            )
+            events = []
+        else:
+            raise
+
+    # KPIs
+    inep_set = set(ev["inep"] for ev in events if ev.get("inep"))
+    page_loads = [ev for ev in events if ev.get("event_type") == "page_load"]
+    tab_clicks = [ev for ev in events if ev.get("event_type") == "tab_click"]
+    cta_clicks = [ev for ev in events if ev.get("event_type") == "cta_click"]
+    unique_sessions = len(set(ev.get("session_id") for ev in events if ev.get("session_id")))
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.metric("OPRs Abertos", len(inep_set), help="Numero de escolas cujos OPRs foram acessados")
+    with c2:
+        st.metric("Total Pageviews", len(page_loads))
+    with c3:
+        st.metric("Visitantes unicos", unique_sessions, help="Sessions unicas via localStorage")
+    with c4:
+        st.metric("Tab Clicks", len(tab_clicks))
+    with c5:
+        st.metric("CTA Clicks", len(cta_clicks), help="Cliques em 'Conhecer a IAprendo'")
+
+    # Aba mais visualizada
+    from collections import Counter
+    bench_counts = Counter(ev.get("benchmark_viewed") for ev in tab_clicks if ev.get("benchmark_viewed"))
+    if bench_counts:
+        most_common = bench_counts.most_common(1)[0]
+        st.markdown(f"**Aba mais visualizada**: {most_common[0]} ({most_common[1]} cliques de {sum(bench_counts.values())} totais)")
+
+    # Top OPRs mais acessados
+    if events:
+        st.markdown("### Top OPRs Mais Acessados")
+        # Agrupar por INEP
+        by_inep: dict = {}
+        for ev in events:
+            inep = ev.get("inep")
+            if not inep:
+                continue
+            if inep not in by_inep:
+                by_inep[inep] = {
+                    "pageviews": 0, "unique_sessions": set(),
+                    "benchmarks": set(), "last_viewed": ev.get("viewed_at", ""),
+                    "company_id": ev.get("company_id"),
+                }
+            by_inep[inep]["pageviews"] += 1
+            if ev.get("session_id"):
+                by_inep[inep]["unique_sessions"].add(ev.get("session_id"))
+            if ev.get("benchmark_viewed"):
+                by_inep[inep]["benchmarks"].add(ev.get("benchmark_viewed"))
+            if ev.get("viewed_at", "") > by_inep[inep]["last_viewed"]:
+                by_inep[inep]["last_viewed"] = ev.get("viewed_at", "")
+
+        # Buscar nomes das escolas
+        inep_ids = list(by_inep.keys())
+        try:
+            r = db.client.table("companies").select("id, inep_code, name, city, state").in_(
+                "inep_code", inep_ids
+            ).execute()
+            inep_to_company = {str(c["inep_code"]): c for c in (r.data or [])}
+        except Exception:
+            inep_to_company = {}
+
+        # Tabela
+        rows = []
+        for inep, data in by_inep.items():
+            comp = inep_to_company.get(str(inep), {})
+            rows.append({
+                "Escola": comp.get("name", f"INEP {inep}"),
+                "Cidade": f"{comp.get('city', '?')}/{comp.get('state', '?')}",
+                "Pageviews": data["pageviews"],
+                "Visitantes": len(data["unique_sessions"]),
+                "Abas exploradas": ", ".join(sorted(data["benchmarks"])) or "-",
+                "Ultimo acesso": data["last_viewed"][:16] if data["last_viewed"] else "-",
+            })
+        rows.sort(key=lambda x: x["Pageviews"], reverse=True)
+
+        import pandas as _pd
+        df_opr = _pd.DataFrame(rows[:20])
+        if not df_opr.empty:
+            st.dataframe(df_opr, use_container_width=True, hide_index=True)
+
+    # Distribuicao por benchmark
+    if tab_clicks:
+        st.markdown("### Distribuicao de Cliques por Benchmark")
+        import pandas as _pd
+        df_bench = _pd.DataFrame([
+            {"Benchmark": k, "Cliques": v}
+            for k, v in bench_counts.most_common()
+        ])
+        if not df_bench.empty:
+            st.bar_chart(df_bench.set_index("Benchmark")["Cliques"], height=220)
+
+    if not events:
+        st.info(
+            "Ainda nao ha eventos de tracking registrados. "
+            "Quando alguem abrir um OPR (com TRACK_URL configurado), os eventos aparecerao aqui."
+        )
+
+except Exception as _e:
+    st.caption(f"OPR tracking indisponivel: {_e}")
