@@ -55,6 +55,21 @@ def setup_instance(bridge):
         print("[OK] WhatsApp ja conectado!")
         return True
 
+    # Se state == "connecting", a instancia existe e esta estabilizando (container
+    # recem-iniciado). Aguardar ate 30s antes de tentar criar — evita o ERROR 403
+    # "instance already exists" quando so precisavamos esperar.
+    if instance_state == "connecting":
+        print("   Instancia existente em conexao, aguardando estabilizar...")
+        for _ in range(6):  # 6 x 5s = 30s
+            time.sleep(5)
+            state = bridge.check_connection()
+            instance_state = state.get("state", state.get("instance", {}).get("state", ""))
+            if instance_state == "open":
+                print("[OK] WhatsApp conectado (instancia preexistente)!")
+                return True
+            if instance_state not in ("connecting", ""):
+                break  # estado terminal diferente de connecting, seguir fluxo normal
+
     # Criar instancia se nao existe
     print("\n[INFO] Configurando instancia WhatsApp...")
     create_result = bridge.create_instance()
@@ -129,10 +144,11 @@ def main():
     if not wa_ok:
         return
 
-    # 3. Configurar webhook
-    print("\n[3/6] Configurando webhook...")
+    # 3. Webhook — ja configurado globalmente via docker-compose.yml
+    # (WEBHOOK_GLOBAL_URL + WEBHOOK_GLOBAL_ENABLED). A chamada POST /webhook/set/{instance}
+    # e redundante e retornava 400 no schema v2 da Evolution API, entao foi removida.
+    print("\n[3/6] Webhook (configurado via compose env)")
     webhook_url = f"http://host.docker.internal:{args.port}/webhook"
-    bridge.set_webhook(webhook_url)
     print(f"   Webhook: {webhook_url}")
 
     # 4. Iniciar scheduler

@@ -65,7 +65,10 @@ services:
       - DEL_INSTANCE=false
       - WEBHOOK_GLOBAL_ENABLED=true
       - WEBHOOK_GLOBAL_URL=http://host.docker.internal:5001/webhook
-      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=true
+      # by_events=false: Evolution posta apenas na URL base (/webhook) e o
+      # payload carrega o `event`. Se =true, o Evolution tentaria /webhook/{event}
+      # (ex: /webhook/messages-upsert) e geraria 404 no Flask (so tem a rota base).
+      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
       - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
       - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
     volumes:
