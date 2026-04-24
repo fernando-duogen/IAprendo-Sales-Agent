@@ -86,7 +86,7 @@ if search_query and len(search_query) >= 2:
                         f'<div class="data-card">'
                         f'<strong>{c.get("full_name", "?")}</strong> ({c.get("role", "?")})'
                         f'<br><span style="color:#757575;font-size:13px">'
-                        f'{c.get("email", "\u2014")} &bull; Escola: {comp.get("name", "?")}</span></div>',
+                        f'{c.get("email", "&mdash;")} &bull; Escola: {comp.get("name", "?")}</span></div>',
                         unsafe_allow_html=True,
                     )
         else:
