@@ -25,6 +25,7 @@ from openai import OpenAI
 from config.settings import settings
 from database.supabase_client import db
 from utils.logger import logger
+from utils.date_pt import format_pt
 
 # Carregamento defensivo do modulo ENEM analytics (regra R1 do plano).
 # Se enem_tools.py tiver qualquer erro, IAlex continua rodando com as 68
@@ -8351,7 +8352,7 @@ class Brain:
 
             # Montar briefing curto
             lines = []
-            lines.append(f"_{now.strftime('%a, %d/%m')}_")
+            lines.append(f"_{format_pt(now, '%a, %d/%m')}_")
 
             if replied_24h:
                 lines.append("")
