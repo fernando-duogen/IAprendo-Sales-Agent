@@ -5,6 +5,7 @@ import pandas as pd
 import sys
 from collections import defaultdict
 from pathlib import Path
+from textwrap import dedent
 
 ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -978,7 +979,9 @@ if st.session_state.escola_detail_id:
             f'</div>'
         )
 
-    st.markdown(f"""
+    # dedent() remove a indent comum — Streamlit/Markdown interpreta 4+ espacos
+    # como code block e escaparia as tags para texto literal.
+    st.markdown(dedent(f"""
     <div class="data-card" style="border-left: 4px solid {COLORS['primary']}; padding: 20px 24px;">
         <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
             {avatar(company.get('name', '?'), COLORS['primary'])}
@@ -1000,7 +1003,7 @@ if st.session_state.escola_detail_id:
             </div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
     # Caption com motivo do Fit
     if fit_val is not None and fit_motivo:
