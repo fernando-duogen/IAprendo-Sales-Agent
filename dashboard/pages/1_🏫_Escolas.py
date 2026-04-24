@@ -5,7 +5,6 @@ import pandas as pd
 import sys
 from collections import defaultdict
 from pathlib import Path
-from textwrap import dedent
 
 ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -979,31 +978,33 @@ if st.session_state.escola_detail_id:
             f'</div>'
         )
 
-    # dedent() remove a indent comum — Streamlit/Markdown interpreta 4+ espacos
-    # como code block e escaparia as tags para texto literal.
-    st.markdown(dedent(f"""
-    <div class="data-card" style="border-left: 4px solid {COLORS['primary']}; padding: 20px 24px;">
-        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-            {avatar(company.get('name', '?'), COLORS['primary'])}
-            <div style="flex:1;">
-                <div style="font-size:22px; font-weight:700; color:#212121;">{company.get('name', '?')}</div>
-                <div style="font-size:14px; color:#757575; margin-top:2px;">
-                    {company.get('city', '')}/{company.get('state', '')}{bairro_txt} &middot; INEP: {company.get('inep_code', '')}
-                </div>
-                {fonte_badge_html}
-            </div>
-            <div style="display:flex; gap:12px; align-items:center;">
-                {status_badge(status_en, status_label)}
-                {fit_badge_html}
-                <div style="display:flex; flex-direction:column; align-items:center;">
-                    <span style="font-size:9px; color:#757575; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Score IA</span>
-                    <span style="font-size:22px; font-weight:700; color:{score_color(sc)};">{sc}</span>
-                    <span style="font-size:9px; color:#757575;">/ 100</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    """), unsafe_allow_html=True)
+    # F-strings concatenadas single-line evitam o bug de "4+ espacos = code block"
+    # que o Markdown aplica antes do unsafe_allow_html=True processar o HTML.
+    # (Padrao identico ao `section_header` em theme.py.)
+    st.markdown(
+        f'<div class="data-card" style="border-left: 4px solid {COLORS["primary"]}; padding: 20px 24px;">'
+        f'<div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">'
+        f'{avatar(company.get("name", "?"), COLORS["primary"])}'
+        f'<div style="flex:1;">'
+        f'<div style="font-size:22px; font-weight:700; color:#212121;">{company.get("name", "?")}</div>'
+        f'<div style="font-size:14px; color:#757575; margin-top:2px;">'
+        f'{company.get("city", "")}/{company.get("state", "")}{bairro_txt} &middot; INEP: {company.get("inep_code", "")}'
+        f'</div>'
+        f'{fonte_badge_html}'
+        f'</div>'
+        f'<div style="display:flex; gap:12px; align-items:center;">'
+        f'{status_badge(status_en, status_label)}'
+        f'{fit_badge_html}'
+        f'<div style="display:flex; flex-direction:column; align-items:center;">'
+        f'<span style="font-size:9px; color:#757575; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Score IA</span>'
+        f'<span style="font-size:22px; font-weight:700; color:{score_color(sc)};">{sc}</span>'
+        f'<span style="font-size:9px; color:#757575;">/ 100</span>'
+        f'</div>'
+        f'</div>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     # Caption com motivo do Fit
     if fit_val is not None and fit_motivo:
