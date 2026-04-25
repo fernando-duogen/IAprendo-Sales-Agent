@@ -3,7 +3,7 @@
 > Sistema híbrido (IA + Humano) de prospecção B2B para plataforma educacional
 
 **Versão**: 1.0.0  
-**Última Atualização**: 2026-02-09  
+**Última Atualização**: 2026-04-25  
 **Mantenedor**: Fernando  
 **Projeto**: IAprendo - Plataforma de IA Educacional BNCC
 
@@ -182,9 +182,10 @@ else:
 - ✅ Enriquecimento multi-fonte com fallbacks (Apollo→Snov→Hunter→Perplexity→Scraping)
 - ✅ Geração de mensagens hiperpersonalizadas (nunca templates genéricos)
 - ✅ Dashboard Streamlit (10 páginas) para aprovação humana
-- ✅ IAlex — agente WhatsApp com 73 tools (24/7, acesso a CRM/ENEM/Censo)
+- ✅ IAlex — agente WhatsApp com 83 tools (24/7, acesso a CRM/ENEM/Censo)
 - ✅ Integração HubSpot bidirecional (Supabase ↔ HubSpot push + pull)
 - ✅ Tracking completo (enviado→entregue→aberto→clicado→respondido)
+- ✅ Registro manual de interações (aba "Registrar Contato" em Escolas + tool `registrar_contato` no IAlex) — paridade dashboard ↔ WhatsApp para logar contatos feitos fora da plataforma
 
 ### Inteligência ENEM (Fase 1-3, Abril 2026)
 - ✅ 185k escolas com analytics ENEM 2024 (média, ranking, peer group, potencial)
@@ -287,9 +288,9 @@ agente-vendas-iaprendo/
 ├── 📁 workflows/        (daily_pipeline, follow_up_manager, send_approved)
 ├── 📁 dashboard/        (app.py + pages/ + theme.py + helpers/)
 ├── 📁 prompts/          (templates de email)
-├── 📁 utils/            (logger, template_renderer, fit_score, role_classifier)
+├── 📁 utils/            (logger, template_renderer, fit_score, role_classifier, date_pt)
 ├── 📁 scripts/          (historico/, inspect, generate_migration, fix_mojibake)
-├── 📁 docs/             (ARCHITECTURE, IMPLEMENTATION, STANDARDS, ANNUAL_UPDATE)
+├── 📁 docs/             (ARCHITECTURE, IMPLEMENTATION, STANDARDS, ANNUAL_UPDATE, RELOCATION)
 └── 📁 data/             (raw/ CSVs MEC + ENEM)
 ```
 
