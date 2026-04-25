@@ -5,6 +5,7 @@ import pandas as pd
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import Any, Dict, List
 
 ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -1013,8 +1014,8 @@ if st.session_state.escola_detail_id:
     st.markdown("")
 
     # --- Tabs ---
-    tab_dados, tab_performance, tab_contatos, tab_msgs, tab_hist, tab_acoes = st.tabs([
-        "Dados", "Performance ENEM", "Contatos", "Mensagens", "Historico", "Acoes"
+    tab_dados, tab_performance, tab_contatos, tab_msgs, tab_registrar, tab_hist, tab_acoes = st.tabs([
+        "Dados", "Performance ENEM", "Contatos", "Mensagens", "Registrar Contato", "Historico", "Acoes"
     ])
 
     # === TAB DADOS (edicao) ===
@@ -1487,6 +1488,127 @@ if st.session_state.escola_detail_id:
                     st.text(qi.get("body", ""))
                     if qi.get("rejection_reason"):
                         st.caption(f"Motivo: {qi['rejection_reason']}")
+
+    # === TAB REGISTRAR CONTATO ===
+    with tab_registrar:
+        section_header("Registrar contato manual", "phone_in_talk")
+        st.caption(
+            "Use esta aba quando voce contatou (ou foi contatado pela) escola **fora** "
+            "da plataforma — WhatsApp, ligacao ou email pessoal. O registro entra no "
+            "Historico, atualiza `last_contacted_at` e (opcional) avanca o status."
+        )
+
+        # Buscar contatos da escola (para o seletor)
+        contatos_escola: List[Dict[str, Any]] = []
+        try:
+            r = db.client.table("contacts").select(
+                "id, full_name, role, email, phone_e164"
+            ).eq("company_id", company_id).execute()
+            contatos_escola = r.data or []
+        except Exception:
+            pass
+
+        with st.form(f"registrar_contato_{company_id}"):
+            r1c1, r1c2, r1c3 = st.columns([1.2, 1, 1])
+            with r1c1:
+                canal_pt = st.radio(
+                    "Canal usado",
+                    ["WhatsApp", "Ligacao", "Email"],
+                    horizontal=True,
+                    key=f"reg_canal_{company_id}",
+                )
+            with r1c2:
+                direcao_pt = st.radio(
+                    "Direcao",
+                    ["Eu contatei", "Eles me contataram"],
+                    horizontal=True,
+                    key=f"reg_direcao_{company_id}",
+                )
+            with r1c3:
+                from datetime import date as _date, datetime as _dt
+                data_contato = st.date_input(
+                    "Data",
+                    value=_date.today(),
+                    key=f"reg_data_{company_id}",
+                )
+
+            r2c1, r2c2 = st.columns([1.2, 1])
+            with r2c1:
+                if contatos_escola:
+                    opcoes_contato = ["(nao especificar)"] + [
+                        f'{c.get("full_name", "?")} - {c.get("role", "?")}'
+                        for c in contatos_escola
+                    ]
+                    sel_contato = st.selectbox(
+                        "Contato (decisor)",
+                        opcoes_contato,
+                        key=f"reg_contato_{company_id}",
+                    )
+                    contato_idx = opcoes_contato.index(sel_contato) - 1
+                    contact_id_sel = (
+                        contatos_escola[contato_idx]["id"]
+                        if contato_idx >= 0 else None
+                    )
+                else:
+                    st.caption("Nenhum contato cadastrado para esta escola.")
+                    contact_id_sel = None
+            with r2c2:
+                avancar_status_chk = st.checkbox(
+                    "Mover status para 'Contatado'",
+                    value=True,
+                    help="Aplica apenas se status atual for Novo/Filtrado/Qualificado/Enriquecido.",
+                    key=f"reg_avancar_{company_id}",
+                )
+                avancar_kanban_chk = st.checkbox(
+                    "Mover Kanban comercial para 'Contatado'",
+                    value=False,
+                    help="Atualiza commercial_stage (pipeline Kanban). Aplica se atual for vazio/'prospectado'.",
+                    key=f"reg_kanban_{company_id}",
+                )
+
+            obs_text = st.text_area(
+                "Observacao (o que conversaram, proximos passos, etc)",
+                key=f"reg_obs_{company_id}",
+                max_chars=500,
+                placeholder="Ex: Falamos sobre matricula 2027. Pediram proposta para 80 alunos do EM.",
+            )
+
+            submit = st.form_submit_button(
+                "Registrar contato", icon=":material/check_circle:"
+            )
+
+        if submit:
+            CHANNEL_MAP = {"WhatsApp": "whatsapp", "Ligacao": "phone", "Email": "email"}
+            DIRECTION_MAP = {"Eu contatei": "sent", "Eles me contataram": "received"}
+            try:
+                # Combinar data escolhida com hora atual (registro sempre tem horario)
+                from datetime import datetime as _dt2
+                _now = _dt2.now()
+                interaction_dt = _dt2.combine(
+                    data_contato,
+                    _now.time().replace(microsecond=0),
+                ).isoformat()
+
+                result = db.register_manual_interaction(
+                    company_id=company_id,
+                    channel=CHANNEL_MAP[canal_pt],
+                    direction=DIRECTION_MAP[direcao_pt],
+                    contact_id=contact_id_sel,
+                    notes=obs_text or "",
+                    interaction_date=interaction_dt,
+                    advance_status=avancar_status_chk,
+                    advance_commercial_stage=avancar_kanban_chk,
+                    source="dashboard",
+                )
+                msg_parts = [f"Contato registrado ({result['type']})"]
+                if result.get("status_changed"):
+                    msg_parts.append(f"status -> {result['status_changed']}")
+                if result.get("commercial_stage_changed"):
+                    msg_parts.append(f"kanban -> {result['commercial_stage_changed']}")
+                st.session_state.escola_msg = ("success", " | ".join(msg_parts))
+            except Exception as _e:
+                st.session_state.escola_msg = ("error", f"Erro ao registrar: {_e}")
+            st.rerun()
 
     # === TAB HISTORICO ===
     with tab_hist:

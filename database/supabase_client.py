@@ -617,6 +617,142 @@ class Database:
     # INTERACTIONS (Histórico)
     # ========================================================================
 
+    # Mapeamento canal+direcao -> type (ver constraint valid_interaction_type)
+    _MANUAL_INTERACTION_TYPE_MAP = {
+        ("whatsapp", "sent"): "whatsapp_sent",
+        ("whatsapp", "received"): "whatsapp_replied",
+        ("email", "sent"): "email_sent",
+        ("email", "received"): "email_replied",
+        ("phone", "sent"): "call_made",
+        ("phone", "received"): "call_received",
+        ("linkedin", "sent"): "linkedin_sent",
+        ("linkedin", "received"): "linkedin_replied",
+    }
+
+    # Status que avancam para "contacted" quando registramos contato manual.
+    # Os demais (contacted, responded, converted, rejected) preservam o estado
+    # atual — nao queremos regredir leads que ja avancaram alem.
+    _STATUS_ADVANCEABLE = {"raw", "filtered", "qualified", "enriched"}
+
+    def register_manual_interaction(
+        self,
+        company_id: str,
+        channel: str,
+        direction: str = "sent",
+        contact_id: Optional[str] = None,
+        notes: str = "",
+        interaction_date: Optional[str] = None,
+        advance_status: bool = True,
+        advance_commercial_stage: bool = False,
+        source: str = "dashboard",
+    ) -> Dict[str, Any]:
+        """Registra contato manual feito pelo Fernando fora da plataforma.
+
+        Operacao atomica do ponto de vista do usuario:
+        1. Insere linha em `interactions` com type apropriado para canal+direcao
+        2. Atualiza `companies.last_contacted_at` = interaction_date (ou NOW())
+        3. Se advance_status=True e status atual eh inicial, move para 'contacted'
+        4. Se advance_commercial_stage=True e stage atual eh nulo/'prospectado',
+           move para 'contatado' (Kanban comercial)
+
+        Args:
+            company_id: UUID da escola.
+            channel: 'whatsapp' | 'email' | 'phone' | 'linkedin'.
+            direction: 'sent' (Fernando contatou) | 'received' (escola contatou).
+            contact_id: UUID do contato/decisor (opcional).
+            notes: Observacao livre (vai para `message_snippet`, max 500 chars).
+            interaction_date: ISO 8601 (ex '2026-04-25T15:30:00-03:00'). None=NOW().
+            advance_status: Move companies.status -> 'contacted' se aplicavel.
+            advance_commercial_stage: Move companies.commercial_stage -> 'contatado' se aplicavel.
+            source: Origem do registro ('dashboard' | 'ialex' | 'api'). Vai para metadata.
+
+        Returns:
+            Dict com:
+                - interaction_id: UUID da interacao criada
+                - type: type derivado (ex 'whatsapp_sent')
+                - status_changed: novo status se mudou, None senao
+                - commercial_stage_changed: nova stage se mudou, None senao
+
+        Raises:
+            ValueError: canal/direction invalidos ou company_id nao encontrado.
+            DatabaseError: falha ao escrever no Supabase.
+        """
+        # Validacao
+        channel = (channel or "").strip().lower()
+        direction = (direction or "sent").strip().lower()
+        key = (channel, direction)
+        if key not in self._MANUAL_INTERACTION_TYPE_MAP:
+            raise ValueError(
+                f"Combinacao canal/direction invalida: {key}. "
+                f"Validos: {list(self._MANUAL_INTERACTION_TYPE_MAP.keys())}"
+            )
+        if not company_id:
+            raise ValueError("company_id obrigatorio")
+
+        interaction_type = self._MANUAL_INTERACTION_TYPE_MAP[key]
+        when = interaction_date or datetime.utcnow().isoformat()
+
+        # 1) Inserir interacao
+        payload: Dict[str, Any] = {
+            "company_id": company_id,
+            "type": interaction_type,
+            "channel": channel,
+            "created_at": when,
+            "metadata": {"source": source, "manual": True, "direction": direction},
+        }
+        if contact_id:
+            payload["contact_id"] = contact_id
+        if notes:
+            payload["message_snippet"] = notes[:500]
+
+        interaction_id = self.insert_interaction(payload)
+
+        # 2) Atualizar last_contacted_at + (opcional) status / commercial_stage
+        company_update: Dict[str, Any] = {"last_contacted_at": when}
+        status_changed: Optional[str] = None
+        commercial_stage_changed: Optional[str] = None
+
+        # Buscar estado atual para decidir avanco
+        current = (
+            self.client.table("companies")
+            .select("status,commercial_stage")
+            .eq("id", company_id)
+            .single()
+            .execute()
+        )
+        if not current.data:
+            raise ValueError(f"Escola {company_id} nao encontrada")
+
+        cur_status = (current.data.get("status") or "raw").lower()
+        cur_stage = (current.data.get("commercial_stage") or "").lower()
+
+        if advance_status and cur_status in self._STATUS_ADVANCEABLE:
+            company_update["status"] = "contacted"
+            status_changed = "contacted"
+
+        if advance_commercial_stage and cur_stage in ("", "prospectado"):
+            company_update["commercial_stage"] = "contatado"
+            commercial_stage_changed = "contatado"
+
+        # Update sempre acontece (last_contacted_at no minimo)
+        try:
+            self.client.table("companies").update(company_update).eq(
+                "id", company_id
+            ).execute()
+        except Exception as e:
+            logger.warning(
+                "Interacao registrada mas falhou update da company",
+                extra={"company_id": company_id, "error": str(e)},
+            )
+
+        return {
+            "interaction_id": interaction_id,
+            "type": interaction_type,
+            "status_changed": status_changed,
+            "commercial_stage_changed": commercial_stage_changed,
+            "when": when,
+        }
+
     def insert_interaction(self, interaction_data: Dict[str, Any]) -> Optional[str]:
         """
         Registra interação com lead.

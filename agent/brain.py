@@ -1404,6 +1404,63 @@ TOOLS = [
             "required": ["nome"],
         },
     },
+    {
+        "name": "registrar_contato",
+        "description": (
+            "Registra contato MANUAL feito FORA da plataforma — quando Fernando "
+            "ligou, mandou whatsapp pessoal ou email pessoal para uma escola e "
+            "quer logar essa interacao no CRM. Insere uma linha em `interactions` "
+            "com o canal/tipo certo, atualiza `last_contacted_at` da escola e "
+            "(opcional) move o status para 'contacted'. "
+            "Use quando Fernando disser coisas como: 'liguei para a escola X', "
+            "'mandei whatsapp para a escola Y', 'falei com o diretor da Z por email', "
+            "'registra que conversei com a escola W'. "
+            "NAO confundir com `enviar_whatsapp_escola` (manda mensagem via Evolution) "
+            "nem com `gerar_email` (cria draft no fluxo automatico)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {
+                    "type": "string",
+                    "description": "Nome da escola (busca parcial via ilike).",
+                },
+                "canal": {
+                    "type": "string",
+                    "enum": ["whatsapp", "email", "phone"],
+                    "description": "Canal usado: whatsapp, email ou phone (ligacao).",
+                },
+                "direcao": {
+                    "type": "string",
+                    "enum": ["sent", "received"],
+                    "description": (
+                        "'sent' quando Fernando contatou a escola (default). "
+                        "'received' quando a escola contatou Fernando."
+                    ),
+                },
+                "observacao": {
+                    "type": "string",
+                    "description": "O que foi conversado (max 500 chars).",
+                },
+                "avancar_status": {
+                    "type": "boolean",
+                    "description": (
+                        "Se true (default), move status -> 'contacted' quando "
+                        "atual eh raw/qualified/enriched. Nao regride leads "
+                        "ja em estados posteriores."
+                    ),
+                },
+                "avancar_kanban": {
+                    "type": "boolean",
+                    "description": (
+                        "Se true, move commercial_stage -> 'contatado' "
+                        "(pipeline Kanban). Default false."
+                    ),
+                },
+            },
+            "required": ["escola_nome", "canal"],
+        },
+    },
 ]
 
 
@@ -2143,6 +2200,102 @@ def _handle_registrar_resultado_reuniao(params: Dict) -> str:
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
+
+
+def _handle_registrar_contato(params: Dict) -> str:
+    """Registra contato manual (whatsapp, email, ligacao) feito fora da plataforma.
+
+    Wrapper sobre db.register_manual_interaction() — mesma logica usada na aba
+    "Registrar Contato" do dashboard. Garante paridade dashboard <-> IAlex.
+    """
+    try:
+        escola_nome = (params.get("escola_nome") or "").strip()
+        canal = (params.get("canal") or "").strip().lower()
+        direcao = (params.get("direcao") or "sent").strip().lower()
+        observacao = (params.get("observacao") or "").strip()
+        avancar_status = params.get("avancar_status", True)
+        avancar_kanban = params.get("avancar_kanban", False)
+
+        if not escola_nome:
+            return json.dumps({"erro": "Informe o nome da escola."}, ensure_ascii=False)
+        if canal not in ("whatsapp", "email", "phone"):
+            return json.dumps(
+                {"erro": "Canal invalido. Use 'whatsapp', 'email' ou 'phone'."},
+                ensure_ascii=False,
+            )
+
+        # Resolver escola
+        r = (
+            db.client.table("companies")
+            .select("id,name,status,commercial_stage")
+            .ilike("name", f"%{escola_nome}%")
+            .limit(1)
+            .execute()
+        )
+        if not r.data:
+            return json.dumps(
+                {"erro": f"Escola '{escola_nome}' nao encontrada."},
+                ensure_ascii=False,
+            )
+        company = r.data[0]
+        company_id = company["id"]
+
+        # Registrar via helper canonico
+        result = db.register_manual_interaction(
+            company_id=company_id,
+            channel=canal,
+            direction=direcao,
+            notes=observacao,
+            advance_status=bool(avancar_status),
+            advance_commercial_stage=bool(avancar_kanban),
+            source="ialex",
+        )
+
+        # Salvar memoria leve (fact) para IAlex lembrar do contato depois
+        try:
+            from integrations.memory import memory
+            canal_pt = {"whatsapp": "WhatsApp", "email": "email", "phone": "ligacao"}[canal]
+            dir_pt = "respondeu" if direcao == "received" else "contatou via"
+            content = (
+                f"Fernando {dir_pt} {canal_pt}"
+                + (f": {observacao[:200]}" if observacao else " (sem observacao)")
+            )
+            memory.remember(
+                content=content,
+                scope="company",
+                scope_id=company_id,
+                category="fact",
+                importance=6,
+                source="ialex",
+            )
+        except Exception:
+            pass
+
+        # Resposta humana para o WhatsApp
+        msg_parts = [f"Contato registrado: *{company['name']}* ({result['type']})"]
+        if result.get("status_changed"):
+            msg_parts.append(f"Status -> {result['status_changed']}")
+        if result.get("commercial_stage_changed"):
+            msg_parts.append(f"Kanban -> {result['commercial_stage_changed']}")
+
+        return json.dumps(
+            {
+                "sucesso": True,
+                "escola": company["name"],
+                "interaction_id": result["interaction_id"],
+                "type": result["type"],
+                "status_changed": result.get("status_changed"),
+                "commercial_stage_changed": result.get("commercial_stage_changed"),
+                "mensagem": " | ".join(msg_parts),
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+    except Exception as e:
+        return json.dumps(
+            {"erro": f"Erro ao registrar contato: {str(e)[:200]}"},
+            ensure_ascii=False,
+        )
 
 
 def _handle_enviar_email_teste(params: Dict) -> str:
@@ -7021,6 +7174,7 @@ TOOL_HANDLERS = {
     "marcar_cliente_ganho": _handle_marcar_cliente_ganho,
     "marcar_perdido": _handle_marcar_perdido,
     "consultar_interacoes": _handle_consultar_interacoes,
+    "registrar_contato": _handle_registrar_contato,
     # HubSpot e integrações
     "sincronizar_hubspot": _handle_sincronizar_hubspot,
     "sincronizar_hubspot_puxar": _handle_sincronizar_hubspot_puxar,
