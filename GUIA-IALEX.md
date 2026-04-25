@@ -16,7 +16,7 @@ O IAlex é um **agente de vendas inteligente** que funciona via WhatsApp. Ele é
 - Banco CRM (Supabase) com suas escolas importadas
 - Envio de emails via Brevo
 - HubSpot CRM (sincronização bidirecional)
-- **100+ ferramentas** de vendas em 12 categorias
+- **83 ferramentas** de vendas em 21 categorias
 
 ---
 
@@ -36,6 +36,12 @@ O IAlex é um **agente de vendas inteligente** que funciona via WhatsApp. Ele é
 
 📊 **Comparar Escolas** — "Compara Anchieta com Militar" → relatório lado a lado.
 
+📞 **Registrar contato manual** (2026-04-25) — "liguei pra escola X hoje" / "mandei whatsapp pra Y" → tool `registrar_contato` loga interação no CRM (canal + direção), atualiza `last_contacted_at` e (opcional) move o status para `contacted`. Mesma feature disponível na aba "Registrar Contato" do dashboard (paridade IAlex ↔ dashboard).
+
+🇧🇷 **Briefings em português** (2026-04-25) — Nomes de dia da semana traduzidos via `utils/date_pt.py`. O briefing matinal agora mostra "Sex, 25/04" em vez de "Fri, 25/04".
+
+📂 **Runbook de migração** (2026-04-25) — `docs/RELOCATION.md` documenta como mover o projeto para outro local sem perder sessão WhatsApp, virtualenv ou histórico Claude Code.
+
 ---
 
 ## Arquitetura — Como funciona por baixo
@@ -47,7 +53,7 @@ Evolution API (Docker, porta 8080) — v2.3.7 com Redis cache
     ↓ webhook HTTP
 Webhook Server (Python/Flask, porta 5001)
     ↓ processa
-Brain (GPT-4.1-mini + 100+ ferramentas)
+Brain (GPT-4.1-mini + 83 ferramentas)
     ↓ consulta
 Supabase (banco CRM) + school_analytics (ENEM 185k) + school_censo_yearly (Censo 2020-2025)
     ↓ resposta via Evolution API
@@ -427,77 +433,176 @@ O resultado é um score de 0 a 100 — quanto maior, melhor.
 
 ---
 
-## Resumo de Todas as 34 Ferramentas do IAlex
+## Resumo de Todas as 83 Ferramentas do IAlex
 
-### Busca de Escolas (5 tools)
+> Verificavel em runtime: `from agent.brain import TOOLS; len(TOOLS)` retorna 83.
+> Lista categorizada (22 grupos). Frase em italico = exemplo de comando WhatsApp.
+
+### Busca e gestao de escolas (6)
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
-| consultar_escolas | Buscar no banco CRM (com fallback MEC) | *"Busca o colégio Anchieta"* |
-| buscar_escola_brasil | Filtros avançados na base MEC | *"Escolas privadas em Curitiba com ensino médio"* |
-| escolas_proximas | Buscar por localização | Compartilhar pin GPS |
-| importar_escola | Importar escola do MEC pro CRM | *"Importa essa escola pro banco"* |
+|---|---|---|
+| consultar_escolas | Buscar no banco CRM (fallback MEC) | *"Busca o colegio Anchieta"* |
+| buscar_escola_brasil | Filtros avancados na base MEC (212k) | *"Escolas privadas em Curitiba com Medio"* |
+| escolas_proximas | Buscar por localizacao (raio km) | Compartilhar pin GPS |
+| importar_escola | Importar escola do MEC pro CRM | *"Importa essa escola"* |
 | detalhes_escola | Ver tudo de uma escola | *"Detalhes do La Salle"* |
+| atualizar_escola | Editar campos da escola | *"Atualiza telefone do Anchieta"* |
 
-### Contatos (3 tools)
+### Contatos (6)
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
-| buscar_contatos | Ver contatos já cadastrados | *"Contatos do Anchieta"* |
-| enriquecer_contatos | Buscar novos via APIs | *"Busca contatos do La Salle"* |
-| atualizar_escola | Atualizar dados da escola | *"Atualiza telefone do Anchieta"* |
+|---|---|---|
+| buscar_contatos | Ver contatos cadastrados | *"Contatos do Anchieta"* |
+| enriquecer_contatos | Buscar novos via Apollo/Snov/Hunter | *"Busca contatos do La Salle"* |
+| sugerir_angulos_email | Sugerir abordagem por contato | *"Que angulo pro diretor da X?"* |
+| listar_redes_educacionais | Listar mantenedoras/redes | *"Lista as redes em RS"* |
+| detalhes_rede | Detalhes de uma rede educacional | *"Detalhes da rede La Salle"* |
+| monitor_mec_status | Verifica restricao de atendimento MEC | *"Status MEC da escola X"* |
 
-### Pipeline (3 tools)
+### Pipeline e qualificacao (3)
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
-| rodar_pipeline | Executar etapas do pipeline | *"Qualifica as escolas raw"* |
-| operacao_lote | Ações em massa | *"Importa as 5 maiores privadas de Curitiba"* |
+|---|---|---|
+| rodar_pipeline | Executar etapas (qualify/enrich/write) | *"Qualifica as escolas raw"* |
+| operacao_lote | Acoes em massa | *"Importa as 5 maiores privadas de PoA"* |
 | atualizar_scores | Recalcular scores | *"Atualiza os scores"* |
 
-### Emails (7 tools)
+### Emails e comunicacao (15)
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
+|---|---|---|
 | gerar_email | Criar email personalizado | *"Gera email pro La Salle"* |
-| fila_aprovacao | Ver emails pendentes | *"O que tem na fila?"* |
-| aprovar_mensagem | Aprovar email | *"Aprova"* |
-| rejeitar_mensagem | Rejeitar email | *"Rejeita, muito longo"* |
+| reescrever_email | Refazer email com angulo novo | *"Reescreve, mais direto"* |
+| fila_aprovacao | Ver pendentes | *"O que tem na fila?"* |
+| ver_email_completo | Abrir email da fila p/ ler | *"Mostra o email do Anchieta"* |
+| aprovar_mensagem | Aprovar (suporta agendamento) | *"Aprova pra amanha 8h"* |
 | editar_e_aprovar | Editar antes de aprovar | *"Muda o assunto e aprova"* |
-| enviar_aprovados | Disparar emails aprovados | *"Envia os emails aprovados"* |
-| gerar_followups | Criar follow-ups automáticos | *"Tem follow-ups pendentes?"* |
+| rejeitar_mensagem | Rejeitar com motivo | *"Rejeita, muito longo"* |
+| enviar_aprovados | Disparar fila aprovada | *"Envia os aprovados"* |
+| enviar_email_teste | Email de teste pra Fernando | *"Manda teste pra mim"* |
+| gerar_followups | Criar follow-ups na fila | *"Tem follow-ups pendentes?"* |
+| processar_respostas | Triagem de respostas recebidas | *"Processa as respostas"* |
+| iniciar_prospeccao | Iniciar prospeccao em uma escola | *"Comeca prospeccao da X"* |
+| buscar_whatsapp_escolas | Achar telefones (Brasilapi/Web) | *"Busca whatsapp das publicas"* |
+| ver_agenda | Ver reunioes proximas | *"Minha agenda essa semana"* |
+| registrar_resultado_reuniao | Pos-reuniao (interesse/follow-up) | *"Reuniao foi otima, follow-up 7 dias"* |
 
-### WhatsApp para Escolas (1 tool)
+### Analytics e tracking (5)
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
-| enviar_whatsapp_escola | Mensagem WhatsApp pra escola | *"Manda WhatsApp pro La Salle"* |
+|---|---|---|
+| tracking_emails | Aberturas/cliques/respostas | *"Taxa de abertura"* |
+| estatisticas_gerais | KPIs gerais do CRM | *"Quantas escolas temos?"* |
+| relatorio_pipeline | Relatorio completo | *"Como esta meu pipeline?"* |
+| funil_vendas | Funil de conversao | *"Mostra o funil"* |
+| melhor_horario | Horario otimo de envio | *"Qual melhor hora pra enviar?"* |
 
-### Analytics (5 tools)
+### Reunioes e interacoes (6) — inclui novidade 2026-04
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
-| tracking_emails | Resultados de emails | *"Taxa de abertura dos emails"* |
-| relatorio_pipeline | Relatório completo | *"Como está meu pipeline?"* |
-| funil_vendas | Funil de conversão | *"Me mostra o funil"* |
-| melhor_horario | Horário ideal de envio | *"Qual melhor horário pra enviar?"* |
-| estatisticas_gerais | Stats do CRM | *"Quantas escolas temos?"* |
+|---|---|---|
+| registrar_reuniao | Agendar reuniao | *"Reuniao com Anchieta amanha 14h"* |
+| **registrar_contato** | **Logar contato manual fora da plataforma** | ***"Liguei pra escola X, falamos sobre matricula 2027"*** |
+| registrar_proposta_enviada | Enviou proposta comercial | *"Mandei proposta pra Anchieta, R$ 8k/mes"* |
+| marcar_cliente_ganho | Fechou venda | *"Anchieta fechou, R$ 100k anuais"* |
+| marcar_perdido | Perda com motivo | *"Anchieta perdido, escolheram concorrente"* |
+| consultar_interacoes | Historico de interacoes | *"Historico do Anchieta"* |
 
-### Integrações (2 tools)
+### HubSpot (2)
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
-| sincronizar_hubspot | Sync com HubSpot | *"Sincroniza com HubSpot"* |
-| score_preditivo | Prever fechamento | *"Quais escolas vão fechar?"* |
+|---|---|---|
+| sincronizar_hubspot | Push CRM -> HubSpot | *"Sync com HubSpot"* |
+| sincronizar_hubspot_puxar | Pull HubSpot -> CRM | *"Puxa atualizacoes do HubSpot"* |
 
-### Gestão (5 tools)
+### Memoria persistente (3)
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
-| registrar_reuniao | Registrar visita/call | *"Registra visita no La Salle"* |
-| consultar_interacoes | Histórico de interações | *"Histórico do Anchieta"* |
+|---|---|---|
+| lembrar_fato | Salvar fato sobre escola/contato | *"Lembra que o diretor da X gosta de futebol"* |
+| buscar_memorias | Recuperar memorias | *"O que sabemos do Anchieta?"* |
+| esquecer_memoria | Apagar memoria | *"Esquece o que falei sobre X"* |
+
+### Campanhas e templates (4)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
 | listar_campanhas | Ver campanhas | *"Campanhas ativas"* |
-| criar_campanha | Nova campanha | *"Cria campanha Privadas POA"* |
+| criar_campanha | Nova campanha segmentada | *"Cria campanha Privadas POA"* |
 | listar_templates | Ver templates de email | *"Lista templates"* |
+| criar_template | Novo template | *"Cria template pos-visita"* |
 
-### Utilitários (3 tools)
+### WhatsApp para escolas (1)
 | Ferramenta | Quando usar | Exemplo |
-|-----------|-------------|---------|
-| criar_template | Novo template de email | *"Cria template pós-visita"* |
-| uso_apis | Créditos de APIs | *"Quantos créditos Apollo restam?"* |
-| consulta_livre | Query customizada no banco | *"Quantas escolas em cada cidade?"* |
+|---|---|---|
+| enviar_whatsapp_escola | Mensagem direta a escola | *"Manda WhatsApp pro La Salle"* |
+
+### Score preditivo ML (3)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| score_preditivo | Probabilidade de fechamento | *"Quais escolas vao fechar?"* |
+| treinar_modelo_preditivo | Re-treinar com dados novos | *"Treina o modelo"* |
+| info_modelo_preditivo | Status/metricas do modelo | *"Status do modelo preditivo"* |
+
+### Intent / sinais de compra (1)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| detectar_sinais_compra | LLM analisa respostas | *"Quem ta dando sinal de compra?"* |
+
+### Urgency Score F2 (3)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| score_urgencia | Score 0-100 + tier | *"Urgencia da escola X"* |
+| proximas_acoes | O que fazer com cada lead | *"Proximas acoes pros HOT"* |
+| digest_urgencia | Resumo diario por tier | *"Manda digest"* |
+
+### Pipeline automatico (3)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| ver_pipeline_automatico | Status do pipeline agendado | *"Como ta o pipeline auto?"* |
+| configurar_pipeline_automatico | Mudar horario/limite/dias | *"Roda pipeline 9h, segunda a sexta"* |
+| rodar_pipeline_automatico_agora | Disparar manualmente | *"Roda o pipeline agora"* |
+
+### Follow-ups comportamentais (3)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| classificar_followups | Classifica leads (Hot Click etc) | *"Classifica os follow-ups"* |
+| configurar_followups_automaticos | Liga/desliga + janela | *"Liga follow-ups automaticos 9h"* |
+| rodar_followups_agora | Gera follow-ups na fila | *"Gera follow-ups agora"* |
+
+### Modo de autonomia (2)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| ver_modo_autonomia | Ver Manual/Semi/Full-Auto | *"Em qual modo eu to?"* |
+| alterar_modo_autonomia | Trocar modo + guardrails | *"Muda pra semi-auto"* |
+
+### Inteligencia de escolas (2)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| enriquecer_escolas_web | Web scraping pra dados extras | *"Enriquece via web"* |
+| buscar_sinais_escola | Sinais de mudanca/oportunidade | *"Sinais de compra recentes?"* |
+
+### Utilitarios (3)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| uso_apis | Creditos de APIs externas | *"Quantos creditos Apollo restam?"* |
+| consulta_livre | Query SQL/RPC custom no Supabase | *"Quantas escolas por cidade?"* |
+| diagnostico_sistema | Saude tecnica (Docker, fila, logs) | *"Ta tudo ok?"* |
+
+### Graficos e relatorios (3)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| gerar_graficos_escola | 3 PNGs (Radar, Gap, Trend) pra email | *"Gera graficos da X"* |
+| gerar_relatorio_escola | One Page Report (HTML auto-contido) | *"Gera relatorio do Anchieta"* |
+| comparar_escolas | Relatorio comparativo lado-a-lado | *"Compara Anchieta vs Militar"* |
+
+### Skills aprendidas (3)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| padronizar_resposta | Salvar padrao de resposta | *"Padroniza isso pra futuras"* |
+| listar_skills | Ver skills aprendidas | *"Quais skills voce tem?"* |
+| arquivar_skill | Aposentar skill | *"Arquiva a skill X"* |
+
+### ENEM analytics (5)
+| Ferramenta | Quando usar | Exemplo |
+|---|---|---|
+| analisar_performance_escola | Performance ENEM 2024 detalhada | *"Performance do Anchieta no ENEM"* |
+| priorizar_leads_enem | Ranking P1/P2/P3 | *"Quais sao P1 em PoA?"* |
+| buscar_escolas_por_enem | Filtrar escolas por metrica ENEM | *"Escolas com media 700+ em PoA"* |
+| analisar_dados_analytics | Query livre no school_analytics | *"Distribuicao de medias por dependencia"* |
+| analisar_trajetoria_escola | Serie historica de uma escola | *"Trajetoria do Anchieta 2020-2024"* |
 
 ---
 
@@ -540,6 +645,8 @@ O resultado é um score de 0 a 100 — quanto maior, melhor.
       ↓
 9. FOLLOW-UP → "Gera follow-ups" (dia 3, 7, 14)
       ↓
+9.5 CONTATO MANUAL → "Liguei pra X agora, ficaram de retornar amanha"
+      ↓ (registrar_contato — log canal/direcao + opcional avanca status)
 10. REUNIÃO → "Registra visita no La Salle" (após visitar)
       ↓
 11. ANÁLISE → "Como está meu funil?" (gargalos e oportunidades)
@@ -573,3 +680,10 @@ O resultado é um score de 0 a 100 — quanto maior, melhor.
 **Dashboard não abre:**
 - Rode: `venv\Scripts\python.exe -m streamlit run dashboard/app.py`
 - Acesse: `http://localhost:8501`
+
+**Mudei a pasta do projeto e nada funciona:**
+- Veja `docs/RELOCATION.md` — runbook completo de migração:
+  - Recriar `venv/` (paths internos quebram ao mover)
+  - Manter `name: agente-de-vendas` no `docker-compose.yml` para preservar volumes WhatsApp
+  - Atualizar paths em `.claude/settings.local.json` e `scripts/create-shortcuts.ps1`
+  - Copiar histórico de sessões Claude Code (`~/.claude/projects/`)

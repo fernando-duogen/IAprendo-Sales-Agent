@@ -71,7 +71,7 @@ supervisao humana obrigatoria para garantir qualidade e etica em cada interacao.
 | Componente | Descricao |
 |---|---|
 | **Dashboard Streamlit** | Interface web com 10 paginas para gestao completa |
-| **IAlex (WhatsApp)** | Agente de IA conversacional com 73 ferramentas |
+| **IAlex (WhatsApp)** | Agente de IA conversacional com 83 ferramentas |
 | **Supabase** | Banco de dados PostgreSQL com 7+ tabelas |
 | **HubSpot CRM** | Sincronizacao bidirecional de contatos e deals |
 | **Brevo / Gmail** | Envio de emails com tracking completo |
@@ -135,7 +135,7 @@ Camada 1 — Dados           : Supabase (PostgreSQL), CSV MEC, ENEM Analytics
     with c3:
         st.metric("ENEM Analytics", "185k escolas")
     with c4:
-        st.metric("Tools IAlex", "73 ferramentas")
+        st.metric("Tools IAlex", "83 ferramentas")
 
     st.markdown("""
 ---
@@ -421,12 +421,16 @@ importadas e acompanha o progresso de cada uma.
 - Clique em qualquer linha para abrir o detalhe
 
 **Card de Detalhe**
-Ao clicar em uma escola, voce ve um card completo com:
-- **Dados basicos**: Nome, INEP, endereco, telefone, email
-- **Classificacao**: Porte, dependencia administrativa, etapas de ensino
-- **Scores**: Qualification Score, Fit Score, Tech Score, Infra Score
-- **Historico**: Timeline de todas as acoes realizadas
-- **Contatos**: Decisores encontrados (com Power Map)
+Ao clicar em uma escola, voce ve um card completo com 7 abas:
+- **Dados** — edicao inline (nome, endereco, telefone, status, etc)
+- **Performance ENEM** — radar 5 areas, ranking, gap, peer group, trajetoria
+- **Contatos** — decisores encontrados (Power Map)
+- **Mensagens** — emails na fila de aprovacao desta escola
+- **Registrar Contato** *(novo)* — log de contato manual feito fora da plataforma
+  (WhatsApp pessoal, ligacao, email pessoal). Form: canal + direcao + data +
+  contato + observacao + checkboxes para avancar status / Kanban
+- **Historico** — timeline de todas as interacoes registradas
+- **Acoes** — gerar OPR (One Page Report), gerar graficos, comparar, etc.
 
 **Aba Redes**
 - Escolas agrupadas por **CNPJ da mantenedora**
@@ -917,7 +921,7 @@ with tab_ialex:
 
     st.markdown("""
 O **IAlex** e o agente de IA conversacional que opera via WhatsApp. Ele tem
-acesso a **100+ ferramentas** organizadas em 12 categorias. Voce pode fazer
+acesso a **83 ferramentas** organizadas em 12 categorias. Voce pode fazer
 tudo que o dashboard faz — e mais — apenas conversando.
 
 > **Novidades recentes (Abril 2026)**:
@@ -927,6 +931,10 @@ tudo que o dashboard faz — e mais — apenas conversando.
 > - 🩺 **Auto-healing**: sistema se corrige sozinho em problemas conhecidos
 > - 🧠 **Intent Detection com LLM**: analise semantica de respostas (nao so keywords)
 > - 🛡️ **Modos de Autonomia**: Manual / Semi-Auto / Full-Auto com guardrails
+> - 📞 **Registrar Contato Manual** (25/04): tool `registrar_contato` para logar
+>   ligacoes / WhatsApp pessoal / emails feitos fora da plataforma; equivalente
+>   a aba "Registrar Contato" no detalhe da escola — paridade dashboard ↔ IAlex
+> - 🇧🇷 **Briefings em portugues** (25/04): "Sex, 25/04" em vez de "Fri, 25/04"
 
 ### Como Funciona
 1. Envie uma mensagem no WhatsApp para o numero do IAlex
@@ -943,7 +951,7 @@ tudo que o dashboard faz — e mais — apenas conversando.
 """)
 
     st.divider()
-    st.markdown("## Catalogo de 100+ Ferramentas em 12 Categorias")
+    st.markdown("## Catalogo de 83 Ferramentas em 12 Categorias")
 
     st.markdown("### 1. Buscar Escolas (6 ferramentas)")
     st.markdown("""
@@ -1008,7 +1016,7 @@ tudo que o dashboard faz — e mais — apenas conversando.
 | **Listar Templates** | Lista templates disponiveis | "Mostre os templates ativos" |
 """)
 
-    st.markdown("### 6. Contatos (7 ferramentas)")
+    st.markdown("### 6. Contatos e Gestao de Relacionamento (8 ferramentas)")
     st.markdown("""
 | Ferramenta | Descricao | Exemplo de uso |
 |---|---|---|
@@ -1017,8 +1025,17 @@ tudo que o dashboard faz — e mais — apenas conversando.
 | **WhatsApp** | Prepara mensagem WhatsApp | "Mande WhatsApp para a diretora Z" |
 | **Detalhes** | Info completa do contato | "Detalhes do contato #15" |
 | **Reuniao** | Agenda/registra reuniao | "Registre reuniao com escola X amanha" |
+| **Registrar Contato** *(novo)* | Loga contato MANUAL feito fora da plataforma (WhatsApp pessoal, ligacao, email) — atualiza historico, `last_contacted_at` e (opcional) avanca status para `contacted` | "Liguei pra escola X agora, falamos sobre matricula 2027" |
 | **Proposta** | Registra envio de proposta | "Registre proposta para escola Y" |
 | **Ganho/Perdido** | Marca resultado | "Escola X virou cliente" |
+
+> 💡 **Quando usar `Registrar Contato` (manual) vs as outras**:
+> - **Reuniao**: voce vai ter / teve uma reuniao agendada (com data/hora)
+> - **Registrar Contato**: foi um contato pontual fora da plataforma (ligacao,
+>   WhatsApp pessoal, email pessoal). Logado com canal + direcao (voce contatou
+>   ou eles te contataram) + observacao opcional.
+> - **WhatsApp** (acima): mandar mensagem AUTOMATICA via Evolution API (entra
+>   na fila de aprovacao, nao eh contato manual).
 """)
 
     st.markdown("### 7. Integracoes (2 ferramentas)")
@@ -1268,6 +1285,19 @@ O sistema **TENTA remediar** antes de pedir ajuda:
 para acoes ambiguas (intervencao humana necessaria). Frequencia: a cada 30 min.
 """)
 
+    st.divider()
+
+    st.markdown("## 6. Helpers e Documentos Operacionais")
+    st.markdown("""
+Algumas peças que **nao tem UI** mas valem conhecer:
+
+| Helper / Doc | Onde fica | Para que serve |
+|---|---|---|
+| **`utils/date_pt.py`** | `utils/` | Traduz `%a/%A/%b/%B` do strftime para pt_BR sem depender de `locale.setlocale`. Briefings agora mostram "Sex, 25/04" em vez de "Fri, 25/04". Usado em `agent/brain.py` (briefing matinal). |
+| **`docs/RELOCATION.md`** | `docs/` | Runbook de mudanca de pasta do projeto (ex: de OneDrive para `C:\\Dev\\`). Cobre: recriar venv, preservar volumes Docker do WhatsApp via `name:` no compose, atualizar paths em `.claude/settings.local.json`, copiar historico de sessoes Claude Code. Use quando precisar mover o projeto. |
+| **`docs/ANNUAL_UPDATE.md`** | `docs/` | Runbook anual: importar nova edicao do ENEM e Censo, recalcular peer groups e rankings. |
+""")
+
     if st.button("Ir para Configuracoes", key="config_go"):
         st.switch_page("pages/9_⚙️_Configuracoes.py")
 
@@ -1288,6 +1318,33 @@ with tab_boas:
 | **Quarta** | Enriquecer escolas qualificadas. Buscar contatos. | 45 min |
 | **Quinta** | Gerar e aprovar emails. Revisar fila de aprovacao. | 60 min |
 | **Sexta** | Acompanhar respostas. Processar follow-ups. Atualizar pipeline. | 45 min |
+""")
+
+    st.divider()
+
+    st.markdown("## Logue cada contato MANUAL (regra basica de CRM)")
+    st.markdown("""
+Sempre que voce ligar, mandar WhatsApp pessoal ou email pessoal para uma escola
+**fora da plataforma**, registre o contato. Isso mantem o CRM como **fonte unica
+de verdade** e ajuda em 3 frentes:
+
+1. **Historico completo** na timeline da escola — qualquer pessoa olhando
+   sabe que aquele lead ja foi contatado (e como).
+2. **Status do pipeline atualizado** — o lead deixa de aparecer como
+   `qualified` parado e vai para `contacted`, refletindo a realidade.
+3. **IAlex contextualizado** — o agente sabe do contato e nao vai sugerir
+   "envia primeiro email" para uma escola com quem voce ja conversou.
+
+### Como registrar (2 caminhos equivalentes)
+
+| Canal | Como |
+|---|---|
+| **Dashboard** | Escolas → ver detalhe → aba **Registrar Contato** → escolher canal/direcao/data + observacao + checkboxes |
+| **IAlex (WhatsApp)** | Frase natural: *"Liguei pra Anchieta agora, falamos sobre matricula 2027"* — IAlex usa a tool `registrar_contato` |
+
+Ambos chamam o mesmo helper canonico (`db.register_manual_interaction()`), entao
+o resultado e identico: linha em `interactions` + `last_contacted_at` atualizado
++ status avancado (se aplicavel).
 """)
 
     st.divider()
@@ -1533,7 +1590,46 @@ e quer criar uma campanha coordenada.
    - Veja resultados por unidade e consolidado
 """)
 
-    with st.expander("Cenario 5: Analise semanal de resultados"):
+    with st.expander("Cenario 5: Registrar contato manual feito fora da plataforma"):
+        st.markdown("""
+**Situacao**: Voce ligou pra escola Anchieta no celular pessoal, ou trocou
+WhatsApp com a diretora pelo numero direto, ou respondeu um email pessoal —
+nada disso foi via IAprendo, mas precisa entrar no historico.
+
+**Caminho A — pelo dashboard** (mais visual):
+
+1. Va em **Escolas** > busque "Anchieta" > clique para ver detalhe
+2. Abra a aba **Registrar Contato**
+3. Preencha:
+   - **Canal**: WhatsApp / Ligacao / Email
+   - **Direcao**: "Eu contatei" ou "Eles me contataram"
+   - **Data**: padrao hoje (mude se foi outro dia)
+   - **Contato (decisor)**: opcional, se for um decisor especifico
+   - **Observacao**: o que foi conversado, proximos passos
+   - **Mover status para 'Contatado'**: marcado por padrao
+4. Clique **Registrar contato**
+5. O contato vai aparecer na aba **Historico** dessa escola
+
+**Caminho B — pelo IAlex** (mais rapido se voce ja esta no WhatsApp):
+
+Mande qualquer uma destas frases:
+- *"Liguei pra escola Anchieta agora, falamos sobre matricula 2027"*
+- *"Mandei whatsapp pro diretor da Marista, marcamos reuniao quinta"*
+- *"Recebi email da Sao Bento respondendo a proposta"*
+
+O IAlex entende canal+direcao automaticamente, registra a interacao, atualiza
+`last_contacted_at` e responde *"Contato registrado: Anchieta (call_made) | Status -> contacted"*.
+
+**Quando NAO registrar**:
+- Se foi reuniao (use **Registra reuniao** — tem campo de outcome)
+- Se foi mensagem via Evolution API (ja entra automatico no historico)
+- Se foi email enviado pela plataforma (ja entra automatico via tracking)
+
+**Comece a usar**: faz parte do **ciclo semanal** acima — sempre que
+trocar contato fora da plataforma, registre. Mantem o CRM 100% confiavel.
+""")
+
+    with st.expander("Cenario 6: Analise semanal de resultados"):
         st.markdown("""
 **Situacao**: Toda segunda-feira voce precisa analisar a semana anterior
 e planejar a proxima.
@@ -1587,6 +1683,13 @@ with tab_glossario:
          "sem revisao humana. Toda mensagem gerada pela IA passa por essa fila "
          "antes do envio."),
 
+        ("Commercial Stage",
+         "Pipeline Kanban da escola, separado do `status`. Valores: prospectado, "
+         "contatado, respondeu, reuniao, proposta, cliente, perdido. O `status` "
+         "(raw/qualified/contacted/...) reflete o estado tecnico no funil; o "
+         "`commercial_stage` reflete o estado COMERCIAL no Kanban. Podem avancar "
+         "juntos via `register_manual_interaction(advance_commercial_stage=True)`."),
+
         ("BNCC",
          "Base Nacional Comum Curricular. Documento normativo do MEC que define "
          "o conjunto de aprendizagens essenciais que todos os alunos devem "
@@ -1626,6 +1729,19 @@ with tab_glossario:
          "Teixeira. Orgao do MEC responsavel pelo Censo Escolar e ENEM. "
          "Cada escola tem um codigo INEP unico (8 digitos) que e a chave "
          "primaria no nosso sistema."),
+
+        ("last_contacted_at",
+         "Campo da tabela `companies` que guarda a data/hora do ultimo contato "
+         "(automatico ou manual) com a escola. Atualizado por: envio de email, "
+         "registro de reuniao, e a tool `registrar_contato` (ou aba 'Registrar "
+         "Contato' no detalhe da escola). Util para filtrar 'leads inativos'."),
+
+        ("Manual Interaction",
+         "Contato realizado FORA da plataforma (WhatsApp pessoal, ligacao, "
+         "email pessoal) e logado manualmente. Insere uma linha em `interactions` "
+         "com `metadata.manual=true` e `metadata.source='dashboard'|'ialex'`. "
+         "Equivalente entre dashboard (aba Registrar Contato) e IAlex (tool "
+         "`registrar_contato`) — mesma operacao atomica."),
 
         ("Infra Score",
          "Componente do Qualification Score que avalia a infraestrutura "
@@ -1705,5 +1821,5 @@ with tab_glossario:
 
     st.divider()
     st.caption(
-        "Manual IAprendo Sales Agent v1.0 — Ultima atualizacao: Abril 2026"
+        "Manual IAprendo Sales Agent v1.0 — Ultima atualizacao: 25/04/2026"
     )
