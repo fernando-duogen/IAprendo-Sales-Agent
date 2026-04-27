@@ -22,6 +22,9 @@ from dashboard.theme import (
 
 apply_theme_no_config()
 
+from dashboard._auth_gate import require_auth
+require_auth()
+
 # =============================================================================
 # Header
 # =============================================================================
@@ -1287,7 +1290,50 @@ para acoes ambiguas (intervencao humana necessaria). Frequencia: a cada 30 min.
 
     st.divider()
 
-    st.markdown("## 6. Helpers e Documentos Operacionais")
+    st.markdown("## 6. Multi-user (login + identidades)")
+    st.markdown("""
+A plataforma suporta **multiplos usuarios** com identidade propria. Cada email
+gerado/enviado usa a identidade do usuario **ativo** (quem esta logado no
+dashboard ou quem mandou o comando no WhatsApp).
+
+### Como funciona
+
+| Cenario | Como a identidade e resolvida |
+|---|---|
+| **Dashboard (Streamlit)** | Login com usuario/senha (`streamlit-authenticator`). Sender ativo = usuario logado. Visivel na sidebar. |
+| **IAlex (WhatsApp)** | Auto-detectado pelo numero do telefone que enviou. Fernando manda do dele -> IAlex assina como Fernando. Lizianne manda do dela -> IAlex assina como Lizianne. |
+| **Workflows automaticos (cron)** | Fallback para `settings.YOUR_*` (.env, padrao Fernando). |
+
+### Onde mexer
+- **Cadastro/edicao de usuarios**: `config/users.yaml` (gitignored). Use `config/users.yaml.example` como template.
+- **Trocar senha**: sidebar do dashboard apos login -> "Trocar senha".
+- **Adicionar novo numero ao IAlex**: em `config/users.yaml`, sob o usuario, adicione em `whatsapp_numbers:` os 2 formatos (com e sem nono digito).
+- **Adicionar novo usuario**:
+  1. Gerar hash da senha: `venv/Scripts/python.exe -c "import bcrypt; print(bcrypt.hashpw(b'<senha>', bcrypt.gensalt()).decode())"`
+  2. Editar `config/users.yaml`, copiar bloco existente, ajustar campos
+  3. Atualizar `IALEX_AUTHORIZED_NUMBERS` no `.env` para o numero ser aceito pelo IAlex
+  4. Reiniciar IAlex (Streamlit auto-reload pega na hora)
+
+### Brevo (envio de email)
+Cada usuario tem seu proprio `email` no perfil. Para emails saírem de cada
+remetente, **ambos os emails precisam estar verificados como sender** na conta
+Brevo (mesma conta — adicionar sender adicional no painel Brevo). Sem
+verificacao, o Brevo rejeita o envio.
+
+### Streamlit Cloud
+O `config/users.yaml` e gitignored — para o Cloud, configure via Secrets:
+estrutura TOML equivalente em **Settings -> Secrets** com `[auth.credentials.usernames.<user>]` etc.
+
+### Helper canonico
+`utils/sender_profile.py` resolve a identidade ativa em qualquer ponto do
+codigo: `from utils.sender_profile import get_active_sender; sender = get_active_sender()`.
+Usado em `agents/writer.py`, `agent/brain.py`, `tools/brevo_sender.py` e
+`workflows/follow_up_manager.py`.
+""")
+
+    st.divider()
+
+    st.markdown("## 7. Helpers e Documentos Operacionais")
     st.markdown("""
 Algumas peças que **nao tem UI** mas valem conhecer:
 

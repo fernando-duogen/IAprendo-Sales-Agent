@@ -42,6 +42,8 @@ O IAlex é um **agente de vendas inteligente** que funciona via WhatsApp. Ele é
 
 📂 **Runbook de migração** (2026-04-25) — `docs/RELOCATION.md` documenta como mover o projeto para outro local sem perder sessão WhatsApp, virtualenv ou histórico Claude Code.
 
+👥 **Multi-user — login no dashboard + IAlex multi-identidade** (2026-04-27) — Login com usuário/senha no Streamlit (Fernando, Lizianne, ...). Cada email gerado/enviado usa a identidade do usuário ativo (nome, email, telefone). No IAlex, a identidade é **auto-detectada pelo número do WhatsApp** que enviou o comando — Fernando manda do WhatsApp dele, IAlex assina como Fernando. Lizianne manda do dela, IAlex assina como Lizianne. Configuração em `config/users.yaml` (gitignored).
+
 ---
 
 ## Arquitetura — Como funciona por baixo

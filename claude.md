@@ -186,6 +186,7 @@ else:
 - ✅ Integração HubSpot bidirecional (Supabase ↔ HubSpot push + pull)
 - ✅ Tracking completo (enviado→entregue→aberto→clicado→respondido)
 - ✅ Registro manual de interações (aba "Registrar Contato" em Escolas + tool `registrar_contato` no IAlex) — paridade dashboard ↔ WhatsApp para logar contatos feitos fora da plataforma
+- ✅ Multi-user (login + identidade dinâmica) — `streamlit-authenticator` no dashboard + `utils/sender_profile.py` resolve identidade ativa em tempo real (writer/brain/brevo). IAlex detecta automaticamente quem mandou o comando pelo número do WhatsApp e usa o perfil correto (Fernando ou Lizianne, configurados em `config/users.yaml`)
 
 ### Inteligência ENEM (Fase 1-3, Abril 2026)
 - ✅ 185k escolas com analytics ENEM 2024 (média, ranking, peer group, potencial)
@@ -279,7 +280,7 @@ else:
 ```
 agente-vendas-iaprendo/
 ├── 📁 agent/            (brain.py + tools/enem_tools.py + webhook + bridge)
-├── 📁 config/           (settings.py)
+├── 📁 config/           (settings.py + users.yaml [gitignored, multi-user auth])
 ├── 📁 database/         (supabase_client + migrations/)
 ├── 📁 agents/           (qualifier, enricher, writer, etc.)
 ├── 📁 integrations/     (hubspot, brevo, memory, email_rag, outlook)
@@ -288,7 +289,7 @@ agente-vendas-iaprendo/
 ├── 📁 workflows/        (daily_pipeline, follow_up_manager, send_approved)
 ├── 📁 dashboard/        (app.py + pages/ + theme.py + helpers/)
 ├── 📁 prompts/          (templates de email)
-├── 📁 utils/            (logger, template_renderer, fit_score, role_classifier, date_pt)
+├── 📁 utils/            (logger, template_renderer, fit_score, role_classifier, date_pt, sender_profile)
 ├── 📁 scripts/          (historico/, inspect, generate_migration, fix_mojibake)
 ├── 📁 docs/             (ARCHITECTURE, IMPLEMENTATION, STANDARDS, ANNUAL_UPDATE, RELOCATION)
 └── 📁 data/             (raw/ CSVs MEC + ENEM)
