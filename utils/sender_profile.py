@@ -80,6 +80,7 @@ def _load_profiles() -> Dict[str, Dict[str, Any]]:
                 "email": info.get("email", ""),
                 "phone": info.get("phone", ""),
                 "role": info.get("role", ""),
+                "is_admin": bool(info.get("is_admin", False)),
                 "whatsapp_numbers": [
                     "".join(c for c in str(n) if c.isdigit())
                     for n in (info.get("whatsapp_numbers") or [])
@@ -112,6 +113,7 @@ def _fallback_profile() -> Dict[str, Any]:
         "email": os.getenv("YOUR_EMAIL", ""),
         "phone": os.getenv("YOUR_PHONE", ""),
         "role": "",
+        "is_admin": False,  # default fallback nao tem privilegio
         "whatsapp_numbers": [],
     }
 
@@ -209,3 +211,19 @@ def get_active_sender_username() -> Optional[str]:
     if profile.get("username") == "default":
         return None
     return profile.get("username")
+
+
+def is_admin(username: Optional[str] = None) -> bool:
+    """Retorna True se o usuario for super admin (campo is_admin: true no yaml).
+
+    Args:
+        username: chave do perfil. Se None, usa o sender ativo.
+
+    Returns:
+        True se admin, False senao (inclui usuarios nao cadastrados).
+    """
+    if username is None:
+        profile = get_active_sender()
+    else:
+        profile = get_profile_by_username(username) or {}
+    return bool(profile.get("is_admin", False))

@@ -18,6 +18,10 @@ credentials:
       password: $2b$12$<hash_bcrypt_aqui>
       phone: "+5551999999999"
       role: CEO
+      # is_admin: true permite o usuario forcar `from_username` em tools sensiveis
+      # (ex: enviar_email_teste como outro usuario). NAO-admin so envia como ele
+      # mesmo. Defina apenas para usuarios de confianca total.
+      is_admin: true
       # Numeros de WhatsApp do usuario (com e sem nono digito)
       # Usados pelo IAlex para detectar quem mandou o comando
       whatsapp_numbers:

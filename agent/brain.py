@@ -385,13 +385,16 @@ TOOLS = [
                        "Dois modos: (1) teste generico (corpo padrao), (2) teste de um email especifico "
                        "da fila (envia copia exata do que sera enviado, incluindo assinatura). "
                        "Use quando Fernando disser: 'manda um teste pra mim', 'quero testar o email', "
-                       "'envia teste', 'testa a assinatura', 'como fica o email na caixa de entrada?'.",
+                       "'envia teste', 'testa a assinatura', 'como fica o email na caixa de entrada?'. "
+                       "ADMIN OVERRIDE: usuarios com is_admin=true podem passar `from_username` para "
+                       "forcar o remetente (ex: Fernando testa como Lizianne para validar Brevo sender).",
         "input_schema": {
             "type": "object",
             "properties": {
                 "email_destino": {"type": "string", "description": "Email para onde enviar o teste (default: YOUR_EMAIL do .env)"},
                 "queue_id": {"type": "string", "description": "Se informado, envia copia exata deste email da fila (com assinatura). Se nao, envia corpo generico de teste."},
-                "posicao": {"type": "integer", "description": "Posicao na fila pendente (1=primeiro). Alternativa ao queue_id."}
+                "posicao": {"type": "integer", "description": "Posicao na fila pendente (1=primeiro). Alternativa ao queue_id."},
+                "from_username": {"type": "string", "description": "ADMIN-ONLY. Forca usar o remetente deste username (ex: 'lizianne'). So funciona se quem chamou eh admin (is_admin=true). Sem isso, usa o sender ativo padrao."}
             }
         }
     },
@@ -2314,6 +2317,33 @@ def _handle_enviar_email_teste(params: Dict) -> str:
         if not email_destino or "@" not in email_destino:
             return json.dumps({"erro": "Informe o email de destino ou configure YOUR_EMAIL no .env"})
 
+        # ADMIN OVERRIDE: from_username permite super admin forcar remetente.
+        # Util para Fernando validar que email da Lizianne aceita no Brevo
+        # sem precisar do celular dela.
+        override_from_email = None
+        override_from_name = None
+        from_username = (params.get("from_username") or "").strip().lower()
+        if from_username:
+            from utils.sender_profile import is_admin, get_profile_by_username
+            if not is_admin():
+                return json.dumps({
+                    "erro": (
+                        "Permissao negada — apenas usuarios com is_admin=true "
+                        "podem forcar remetente via from_username."
+                    )
+                }, ensure_ascii=False)
+            target_profile = get_profile_by_username(from_username)
+            if not target_profile:
+                return json.dumps({
+                    "erro": f"Username '{from_username}' nao encontrado em config/users.yaml."
+                }, ensure_ascii=False)
+            override_from_email = target_profile.get("email")
+            override_from_name = target_profile.get("name")
+            if not override_from_email:
+                return json.dumps({
+                    "erro": f"Username '{from_username}' nao tem email configurado."
+                }, ensure_ascii=False)
+
         # Se queue_id ou posicao: enviar copia exata de um email da fila
         qid = _resolve_queue_id(params)
         chart_urls_parsed = None
@@ -2340,7 +2370,12 @@ def _handle_enviar_email_teste(params: Dict) -> str:
                     chart_urls_parsed = _raw_charts
         else:
             subject = "[TESTE] Preview de email IAprendo"
-            _test_sender = settings.YOUR_NAME or "Fernando"
+            # Nome no corpo: se override admin, usa o forcado; senao sender ativo; fallback YOUR_NAME
+            if override_from_name:
+                _test_sender = override_from_name
+            else:
+                from utils.sender_profile import get_active_sender as _gas_inline
+                _test_sender = _gas_inline().get("name") or settings.YOUR_NAME or "Fernando"
             body = (
                 "Oi! Este e um email de teste do IAlex.\n\n"
                 "Verifique:\n"
@@ -2352,6 +2387,8 @@ def _handle_enviar_email_teste(params: Dict) -> str:
                 f"{_test_sender}\nIAprendo"
             )
             modo = "email generico de teste"
+            if override_from_name:
+                modo += f" (admin override: from={override_from_name})"
 
         from tools.brevo_sender import BrevoSender
         sender = BrevoSender()
@@ -2361,6 +2398,8 @@ def _handle_enviar_email_teste(params: Dict) -> str:
             subject=subject,
             body=body,
             chart_urls=chart_urls_parsed,
+            from_email=override_from_email,
+            from_name=override_from_name,
         )
         _charts_note = ""
         if chart_urls_parsed:
