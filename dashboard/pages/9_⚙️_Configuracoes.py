@@ -27,6 +27,9 @@ from integrations.pipeline_config import pipeline_config
 
 apply_theme_no_config()
 
+from dashboard._auth_gate import require_auth
+require_auth()
+
 # =============================================================================
 # Header
 # =============================================================================

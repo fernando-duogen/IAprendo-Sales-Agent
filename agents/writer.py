@@ -168,6 +168,9 @@ class WriterAgent(BaseAgent):
         # RAG: buscar exemplos de emails que funcionaram
         examples_section = self._get_rag_examples_section(company, contact)
 
+        # Remetente ativo (multi-user): dashboard logado OU IAlex thread-local OU fallback YOUR_*
+        from utils.sender_profile import get_active_sender
+        _sender = get_active_sender()
         prompt = (
             self.prompt_template
             .replace("{examples}", examples_section)
@@ -175,8 +178,8 @@ class WriterAgent(BaseAgent):
             .replace("{contact_data}", self._format_contact_section(contact, all_contacts))
             .replace("{qualification_data}", self._format_qualification_section(company))
             .replace("{sender_info}", self._format_sender_section())
-            .replace("{sender_name}", settings.YOUR_NAME)
-            .replace("{sender_email}", settings.YOUR_EMAIL)
+            .replace("{sender_name}", _sender.get("name") or settings.YOUR_NAME)
+            .replace("{sender_email}", _sender.get("email") or settings.YOUR_EMAIL)
             .replace("{company_name}", getattr(settings, "COMPANY_NAME", "IAprendo"))
             .replace("{website}", getattr(settings, "COMPANY_WEBSITE", ""))
             .replace("{meeting_link}", getattr(settings, "HUBSPOT_MEETING_LINK", ""))
@@ -429,8 +432,18 @@ class WriterAgent(BaseAgent):
 
     def _format_sender_section(self) -> str:
         from config.settings import settings
+        from utils.sender_profile import get_active_sender
+        _sender = get_active_sender()
         nl = chr(10)
-        return (f"- **Nome**: {settings.YOUR_NAME}" + nl + f"- **Email**: {settings.YOUR_EMAIL}" + nl + f"- **Empresa**: {getattr(settings, 'COMPANY_NAME', 'IAprendo')}" + nl + f"- **Telefone**: {getattr(settings, 'YOUR_PHONE', '')}")
+        name = _sender.get("name") or settings.YOUR_NAME
+        email = _sender.get("email") or settings.YOUR_EMAIL
+        phone = _sender.get("phone") or getattr(settings, "YOUR_PHONE", "")
+        return (
+            f"- **Nome**: {name}" + nl
+            + f"- **Email**: {email}" + nl
+            + f"- **Empresa**: {getattr(settings, 'COMPANY_NAME', 'IAprendo')}" + nl
+            + f"- **Telefone**: {phone}"
+        )
 
     # =========================================================================
     # Anti-duplicata

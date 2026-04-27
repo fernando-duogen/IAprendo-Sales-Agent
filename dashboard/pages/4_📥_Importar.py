@@ -16,6 +16,9 @@ from config.settings import settings
 
 apply_theme_no_config()
 
+from dashboard._auth_gate import require_auth
+require_auth()
+
 # --- Header ---
 breadcrumb(["IAprendo", "Importar Escolas"])
 st.markdown("# Importar Escolas")

@@ -21,6 +21,9 @@ from utils.rede_name import resolver_nome_rede, set_rede_override, has_rede_over
 
 apply_theme_no_config()
 
+from dashboard._auth_gate import require_auth
+require_auth()
+
 STATUS_PT = {
     "raw": "Novo",
     "qualified": "Qualificado",

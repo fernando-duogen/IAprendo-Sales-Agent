@@ -27,6 +27,9 @@ from dashboard.theme import (
 
 apply_theme_no_config()
 
+from dashboard._auth_gate import require_auth
+require_auth()
+
 # ---------------------------------------------------------------------------
 # Imports compartilhados (falha segura)
 # ---------------------------------------------------------------------------

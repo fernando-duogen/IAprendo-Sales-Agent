@@ -21,6 +21,9 @@ from dashboard.theme import (
 from database.supabase_client import db
 
 apply_theme_no_config()
+
+from dashboard._auth_gate import require_auth
+require_auth()
 breadcrumb(["IAprendo", "Analytics"])
 st.markdown("# 📈 Analytics — ROI e Conversao")
 st.caption("Visao completa de performance: funil, taxas, custos e oportunidades.")

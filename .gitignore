@@ -48,6 +48,7 @@ test_*.html
 credentials.json
 token.pickle
 config/secrets.json
+config/users.yaml
 
 # Logs
 logs/

@@ -5039,12 +5039,17 @@ def _handle_gerar_email(params: Dict) -> str:
                 pass
 
             # Substituir variaveis no template (inclui graficos e report)
+            # Sender ativo: dashboard logado, IAlex thread-local (esposa pode mandar pelo WhatsApp dela), ou fallback YOUR_*
+            from utils.sender_profile import get_active_sender as _get_active_sender_inline
+            _active = _get_active_sender_inline()
+            _active_name = _active.get("name") or os.getenv("YOUR_NAME", "Fernando")
+            _active_email = _active.get("email") or os.getenv("YOUR_EMAIL", "")
             subject = (tpl.get("subject_template") or "").replace(
                 "{school_name}", escola.get("name", "")
             ).replace("{contact_name}", contato_nome).replace(
                 "{contact_first_name}", contact_first
             ).replace("{city}", escola.get("city", "")).replace(
-                "{sender_name}", os.getenv("YOUR_NAME", "Fernando")
+                "{sender_name}", _active_name
             )
 
             body = (tpl.get("body_template") or "").replace(
@@ -5052,8 +5057,8 @@ def _handle_gerar_email(params: Dict) -> str:
             ).replace("{contact_name}", contato_nome).replace(
                 "{contact_first_name}", contact_first
             ).replace("{city}", escola.get("city", "")).replace(
-                "{sender_name}", os.getenv("YOUR_NAME", "Fernando")
-            ).replace("{sender_email}", os.getenv("YOUR_EMAIL", "")).replace(
+                "{sender_name}", _active_name
+            ).replace("{sender_email}", _active_email).replace(
                 "{company_name}", os.getenv("COMPANY_NAME", "IAprendo")
             ).replace("{meeting_link}", meeting_link).replace(
                 "{meeting_link_text}", meeting_link_text
@@ -5276,7 +5281,10 @@ INDIQUE a persona escolhida no campo "reasoning" da resposta.
     # Gerar email usando OpenAI
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
     model = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
-    _sender_name = settings.YOUR_NAME or "Fernando"
+    # Sender ativo (multi-user): respeita IAlex sender por numero ou dashboard logado
+    from utils.sender_profile import get_active_sender as _get_active_sender_iniciar
+    _active_iniciar = _get_active_sender_iniciar()
+    _sender_name = _active_iniciar.get("name") or settings.YOUR_NAME or "Fernando"
     _sender_first = _sender_name.split()[0] if _sender_name else "Fernando"
     prompt = f"""Voce e {_sender_name}, fundador da IAprendo. Escreva um email CURTO e HUMANO para uma escola, SEM CARA DE IA.
 
@@ -5423,7 +5431,10 @@ Responda em JSON valido:
         # Usa o prompt dedicado de WhatsApp (anti-IA, 3 frases max, 400 chars)
         contact_first = contato_nome.split()[0] if contato_nome else "Diretor(a)"
         meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
-        sender_name_short = os.getenv("YOUR_NAME", "Fernando").split()[0]
+        from utils.sender_profile import get_active_sender as _get_active_sender_wpp
+        _active_wpp = _get_active_sender_wpp()
+        _wpp_full = _active_wpp.get("name") or os.getenv("YOUR_NAME", "Fernando")
+        sender_name_short = _wpp_full.split()[0] if _wpp_full else "Fernando"
         company_name = os.getenv("COMPANY_NAME", "IAprendo")
 
         # Montar school_data ja formatado (igual ao email) — reusa dados_ricos_section

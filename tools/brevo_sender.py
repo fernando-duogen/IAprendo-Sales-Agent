@@ -30,24 +30,40 @@ class BrevoSender:
             logger.warning("BREVO_API_KEY nao configurada - envio desabilitado")
 
     def send_email(self, to_email: str, to_name: str, subject: str, body: str,
-                   queue_id: str = None, chart_urls: list = None) -> Dict[str, Any]:
+                   queue_id: str = None, chart_urls: list = None,
+                   from_email: str = None, from_name: str = None) -> Dict[str, Any]:
         """
         Envia um email via Brevo. Retorna dict com status, message_id e tracking_id.
 
         Args:
             chart_urls: Lista opcional de dicts {"type": str, "url": str, "alt": str}
                         para injetar graficos de insight no HTML do email.
+            from_email: Email do remetente. Se None, resolve via get_active_sender()
+                        e cai em settings.BREVO_SENDER_EMAIL/YOUR_EMAIL como fallback.
+                        IMPORTANTE: o email deve estar verificado como sender no Brevo.
+            from_name: Nome do remetente. Mesma resolucao do from_email.
         """
         if not self._enabled:
             logger.warning("BREVO DESABILITADO - email NAO enviado (configure BREVO_API_KEY no .env)",
                 extra={"to": to_email, "subject": subject[:40]})
             return {"success": False, "error": "BREVO_API_KEY nao configurada"}
 
+        # Resolver remetente — explicitamente passado > sender ativo > fallback init
+        if not from_email or not from_name:
+            try:
+                from utils.sender_profile import get_active_sender
+                _active = get_active_sender()
+                from_email = from_email or _active.get("email") or self.from_email
+                from_name = from_name or _active.get("name") or self.from_name
+            except Exception:
+                from_email = from_email or self.from_email
+                from_name = from_name or self.from_name
+
         # Gerar tracking ID unico para rastreamento
         tracking_id = str(uuid.uuid4())
 
         payload = {
-            "sender": {"name": self.from_name, "email": self.from_email},
+            "sender": {"name": from_name, "email": from_email},
             "to": [{"email": to_email, "name": to_name}],
             "subject": subject,
             "htmlContent": self._text_to_html(body, with_signature=True, chart_urls=chart_urls),

@@ -463,14 +463,31 @@ def _extract_buttons(reply: str):
 
 def _process_message_async(sender: str, text: str, msg_id: str):
     """Processa mensagem em thread separada para nao bloquear webhook."""
+    from utils.sender_profile import (
+        get_profile_by_whatsapp_number,
+        set_active_sender_for_thread,
+        clear_active_sender_for_thread,
+    )
+
+    # Resolver perfil multi-user pelo numero do WhatsApp.
+    # Fernando, Lizianne ou outros cadastrados em config/users.yaml.
+    # Set via thread-local para que get_active_sender() em writer.py / brain.py
+    # respeite a identidade de quem mandou o comando.
+    _profile = get_profile_by_whatsapp_number(sender)
+    _username = _profile.get("username") if _profile else "fernando"
+    set_active_sender_for_thread(_username)
+
     try:
-        logger.info("IAlex processando mensagem", extra={"sender": sender, "text": text[:100]})
+        logger.info(
+            "IAlex processando mensagem",
+            extra={"sender": sender, "active_user": _username, "text": text[:100]},
+        )
 
         brain = get_brain()
         bridge = get_bridge()
 
         # Brain processa com tool use (consulta banco direto)
-        result = brain.process_message(text, sender="fernando")
+        result = brain.process_message(text, sender=_username)
         full_reply = result.get("reply", "Desculpe, nao entendi. Pode reformular?")
 
         # Converter Markdown para formatacao WhatsApp
@@ -514,6 +531,10 @@ def _process_message_async(sender: str, text: str, msg_id: str):
             bridge.send_message(sender, f"Ops, tive um erro interno. Tente novamente. ({str(e)[:50]})")
         except Exception:
             pass
+    finally:
+        # Sempre limpar o sender ativo da thread — evita vazar identidade
+        # entre requests concorrentes.
+        clear_active_sender_for_thread()
 
 
 @app.route("/webhook", methods=["POST"])

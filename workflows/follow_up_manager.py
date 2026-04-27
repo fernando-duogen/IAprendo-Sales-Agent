@@ -612,10 +612,13 @@ def generate_follow_up(
     # Truncar body original para nao estourar contexto
     original_body_trimmed = (original_body or "")[:800]
 
+    # Sender ativo: dashboard logado ou IAlex thread-local ou fallback YOUR_*
+    from utils.sender_profile import get_active_sender as _get_active_sender_fu
+    _active_fu = _get_active_sender_fu()
     prompt = (
         template
-        .replace("{sender_name}", settings.YOUR_NAME)
-        .replace("{sender_email}", settings.YOUR_EMAIL)
+        .replace("{sender_name}", _active_fu.get("name") or settings.YOUR_NAME)
+        .replace("{sender_email}", _active_fu.get("email") or settings.YOUR_EMAIL)
         .replace("{company_name}", getattr(settings, "COMPANY_NAME", "IAprendo"))
         .replace("{school_data}", school_data_text)
         .replace("{contact_data}", contact_data_text)

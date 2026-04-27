@@ -1,0 +1,36 @@
+# IAprendo Sales Agent — Template de credenciais de usuarios
+# Copie para config/users.yaml e preencha com dados reais.
+# config/users.yaml e gitignored — NUNCA commite credenciais reais.
+#
+# Estrutura: streamlit-authenticator 0.4.x
+#
+# Para gerar hash de senha:
+#   venv/Scripts/python.exe -c "import bcrypt; print(bcrypt.hashpw(b'<senha>', bcrypt.gensalt()).decode())"
+#
+# Para gerar cookie key:
+#   venv/Scripts/python.exe -c "import secrets; print(secrets.token_urlsafe(32))"
+
+credentials:
+  usernames:
+    seu_usuario:
+      email: seu@email.com
+      name: Seu Nome Completo
+      password: $2b$12$<hash_bcrypt_aqui>
+      phone: "+5551999999999"
+      role: CEO
+      # Numeros de WhatsApp do usuario (com e sem nono digito)
+      # Usados pelo IAlex para detectar quem mandou o comando
+      whatsapp_numbers:
+        - "5551999999999"
+        - "555199999999"
+      failed_login_attempts: 0
+      logged_in: false
+
+cookie:
+  expiry_days: 30
+  key: <cookie_key_aleatoria_aqui>
+  name: iaprendo_auth
+
+pre-authorized:
+  emails:
+    - seu@email.com

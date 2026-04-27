@@ -22,6 +22,9 @@ from dashboard.theme import (
 
 apply_theme_no_config()
 
+from dashboard._auth_gate import require_auth
+require_auth()
+
 try:
     from database.supabase_client import db
 except Exception as e:

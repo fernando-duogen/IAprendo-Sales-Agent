@@ -25,6 +25,88 @@ from dashboard.theme import (
 apply_theme()
 
 # =========================================================================
+# AUTENTICACAO (streamlit-authenticator) — gate de TODAS as paginas
+# =========================================================================
+# config/users.yaml e gitignored. Localmente vem do arquivo.
+# No Streamlit Cloud: copiar secao "auth" do users.yaml para Secrets (TOML).
+import yaml
+import streamlit_authenticator as stauth
+
+_AUTH_PATH = ROOT / "config" / "users.yaml"
+_auth_config = None
+try:
+    if _AUTH_PATH.exists():
+        with _AUTH_PATH.open("r", encoding="utf-8") as _f:
+            _auth_config = yaml.safe_load(_f)
+    elif "auth" in st.secrets:
+        # Streamlit Cloud: secrets.toml com secao [auth] estruturada
+        _auth_config = dict(st.secrets["auth"])
+except Exception as _e:
+    st.error(f"Falha ao carregar config de autenticacao: {_e}")
+    st.stop()
+
+if not _auth_config:
+    st.error(
+        "Config de autenticacao nao encontrada. "
+        "Crie `config/users.yaml` (use `config/users.yaml.example` como template) "
+        "ou configure `st.secrets['auth']` no Streamlit Cloud."
+    )
+    st.stop()
+
+authenticator = stauth.Authenticate(
+    _auth_config["credentials"],
+    _auth_config["cookie"]["name"],
+    _auth_config["cookie"]["key"],
+    _auth_config["cookie"]["expiry_days"],
+)
+
+# Renderiza form de login (popula st.session_state automaticamente)
+try:
+    authenticator.login(location="main")
+except Exception as _e:
+    st.error(f"Erro no login: {_e}")
+    st.stop()
+
+if st.session_state.get("authentication_status") is False:
+    st.error("Usuario ou senha incorretos")
+    st.stop()
+elif st.session_state.get("authentication_status") is None:
+    st.warning("Faca login para acessar o IAprendo")
+    st.info(
+        "**Primeira vez?** Senhas iniciais foram entregues pelo administrador. "
+        "Recomendamos trocar pela sidebar apos o login."
+    )
+    st.stop()
+
+# A partir daqui o usuario esta autenticado
+_current_user = _auth_config["credentials"]["usernames"].get(
+    st.session_state.get("username", ""), {}
+)
+
+# Sidebar: identidade + logout + trocar senha
+with st.sidebar:
+    st.markdown(
+        f'<div style="padding:12px 8px;border-bottom:1px solid #E0E0E0;margin-bottom:8px">'
+        f'<div style="font-size:11px;color:#9E9E9E;text-transform:uppercase;letter-spacing:0.5px">Logado como</div>'
+        f'<div style="font-weight:600;color:#212121">{_current_user.get("name", "?")}</div>'
+        f'<div style="font-size:12px;color:#757575">{_current_user.get("email", "?")} &middot; {_current_user.get("role", "")}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    authenticator.logout("Sair", location="sidebar")
+    with st.expander("Trocar senha", icon=":material/lock_reset:"):
+        try:
+            if authenticator.reset_password(
+                st.session_state.get("username"), location="main"
+            ):
+                # Persistir nova senha no users.yaml
+                with _AUTH_PATH.open("w", encoding="utf-8") as _f:
+                    yaml.safe_dump(_auth_config, _f, allow_unicode=True, sort_keys=False)
+                st.success("Senha atualizada. Use no proximo login.")
+        except Exception as _e:
+            st.error(f"Erro ao trocar senha: {_e}")
+
+# =========================================================================
 # HEADER
 # =========================================================================
 st.markdown(

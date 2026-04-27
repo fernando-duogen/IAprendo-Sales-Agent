@@ -3,6 +3,9 @@
 # Para desenvolvimento local completo: pip install -r requirements-full.txt
 
 streamlit>=1.32.0
+streamlit-authenticator>=0.4.0   # Login multi-user (Fernando, Lizianne)
+bcrypt>=4.0.0                    # Hash de senhas (dep do streamlit-authenticator)
+pyyaml>=6.0                      # Config users.yaml
 supabase>=2.0.0
 pandas>=2.0.0
 plotly>=5.15.0
