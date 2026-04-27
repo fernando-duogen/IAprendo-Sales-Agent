@@ -445,14 +445,19 @@ TOOLS = [
     },
     {
         "name": "rejeitar_mensagem",
-        "description": "Rejeita uma mensagem na fila de aprovacao. Registra o motivo da rejeicao.",
+        "description": (
+            "Rejeita uma mensagem na fila de aprovacao. Registra o motivo da rejeicao. "
+            "Suporta REJEICAO EM MASSA: passe `rejeitar_todas: true` para rejeitar TODAS "
+            "as pendentes (mesmo motivo aplicado a cada uma). Use quando Fernando disser "
+            "'rejeita todas', 'rejeita as pendentes', 'descarta a fila' etc."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "queue_id": {"type": "string", "description": "ID da mensagem na fila"},
-                "motivo": {"type": "string", "description": "Motivo da rejeicao"}
-            },
-            "required": ["queue_id"]
+                "queue_id": {"type": "string", "description": "ID da mensagem na fila (ignorado se rejeitar_todas=true)"},
+                "motivo": {"type": "string", "description": "Motivo da rejeicao (aplicado a todas se em massa)"},
+                "rejeitar_todas": {"type": "boolean", "description": "Se true, rejeita TODAS as mensagens em status pending"}
+            }
         }
     },
     {
@@ -5554,11 +5559,54 @@ Responda em JSON valido:
 
 
 def _handle_rejeitar_mensagem(params: Dict) -> str:
+    motivo = params.get("motivo", "Rejeitado pelo Fernando")
+
+    # MODO EM MASSA — espelha o botao "Rejeitar todas" do dashboard
+    # (dashboard/pages/6_✉️_Comunicacao.py: bulk reject loop)
+    if params.get("rejeitar_todas"):
+        try:
+            from approval_queue.queue_manager import QueueManager
+            qm = QueueManager()
+            pending = (
+                db.client.table("approval_queue")
+                .select("id")
+                .eq("status", "pending")
+                .execute()
+                .data
+                or []
+            )
+            if not pending:
+                return json.dumps(
+                    {"sucesso": True, "rejeitadas": 0, "mensagem": "Fila ja estava vazia."},
+                    ensure_ascii=False,
+                )
+            count = 0
+            erros = 0
+            for p in pending:
+                try:
+                    if qm.reject(p["id"], reason=motivo):
+                        count += 1
+                except Exception:
+                    erros += 1
+            return json.dumps(
+                {
+                    "sucesso": True,
+                    "rejeitadas": count,
+                    "erros": erros,
+                    "total_pendentes": len(pending),
+                    "motivo": motivo,
+                    "mensagem": f"{count} mensagem(ns) rejeitada(s) em massa.",
+                },
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            return json.dumps({"erro": f"Erro ao rejeitar em massa: {str(e)[:200]}"})
+
+    # MODO INDIVIDUAL (comportamento original)
     queue_id = params.get("queue_id")
     if not queue_id:
-        return json.dumps({"erro": "Informe o ID da mensagem."})
+        return json.dumps({"erro": "Informe queue_id ou use rejeitar_todas=true."})
 
-    motivo = params.get("motivo", "Rejeitado pelo Fernando")
     db.client.table("approval_queue").update({
         "status": "rejected",
         "rejection_reason": motivo,
