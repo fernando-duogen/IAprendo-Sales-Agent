@@ -245,6 +245,13 @@ with tab_aprovacao:
             if st.button("Verificar novamente", icon=":material/refresh:", key="aprov_refresh"):
                 st.rerun()
         else:
+            # Sinalizacao de contagem (1.1 Quick Win)
+            from dashboard._table_count import render_count
+            render_count(
+                total=total,
+                label_singular="mensagem pendente",
+                label_plural="mensagens pendentes",
+            )
             st.markdown("")
 
             # --- Acoes em massa ---

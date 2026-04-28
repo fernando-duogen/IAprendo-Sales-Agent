@@ -217,6 +217,15 @@ if n_filtered > 0:
     preview.columns = ["Escola", "Cidade", "UF", "Tipo", "Porte"][: len(preview_cols)]
     if "Porte" in preview.columns:
         preview["Porte"] = preview["Porte"].str.strip().map(PORTE_PT).fillna(preview["Porte"])
+    # Sinalizacao de contagem (1.1 Quick Win)
+    from dashboard._table_count import render_count
+    render_count(
+        total=len(df) if "df" in dir() else n_filtered,
+        filtered=n_filtered,
+        label_singular="escola elegivel",
+        label_plural="escolas elegiveis",
+    )
+    st.caption(f"Mostrando primeiras 15 — total importavel: {n_filtered:,}")
     st.dataframe(preview, use_container_width=True, hide_index=True)
 else:
     alert_banner("Ajuste os filtros para ver o preview.", "info")

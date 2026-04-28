@@ -1963,6 +1963,29 @@ else:
             "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
         }
 
+        # Sinalizacao de contagem (1.1 Quick Win): total/filtrado/filtros ativos
+        from dashboard._table_count import render_count, summarize_filters
+        _filter_summary = summarize_filters({
+            "status": sel_status if sel_status else None,
+            "tipo": sel_type if sel_type else None,
+            "score": f"{score_range[0]}-{score_range[1]}" if (score_range[0] > 0 or score_range[1] < 100) else None,
+            "tech": sel_tech if sel_tech else None,
+            "fonte": sel_fonte if sel_fonte else None,
+            "fund>=": min_fund if min_fund > 0 else None,
+            "medio>=": min_medio if min_medio > 0 else None,
+            "fit>=": min_fit if min_fit > 0 else None,
+            "potencial": sel_pot if sel_pot else None,
+            "trajetoria": sel_traj if sel_traj else None,
+            "gap<=": max_gap if max_gap < 200 else None,
+            "busca": search if search else None,
+        })
+        render_count(
+            total=len(df),
+            filtered=len(df_f),
+            filter_summary=_filter_summary,
+            label_singular="escola",
+            label_plural="escolas",
+        )
         st.caption("Clique em uma linha para ver acoes. Edite Status e Score diretamente na tabela.")
 
         df_f_reset = df_f.reset_index(drop=True)

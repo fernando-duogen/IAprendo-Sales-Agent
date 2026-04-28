@@ -649,6 +649,15 @@ def render_descoberta():
             "id": c["id"],
         } for c in sorted(filtered_sig, key=lambda x: (x.get("_fit") or 0), reverse=True)])
 
+        # Sinalizacao de contagem (1.1 Quick Win)
+        from dashboard._table_count import render_count
+        render_count(
+            total=len(all_companies),
+            filtered=len(filtered_sig),
+            label_singular="escola",
+            label_plural="escolas",
+        )
+
         edited_sig = st.data_editor(
             df_sig[["Sel", "Escola", "Cidade", "Score", "Fit", "Alvo", "Tech", "Tipo"]],
             use_container_width=True,
