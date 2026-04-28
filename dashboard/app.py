@@ -94,54 +94,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     authenticator.logout("Sair", location="sidebar")
-
-    # === ATALHOS RAPIDOS (1.5 Quick Win) ===
-    # Acessivel de qualquer pagina via sidebar — reduz cliques pra acoes diarias.
-    try:
-        from database.supabase_client import db as _db_sb
-
-        _pending_count = 0
-        try:
-            _r = _db_sb.client.table("approval_queue").select(
-                "id", count="exact"
-            ).eq("status", "pending").execute()
-            _pending_count = _r.count or 0
-        except Exception:
-            pass
-
-        st.markdown(
-            '<div style="padding:8px 4px 4px 4px;font-size:10px;color:#9E9E9E;'
-            'text-transform:uppercase;letter-spacing:0.5px;font-weight:600">'
-            'Atalhos</div>',
-            unsafe_allow_html=True,
-        )
-        _badge = f" ({_pending_count})" if _pending_count > 0 else ""
-        if st.button(
-            f"Aprovar fila{_badge}",
-            icon=":material/mark_email_read:",
-            use_container_width=True,
-            type="primary" if _pending_count > 0 else "secondary",
-            key="sidebar_aprovar",
-        ):
-            st.switch_page("pages/6_✉️_Comunicacao.py")
-        if st.button(
-            "Hot leads",
-            icon=":material/local_fire_department:",
-            use_container_width=True,
-            key="sidebar_hot",
-        ):
-            st.switch_page("pages/7_🎯_Inteligencia.py")
-        if st.button(
-            "Mapa de escolas",
-            icon=":material/map:",
-            use_container_width=True,
-            key="sidebar_mapa",
-        ):
-            st.switch_page("pages/3_🗺️_Mapa.py")
-    except Exception as _e_short:
-        # Falha silenciosa — atalhos sao opcionais
-        pass
-
     with st.expander("Trocar senha", icon=":material/lock_reset:"):
         try:
             if authenticator.reset_password(
