@@ -263,11 +263,11 @@ try:
     with row1[0]:
         if action_tile("school", "Escolas", f"{total} cadastradas",
                        color=COLORS["primary"], key="tile_escolas"):
-            st.switch_page("pages/1_🏫_Escolas.py")
+            st.switch_page("pages/2_🏫_Escolas.py")
     with row1[1]:
         if action_tile("contacts", "Contatos", "Gerenciar decisores",
                        color=COLORS["success"], key="tile_contatos"):
-            st.switch_page("pages/2_👥_Contatos.py")
+            st.switch_page("pages/3_👥_Contatos.py")
     with row1[2]:
         if action_tile("rocket_launch", "Pipeline", "Execucao + pipeline comercial",
                        color=COLORS["primary"], key="tile_pipeline"):
@@ -298,7 +298,7 @@ try:
     with row2[2]:
         if action_tile("map", "Mapa", "Visualizacao geografica",
                        color=COLORS["primary"], key="tile_mapa"):
-            st.switch_page("pages/3_🗺️_Mapa.py")
+            st.switch_page("pages/4_🗺️_Mapa.py")
     with row2[3]:
         # Tile Diagnostico — health check com cor dinamica
         @st.cache_data(ttl=30, show_spinner=False)

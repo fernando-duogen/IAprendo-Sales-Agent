@@ -334,7 +334,7 @@ with tab_passo:
 5. Aguarde — o sistema importa e cria os registros no Supabase
 """)
     if st.button("Ir para Importar", key="passo_importar"):
-        st.switch_page("pages/4_📥_Importar.py")
+        st.switch_page("pages/1_📥_Importar.py")
 
     st.divider()
 
@@ -347,7 +347,7 @@ with tab_passo:
 5. Confira: nome, endereco, telefone, INEP, porte, etapas de ensino
 """)
     if st.button("Ir para Escolas", key="passo_escolas"):
-        st.switch_page("pages/1_🏫_Escolas.py")
+        st.switch_page("pages/2_🏫_Escolas.py")
 
     st.divider()
 
@@ -455,7 +455,7 @@ Ao clicar em uma escola, voce ve um card completo com 7 abas:
 """)
 
     if st.button("Ir para Escolas", key="crm_escolas"):
-        st.switch_page("pages/1_🏫_Escolas.py")
+        st.switch_page("pages/2_🏫_Escolas.py")
 
     st.divider()
 
@@ -478,7 +478,7 @@ O Power Map e uma visualizacao hierarquica dos contatos por escola:
 """)
 
     if st.button("Ir para Contatos", key="crm_contatos"):
-        st.switch_page("pages/2_👥_Contatos.py")
+        st.switch_page("pages/3_👥_Contatos.py")
 
     st.divider()
 
@@ -501,7 +501,7 @@ O **Mapa** mostra todas as escolas do CRM posicionadas geograficamente.
 """)
 
     if st.button("Ir para Mapa", key="crm_mapa"):
-        st.switch_page("pages/3_🗺️_Mapa.py")
+        st.switch_page("pages/4_🗺️_Mapa.py")
 
     st.divider()
 
@@ -534,7 +534,7 @@ A pagina **Importar** permite adicionar escolas ao CRM a partir do CSV oficial d
 """)
 
     if st.button("Ir para Importar", key="crm_importar"):
-        st.switch_page("pages/4_📥_Importar.py")
+        st.switch_page("pages/1_📥_Importar.py")
 
 
 # #############################################################################

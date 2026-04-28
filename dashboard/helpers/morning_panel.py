@@ -51,7 +51,7 @@ def _acao_imediata_items() -> List[Dict[str, Any]]:
                 "title": f"Lead CRITICO: {lead.get('name', '?')}",
                 "detail": f"Score {lead.get('urgency_score', '?')}/100 | {lead.get('city', '?')}/{lead.get('state', '?')}",
                 "action_label": "Ver escola",
-                "action_page": "pages/1_🏫_Escolas.py",
+                "action_page": "pages/2_🏫_Escolas.py",
                 "action_params": {"company_id": lead.get("id")},
                 "company_id": lead.get("id"),
                 "type": "critical_lead",

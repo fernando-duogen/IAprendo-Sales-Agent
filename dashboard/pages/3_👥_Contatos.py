@@ -668,7 +668,7 @@ with tab_lista:
                     if st.button("Ver escola", icon=":material/school:",
                                   use_container_width=True, key="ct_flat_school"):
                         st.session_state["escola_detail_id"] = sel["company_id"]
-                        st.switch_page("pages/1_🏫_Escolas.py")
+                        st.switch_page("pages/2_🏫_Escolas.py")
                 with ac4:
                     if st.button("Excluir", icon=":material/delete:",
                                   use_container_width=True, key="ct_flat_del"):
@@ -737,7 +737,7 @@ with tab_lista:
                             if st.button("Ver escola", icon=":material/school:",
                                           use_container_width=True, key=f"ct_g_sch_{sel_ct['id']}"):
                                 st.session_state["escola_detail_id"] = sel_ct["company_id"]
-                                st.switch_page("pages/1_🏫_Escolas.py")
+                                st.switch_page("pages/2_🏫_Escolas.py")
                         with ac4:
                             if st.button("Excluir", icon=":material/delete:",
                                           use_container_width=True, key=f"ct_g_del_{sel_ct['id']}"):
