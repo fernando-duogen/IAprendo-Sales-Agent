@@ -5,7 +5,7 @@ import pandas as pd
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -1013,6 +1013,91 @@ if st.session_state.escola_detail_id:
     # Caption com motivo do Fit
     if fit_val is not None and fit_motivo:
         st.caption(f"**Fit IAprendo:** {fit_motivo}")
+
+    # === CTA Contextual (1.3 Quick Win): proxima acao sugerida ===
+    # Sugere a proxima coisa a fazer baseado no estado da escola.
+    # Helper inline para nao precisar refatorar imports.
+    def _next_action_for_school(comp: Dict[str, Any], cid: str) -> Optional[Dict[str, str]]:
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        st_status = (comp.get("status") or "raw").lower()
+
+        # Quantos contatos com email?
+        try:
+            _contacts_resp = db.client.table("contacts").select(
+                "id, email"
+            ).eq("company_id", cid).execute()
+            _contacts = _contacts_resp.data or []
+            n_contacts = len(_contacts)
+            n_with_email = sum(1 for c in _contacts if (c.get("email") or "").strip())
+        except Exception:
+            n_contacts, n_with_email = 0, 0
+
+        # Mensagens na fila e ultimas enviadas
+        try:
+            _q = db.client.table("approval_queue").select(
+                "id, status, sent_at, replied_at, follow_up_number"
+            ).eq("company_id", cid).order("created_at", desc=True).execute()
+            _queue = _q.data or []
+        except Exception:
+            _queue = []
+
+        n_pending = sum(1 for q in _queue if q.get("status") == "pending")
+        sent_items = [q for q in _queue if q.get("status") == "sent" and q.get("sent_at")]
+        last_sent = sent_items[0] if sent_items else None
+        has_reply = any(q.get("replied_at") for q in _queue)
+
+        # Decision tree (do mais especifico para o mais geral)
+        if has_reply:
+            return {"label": "Responder a escola (resposta recebida)", "icon": "reply",
+                    "page": "Comunicacao", "type": "success"}
+        if n_pending > 0:
+            return {"label": f"Aprovar mensagem(ns) na fila ({n_pending})", "icon": "mark_email_read",
+                    "page": "Comunicacao", "type": "warning"}
+        if last_sent:
+            try:
+                _sent_dt = _dt.fromisoformat(str(last_sent["sent_at"]).replace("Z", "+00:00"))
+                _days_since = (_dt.now(_tz.utc) - _sent_dt).days
+            except Exception:
+                _days_since = 0
+            if _days_since < 3:
+                return {"label": f"Aguardando resposta (enviado ha {_days_since} dia(s))", "icon": "schedule",
+                        "page": None, "type": "info"}
+            else:
+                return {"label": f"Gerar follow-up ({_days_since} dias sem resposta)", "icon": "autorenew",
+                        "page": "Comunicacao", "type": "warning"}
+        if st_status == "raw":
+            return {"label": "Qualificar com IA (selecione no Pipeline)", "icon": "grading",
+                    "page": "Pipeline", "type": "info"}
+        if st_status in ("qualified", "filtered") and n_contacts == 0:
+            return {"label": "Buscar decisores (Enriquecer no Pipeline)", "icon": "person_search",
+                    "page": "Pipeline", "type": "info"}
+        if n_contacts > 0 and n_with_email == 0:
+            return {"label": "Buscar emails dos contatos (Pipeline > Enriquecer)", "icon": "alternate_email",
+                    "page": "Pipeline", "type": "warning"}
+        if st_status in ("qualified", "enriched") and n_with_email > 0:
+            return {"label": "Gerar email (Pipeline > Gerar)", "icon": "edit_note",
+                    "page": "Pipeline", "type": "info"}
+        return None
+
+    _next = _next_action_for_school(company, company_id)
+    if _next:
+        _color_map = {"warning": "#FFA726", "info": "#29B6F6", "success": "#66BB6A"}
+        _bg = _color_map.get(_next["type"], "#90A4AE")
+        _btn_html = ""
+        if _next.get("page"):
+            _btn_html = (
+                f'<a href="/{_next["page"]}" target="_self" '
+                f'style="background:{_bg};color:white;padding:6px 14px;border-radius:6px;'
+                f'text-decoration:none;font-weight:600;font-size:13px;margin-left:auto">'
+                f'Ir para {_next["page"]} &rarr;</a>'
+            )
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;'
+            f'background:{_bg}15;border-left:4px solid {_bg};border-radius:6px;margin:8px 0">'
+            f'<span style="font-size:14px;color:#212121">'
+            f'<strong>Proxima acao:</strong> {_next["label"]}</span>{_btn_html}</div>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown("")
 
