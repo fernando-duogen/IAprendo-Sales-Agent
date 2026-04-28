@@ -104,22 +104,46 @@ def _check_schema_migrations() -> Dict[str, Any]:
 
 
 def _check_bridge_whatsapp() -> Dict[str, Any]:
-    """Checa bridge Baileys (porta 8090)."""
+    """Checa Evolution API (porta 8080) + status da instancia ialex.
+
+    Arquitetura atual: Docker Compose roda Evolution API (Baileys + Postgres + Redis).
+    A 'bridge' Node.js antiga (porta 8090) foi descontinuada — checagem agora
+    eh feita via WhatsAppBridge.check_connection() que bate em /instance/connectionState.
+    """
     try:
-        r = requests.get("http://localhost:8090/status", timeout=3)
-        if r.status_code != 200:
-            return {"status": "critical", "detail": f"bridge HTTP {r.status_code}"}
-        data = r.json()
-        if not data.get("connected"):
+        from agent.whatsapp_bridge import WhatsAppBridge
+        bridge = WhatsAppBridge()
+        state = bridge.check_connection()
+        if not state:
+            return {
+                "status": "critical",
+                "detail": "Evolution API nao responde (porta 8080). Verifique 'docker compose up -d'.",
+            }
+        instance_state = state.get("state", state.get("instance", {}).get("state", "unknown"))
+        if instance_state == "open":
+            return {"status": "healthy", "detail": "WhatsApp conectado (Evolution API)"}
+        elif instance_state == "connecting":
             return {
                 "status": "degraded",
-                "detail": "bridge rodando mas WhatsApp desconectado — re-parear em /pair",
+                "detail": "WhatsApp em conexao — aguarde alguns segundos e recarregue.",
             }
-        return {"status": "healthy", "detail": "bridge conectado ao WhatsApp"}
+        elif instance_state in ("close", "closed"):
+            return {
+                "status": "critical",
+                "detail": "WhatsApp desconectado. Acesse Evolution Manager (8080) e re-pareie a instancia 'ialex'.",
+            }
+        else:
+            return {
+                "status": "degraded",
+                "detail": f"WhatsApp em estado desconhecido: {instance_state}",
+            }
     except requests.exceptions.ConnectionError:
-        return {"status": "critical", "detail": "bridge nao esta rodando (porta 8090)"}
+        return {
+            "status": "critical",
+            "detail": "Evolution API nao esta rodando (porta 8080). Rode 'docker compose up -d'.",
+        }
     except Exception as e:
-        return {"status": "unknown", "detail": f"erro ao checar bridge: {e}"}
+        return {"status": "unknown", "detail": f"erro ao checar Evolution API: {str(e)[:100]}"}
 
 
 def _check_webhook_flask() -> Dict[str, Any]:
