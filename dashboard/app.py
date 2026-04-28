@@ -219,15 +219,42 @@ try:
     except Exception:
         unread = 0
 
-    # === ALERT BANNERS ===
+    # === FAIXA "HOJE" (1.2 Quick Win) ===
+    # Substitui os 4 alert_banners separados por uma faixa unica enxuta.
+    # Se tudo zero -> nao renderiza nada (dia tranquilo, zero ruido visual).
+    try:
+        from datetime import timezone, timedelta
+        _cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        _replies_24h = db.client.table("approval_queue").select("id", count="exact").gte(
+            "replied_at", _cutoff_24h
+        ).execute()
+        replies_24h = _replies_24h.count or 0
+    except Exception:
+        replies_24h = 0
+
+    _hoje_parts = []
     if pending > 0:
-        alert_banner(f"<strong>{pending} email(s)</strong> aguardando sua aprovacao na Fila de Aprovacao", "warning")
+        _hoje_parts.append(
+            f'<a href="/Comunicacao" target="_self" style="text-decoration:none;color:inherit"><strong>{pending}</strong> aprovacoes pendentes</a>'
+        )
     if approved > 0:
-        alert_banner(f"<strong>{approved} email(s)</strong> aprovados prontos para envio", "success")
+        _hoje_parts.append(f'<strong>{approved}</strong> prontos pra envio')
     if due_count > 0:
-        alert_banner(f"<strong>{due_count} escola(s)</strong> precisam de follow-up", "info")
+        _hoje_parts.append(
+            f'<a href="/Comunicacao" target="_self" style="text-decoration:none;color:inherit"><strong>{due_count}</strong> follow-ups devidos</a>'
+        )
+    if replies_24h > 0:
+        _hoje_parts.append(f'<strong>{replies_24h}</strong> respostas (24h)')
     if unread > 0:
-        alert_banner(f"<strong>{unread} notificacao(oes)</strong> nao lida(s)", "info")
+        _hoje_parts.append(f'<strong>{unread}</strong> notificacoes')
+
+    if _hoje_parts:
+        from utils.date_pt import dia_semana_pt
+        _hoje_label = f"{dia_semana_pt(datetime.now()).lower()} {datetime.now().strftime('%d/%m')}"
+        alert_banner(
+            f"&#9728; <strong>Hoje ({_hoje_label})</strong>: " + " &middot; ".join(_hoje_parts),
+            "info",
+        )
 
     # === PAINEL (grid 4+3 tiles — sem redundancia com HubSpot futuro) ===
     section_header("Painel", "dashboard")
