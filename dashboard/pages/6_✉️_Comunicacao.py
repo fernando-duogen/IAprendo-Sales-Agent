@@ -254,95 +254,96 @@ with tab_aprovacao:
             )
             st.markdown("")
 
-            # --- Acoes em massa ---
-            with st.expander("Acoes em massa", icon=":material/bolt:"):
-                bulk_c1, bulk_c2, bulk_c3 = st.columns(3)
-                with bulk_c1:
-                    if st.button(f"Rejeitar todas ({total})", icon=":material/block:",
-                                 help="Rejeita todas as mensagens pendentes", use_container_width=True,
-                                 key="bulk_reject_btn"):
-                        st.session_state["confirm_bulk_reject"] = True
-                with bulk_c2:
-                    if st.button(f"Excluir todas ({total})", icon=":material/delete:",
-                                 help="Remove todas da fila (nao rejeita, apaga)", use_container_width=True,
-                                 key="bulk_delete_btn"):
-                        st.session_state["confirm_bulk_delete_queue"] = True
-                with bulk_c3:
-                    if st.button("Aprovar todas", icon=":material/done_all:",
-                                 help="Aprova todas as mensagens pendentes", use_container_width=True,
-                                 key="bulk_approve_btn"):
-                        st.session_state["confirm_bulk_approve"] = True
+            # --- Acoes em massa (1.4 Quick Win: visiveis, nao mais em expander) ---
+            st.caption("Acoes em massa")
+            bulk_c1, bulk_c2, bulk_c3 = st.columns(3)
+            with bulk_c1:
+                if st.button(f"Rejeitar todas ({total})", icon=":material/block:",
+                             help="Rejeita todas as mensagens pendentes", use_container_width=True,
+                             key="bulk_reject_btn"):
+                    st.session_state["confirm_bulk_reject"] = True
+            with bulk_c2:
+                if st.button(f"Excluir todas ({total})", icon=":material/delete:",
+                             help="Remove todas da fila (nao rejeita, apaga)", use_container_width=True,
+                             key="bulk_delete_btn"):
+                    st.session_state["confirm_bulk_delete_queue"] = True
+            with bulk_c3:
+                if st.button("Aprovar todas", icon=":material/done_all:",
+                             help="Aprova todas as mensagens pendentes", use_container_width=True,
+                             key="bulk_approve_btn"):
+                    st.session_state["confirm_bulk_approve"] = True
 
-                if st.session_state.get("confirm_bulk_reject"):
-                    reason = st.text_input("Motivo da rejeicao em massa (opcional):", key="bulk_reject_reason")
-                    br1, br2 = st.columns(2)
-                    with br1:
-                        if st.button("Sim, rejeitar todas", type="primary", key="confirm_bulk_reject_yes"):
-                            count = 0
-                            for p in pending:
-                                if queue_manager.reject(p["id"], reason=reason):
-                                    count += 1
-                            st.success(f"{count} mensagens rejeitadas.")
-                            st.session_state.pop("confirm_bulk_reject", None)
-                            st.rerun()
-                    with br2:
-                        if st.button("Cancelar", key="cancel_bulk_reject"):
-                            st.session_state.pop("confirm_bulk_reject", None)
-                            st.rerun()
+            # Confirmacoes ficam ABAIXO dos botoes (largura total, fora das colunas)
+            if st.session_state.get("confirm_bulk_reject"):
+                reason = st.text_input("Motivo da rejeicao em massa (opcional):", key="bulk_reject_reason")
+                br1, br2 = st.columns(2)
+                with br1:
+                    if st.button("Sim, rejeitar todas", type="primary", key="confirm_bulk_reject_yes"):
+                        count = 0
+                        for p in pending:
+                            if queue_manager.reject(p["id"], reason=reason):
+                                count += 1
+                        st.success(f"{count} mensagens rejeitadas.")
+                        st.session_state.pop("confirm_bulk_reject", None)
+                        st.rerun()
+                with br2:
+                    if st.button("Cancelar", key="cancel_bulk_reject"):
+                        st.session_state.pop("confirm_bulk_reject", None)
+                        st.rerun()
 
-                if st.session_state.get("confirm_bulk_delete_queue"):
-                    alert_banner("Isso vai APAGAR as mensagens da fila (nao apenas rejeitar). As escolas poderao receber novas mensagens no proximo pipeline.", "warning")
-                    bd1, bd2 = st.columns(2)
-                    with bd1:
-                        if st.button("Sim, excluir todas da fila", type="primary", key="confirm_bulk_delete_yes"):
-                            count = 0
-                            for p in pending:
-                                try:
-                                    db.client.table("approval_queue").delete().eq("id", p["id"]).execute()
-                                    count += 1
-                                except Exception:
-                                    pass
-                            st.success(f"{count} mensagens excluidas da fila.")
-                            st.session_state.pop("confirm_bulk_delete_queue", None)
-                            st.rerun()
-                    with bd2:
-                        if st.button("Cancelar", key="cancel_bulk_delete"):
-                            st.session_state.pop("confirm_bulk_delete_queue", None)
-                            st.rerun()
+            if st.session_state.get("confirm_bulk_delete_queue"):
+                alert_banner("Isso vai APAGAR as mensagens da fila (nao apenas rejeitar). As escolas poderao receber novas mensagens no proximo pipeline.", "warning")
+                bd1, bd2 = st.columns(2)
+                with bd1:
+                    if st.button("Sim, excluir todas da fila", type="primary", key="confirm_bulk_delete_yes"):
+                        count = 0
+                        for p in pending:
+                            try:
+                                db.client.table("approval_queue").delete().eq("id", p["id"]).execute()
+                                count += 1
+                            except Exception:
+                                pass
+                        st.success(f"{count} mensagens excluidas da fila.")
+                        st.session_state.pop("confirm_bulk_delete_queue", None)
+                        st.rerun()
+                with bd2:
+                    if st.button("Cancelar", key="cancel_bulk_delete"):
+                        st.session_state.pop("confirm_bulk_delete_queue", None)
+                        st.rerun()
 
-                if st.session_state.get("confirm_bulk_approve"):
-                    alert_banner("Isso vai APROVAR todas as mensagens pendentes.", "warning")
+            if st.session_state.get("confirm_bulk_approve"):
+                alert_banner("Isso vai APROVAR todas as mensagens pendentes.", "warning")
 
-                    bulk_schedule = st.toggle("Agendar envio em massa", value=False, key="bulk_schedule_toggle")
-                    bulk_sched_iso = None
-                    if bulk_schedule:
-                        bc1, bc2 = st.columns(2)
-                        with bc1:
-                            bulk_date = st.date_input("Data", value=datetime.now().date() + timedelta(days=1), min_value=datetime.now().date(), key="bulk_sched_date")
-                        with bc2:
-                            bulk_time = st.time_input("Horario", value=dtime(8, 0), key="bulk_sched_time")
-                        bulk_sched_dt = datetime.combine(bulk_date, bulk_time, tzinfo=timezone(timedelta(hours=-3)))
-                        bulk_sched_iso = bulk_sched_dt.isoformat()
-                        st.caption(f"Todas serao enviadas em {bulk_date.strftime('%d/%m/%Y')} as {bulk_time.strftime('%H:%M')}")
+                bulk_schedule = st.toggle("Agendar envio em massa", value=False, key="bulk_schedule_toggle")
+                bulk_sched_iso = None
+                if bulk_schedule:
+                    bc1, bc2 = st.columns(2)
+                    with bc1:
+                        bulk_date = st.date_input("Data", value=datetime.now().date() + timedelta(days=1), min_value=datetime.now().date(), key="bulk_sched_date")
+                    with bc2:
+                        bulk_time = st.time_input("Horario", value=dtime(8, 0), key="bulk_sched_time")
+                    bulk_sched_dt = datetime.combine(bulk_date, bulk_time, tzinfo=timezone(timedelta(hours=-3)))
+                    bulk_sched_iso = bulk_sched_dt.isoformat()
+                    st.caption(f"Todas serao enviadas em {bulk_date.strftime('%d/%m/%Y')} as {bulk_time.strftime('%H:%M')}")
 
-                    ba1, ba2 = st.columns(2)
-                    with ba1:
-                        label = "Sim, aprovar e agendar" if bulk_sched_iso else "Sim, aprovar todas"
-                        if st.button(label, type="primary", key="confirm_bulk_approve_yes"):
-                            count = 0
-                            for p in pending:
-                                if queue_manager.approve(p["id"], scheduled_send_at=bulk_sched_iso):
-                                    count += 1
-                            _msg = f"{count} mensagens aprovadas"
-                            if bulk_sched_iso:
-                                _msg += f" e agendadas para {bulk_date.strftime('%d/%m')} as {bulk_time.strftime('%H:%M')}"
-                            st.success(_msg + ".")
-                            st.session_state.pop("confirm_bulk_approve", None)
-                            st.rerun()
-                    with ba2:
-                        if st.button("Cancelar", key="cancel_bulk_approve"):
-                            st.session_state.pop("confirm_bulk_approve", None)
-                            st.rerun()
+                ba1, ba2 = st.columns(2)
+                with ba1:
+                    label = "Sim, aprovar e agendar" if bulk_sched_iso else "Sim, aprovar todas"
+                    if st.button(label, type="primary", key="confirm_bulk_approve_yes"):
+                        count = 0
+                        for p in pending:
+                            if queue_manager.approve(p["id"], scheduled_send_at=bulk_sched_iso):
+                                count += 1
+                        _msg = f"{count} mensagens aprovadas"
+                        if bulk_sched_iso:
+                            _msg += f" e agendadas para {bulk_date.strftime('%d/%m')} as {bulk_time.strftime('%H:%M')}"
+                        st.success(_msg + ".")
+                        st.session_state.pop("confirm_bulk_approve", None)
+                        st.rerun()
+                with ba2:
+                    if st.button("Cancelar", key="cancel_bulk_approve"):
+                        st.session_state.pop("confirm_bulk_approve", None)
+                        st.rerun()
 
             # --- Navegacao prev/next ---
             idx = min(st.session_state.current_idx, total - 1)
