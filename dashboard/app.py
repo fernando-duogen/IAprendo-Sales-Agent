@@ -33,14 +33,34 @@ import yaml
 import streamlit_authenticator as stauth
 
 _AUTH_PATH = ROOT / "config" / "users.yaml"
+
+
+def _to_mutable_dict(obj):
+    """Deep-copy de st.secrets (Mapping/AttrDict imutaveis) para dict mutavel.
+
+    streamlit_authenticator faz self.credentials['usernames'] = {...} (mutacao),
+    o que falha com TypeError em Secrets read-only. Esta funcao retorna estrutura
+    100% nativa (dict/list/scalar) preservando todos os valores.
+    """
+    if hasattr(obj, "items") and not isinstance(obj, dict):
+        return {k: _to_mutable_dict(v) for k, v in obj.items()}
+    if isinstance(obj, dict):
+        return {k: _to_mutable_dict(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_mutable_dict(x) for x in obj]
+    return obj
+
+
 _auth_config = None
 try:
     if _AUTH_PATH.exists():
         with _AUTH_PATH.open("r", encoding="utf-8") as _f:
             _auth_config = yaml.safe_load(_f)
     elif "auth" in st.secrets:
-        # Streamlit Cloud: secrets.toml com secao [auth] estruturada
-        _auth_config = dict(st.secrets["auth"])
+        # Streamlit Cloud: secrets.toml com secao [auth] estruturada.
+        # IMPORTANTE: deep-copy obrigatorio porque st.secrets sao imutaveis e
+        # o streamlit_authenticator precisa mutar credentials['usernames'].
+        _auth_config = _to_mutable_dict(st.secrets["auth"])
 except Exception as _e:
     st.error(f"Falha ao carregar config de autenticacao: {_e}")
     st.stop()
