@@ -773,8 +773,12 @@ if selected_rows:
         st.caption(f"{sel_city}/{sel_uf} | {sel_tipo} | {sel_porte}")
 
         ac1, ac2 = st.columns(2)
+        from dashboard._runtime import is_streamlit_cloud as _is_cloud_pp2
+        _on_cloud_pp = _is_cloud_pp2()
         with ac1:
-            if st.button("Buscar contatos no Perplexity", key="mapa_ppx", type="primary"):
+            if _on_cloud_pp:
+                st.caption(":material/cloud_off: Perplexity desabilitado no Cloud (precisa Chrome local).")
+            elif st.button("Buscar contatos no Perplexity", key="mapa_ppx", type="primary"):
                 with st.spinner("Buscando no Perplexity (30-60s)..."):
                     found = _run_perplexity_search(sel_name, sel_city, sel_uf)
                 if found:
@@ -813,7 +817,9 @@ if selected_rows:
 
             mc1, mc2 = st.columns(2)
             with mc1:
-                if st.button("Buscar contatos no Perplexity", key="mapa_ppx_imported", type="primary"):
+                if _on_cloud_pp:
+                    st.caption(":material/cloud_off: Perplexity desabilitado no Cloud.")
+                elif st.button("Buscar contatos no Perplexity", key="mapa_ppx_imported", type="primary"):
                     with st.spinner("Buscando no Perplexity (30-60s)..."):
                         found_contacts = _run_perplexity_search(sel_name, imp_city, imp_state)
                     if found_contacts:

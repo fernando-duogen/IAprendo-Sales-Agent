@@ -1442,7 +1442,10 @@ if st.session_state.escola_detail_id:
 
         # Botao Perplexity
         st.divider()
-        if st.button("Buscar contatos no Perplexity", icon=":material/search:", help="Abre o Perplexity no navegador e busca a equipe de gestao desta escola"):
+        from dashboard._runtime import is_streamlit_cloud as _is_cloud_pp1
+        if _is_cloud_pp1():
+            st.caption(":material/cloud_off: Busca no Perplexity desabilitada no Streamlit Cloud (precisa de Chrome local). Use a versao local do dashboard ou o IAlex via WhatsApp.")
+        elif st.button("Buscar contatos no Perplexity", icon=":material/search:", help="Abre o Perplexity no navegador e busca a equipe de gestao desta escola"):
             import subprocess, json as json_mod
             school_name = company.get("name", "")
             city = company.get("city", "")
