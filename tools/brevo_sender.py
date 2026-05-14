@@ -31,7 +31,8 @@ class BrevoSender:
 
     def send_email(self, to_email: str, to_name: str, subject: str, body: str,
                    queue_id: str = None, chart_urls: list = None,
-                   from_email: str = None, from_name: str = None) -> Dict[str, Any]:
+                   from_email: str = None, from_name: str = None,
+                   from_username: str = None) -> Dict[str, Any]:
         """
         Envia um email via Brevo. Retorna dict com status, message_id e tracking_id.
 
@@ -42,19 +43,34 @@ class BrevoSender:
                         e cai em settings.BREVO_SENDER_EMAIL/YOUR_EMAIL como fallback.
                         IMPORTANTE: o email deve estar verificado como sender no Brevo.
             from_name: Nome do remetente. Mesma resolucao do from_email.
+            from_username: Username do perfil para resolver email/name/assinatura
+                        (ex: 'fernando', 'lizianne'). Se passado, sobrescreve a
+                        resolucao automatica e usa a ASSINATURA desse usuario.
         """
         if not self._enabled:
             logger.warning("BREVO DESABILITADO - email NAO enviado (configure BREVO_API_KEY no .env)",
                 extra={"to": to_email, "subject": subject[:40]})
             return {"success": False, "error": "BREVO_API_KEY nao configurada"}
 
-        # Resolver remetente — explicitamente passado > sender ativo > fallback init
+        # Resolver remetente — explicitamente passado > username > sender ativo > fallback
+        signature_username = from_username  # usado para puxar a assinatura certa
+        if from_username and (not from_email or not from_name):
+            try:
+                from utils.sender_profile import get_profile_by_username
+                _p = get_profile_by_username(from_username)
+                if _p:
+                    from_email = from_email or _p.get("email") or self.from_email
+                    from_name = from_name or _p.get("name") or self.from_name
+            except Exception:
+                pass
         if not from_email or not from_name:
             try:
-                from utils.sender_profile import get_active_sender
+                from utils.sender_profile import get_active_sender, get_active_sender_username
                 _active = get_active_sender()
                 from_email = from_email or _active.get("email") or self.from_email
                 from_name = from_name or _active.get("name") or self.from_name
+                if not signature_username:
+                    signature_username = get_active_sender_username()
             except Exception:
                 from_email = from_email or self.from_email
                 from_name = from_name or self.from_name
@@ -66,8 +82,11 @@ class BrevoSender:
             "sender": {"name": from_name, "email": from_email},
             "to": [{"email": to_email, "name": to_name}],
             "subject": subject,
-            "htmlContent": self._text_to_html(body, with_signature=True, chart_urls=chart_urls),
-            "textContent": body + self._get_text_signature(),
+            "htmlContent": self._text_to_html(
+                body, with_signature=True, chart_urls=chart_urls,
+                signature_username=signature_username,
+            ),
+            "textContent": body + self._get_text_signature(username=signature_username),
         }
         if queue_id:
             payload["tags"] = [f"queue:{queue_id}"]
@@ -135,24 +154,27 @@ class BrevoSender:
                 "Erro ao atualizar queue com tracking (envio OK, tracking nao salvo)",
                 extra={"queue_id": queue_id, "error": str(e)},
             )
-    def _get_text_signature(self) -> str:
-        """Retorna assinatura em texto puro (para textContent)."""
+    def _get_text_signature(self, username: Optional[str] = None) -> str:
+        """Retorna assinatura em texto puro (para textContent).
+
+        Se username=None, resolve do sender ativo automaticamente.
+        """
         try:
             from integrations.email_signature import email_signature
-            return email_signature.render_text()
+            return email_signature.render_text(username=username)
         except Exception:
             return ""
 
-    def _get_html_signature(self) -> str:
+    def _get_html_signature(self, username: Optional[str] = None) -> str:
         """Retorna assinatura em HTML (para htmlContent)."""
         try:
             from integrations.email_signature import email_signature
-            return email_signature.render_html()
+            return email_signature.render_html(username=username)
         except Exception:
             return ""
 
     def _text_to_html(self, text: str, with_signature: bool = False,
-                      chart_urls: list = None) -> str:
+                      chart_urls: list = None, signature_username: Optional[str] = None) -> str:
         """Converte texto plano para HTML com links clicaveis, graficos e assinatura.
 
         Se o body ja contem tags HTML (ex: <img>, <a href>, <div>),
@@ -254,10 +276,11 @@ class BrevoSender:
                     '</div>'
                 )
 
-        # Assinatura HTML (se habilitada)
+        # Assinatura HTML (se habilitada). Usa username explicito (multi-user)
+        # ou cai no sender ativo (resolvido por email_signature).
         signature_html = ""
         if with_signature:
-            signature_html = self._get_html_signature()
+            signature_html = self._get_html_signature(username=signature_username)
 
         return (
             '<html><body style="font-family:Arial,sans-serif;font-size:14px;color:#333;'

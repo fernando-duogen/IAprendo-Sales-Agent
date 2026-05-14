@@ -13,6 +13,7 @@ import json
 import re as _re
 import pandas as pd
 from pathlib import Path
+from typing import Optional
 from datetime import datetime, time as dtime, timedelta, timezone
 
 ROOT = Path(__file__).parent.parent.parent
@@ -239,6 +240,31 @@ with tab_aprovacao:
     # ---- Sub-tab: Pendentes (tela principal de aprovacao) ----
     with aprov_tab_pending:
 
+        # ----- "Enviar como" (admin only) — sticky por sessao + override por msg -----
+        # Helpers escolhidos uma vez no header e reusados nos botoes individuais e bulk.
+        from utils.sender_profile import is_admin as _is_admin_send, list_profiles as _list_profiles
+        _admin_user = _is_admin_send()
+        _all_profiles = _list_profiles()
+        _username_options = [p["username"] for p in _all_profiles]
+        _logged_username = st.session_state.get("username", "")
+        if "send_as_default" not in st.session_state and _logged_username:
+            st.session_state["send_as_default"] = _logged_username
+
+        def _render_sender_label(uname: str) -> str:
+            for p in _all_profiles:
+                if p["username"] == uname:
+                    return f"{p['name']} <{p['email']}>"
+            return uname
+
+        def _resolve_send_as(queue_id: str) -> Optional[str]:
+            """Sender efetivo para esta msg. None=usa sender ativo no envio."""
+            if not _admin_user:
+                return _logged_username  # nao-admin: forca proprio
+            override = st.session_state.get(f"send_as_{queue_id}")
+            if override and override != "__default__":
+                return override
+            return st.session_state.get("send_as_default", _logged_username)
+
         if total == 0:
             alert_banner("Nenhuma mensagem aguardando aprovacao.", "success")
             alert_banner("Execute o pipeline para gerar novas mensagens e volte aqui para aprova-las.", "info")
@@ -252,6 +278,21 @@ with tab_aprovacao:
                 label_singular="mensagem pendente",
                 label_plural="mensagens pendentes",
             )
+
+            # --- "Enviar como" sticky (admin only) ---
+            if _admin_user and len(_username_options) > 1:
+                _sa_idx = _username_options.index(
+                    st.session_state.get("send_as_default", _logged_username)
+                ) if st.session_state.get("send_as_default", _logged_username) in _username_options else 0
+                _new_default = st.selectbox(
+                    "Enviar como (padrao para esta sessao)",
+                    options=_username_options,
+                    format_func=_render_sender_label,
+                    index=_sa_idx,
+                    key="send_as_default_selector",
+                    help="Admin: escolhe o remetente padrao para todas as aprovacoes desta sessao. Cada mensagem pode ser sobrescrita individualmente.",
+                )
+                st.session_state["send_as_default"] = _new_default
             st.markdown("")
 
             # --- Acoes em massa (1.4 Quick Win: visiveis, nao mais em expander) ---
@@ -330,9 +371,21 @@ with tab_aprovacao:
                 with ba1:
                     label = "Sim, aprovar e agendar" if bulk_sched_iso else "Sim, aprovar todas"
                     if st.button(label, type="primary", key="confirm_bulk_approve_yes"):
+                        # Bulk approve respeita o "Enviar como" sticky do header (admin only)
+                        _bulk_send_as = (
+                            st.session_state.get("send_as_default", _logged_username)
+                            if _admin_user else _logged_username
+                        )
+                        _bulk_send_as_arg = (
+                            _bulk_send_as if _bulk_send_as and _bulk_send_as != _logged_username else None
+                        )
                         count = 0
                         for p in pending:
-                            if queue_manager.approve(p["id"], scheduled_send_at=bulk_sched_iso):
+                            if queue_manager.approve(
+                                p["id"],
+                                scheduled_send_at=bulk_sched_iso,
+                                send_as_username=_bulk_send_as_arg,
+                            ):
                                 count += 1
                         _msg = f"{count} mensagens aprovadas"
                         if bulk_sched_iso:
@@ -785,6 +838,27 @@ with tab_aprovacao:
                     unsafe_allow_html=True,
                 )
 
+            # --- Override "Enviar como" para esta mensagem (admin only) ---
+            if _admin_user and len(_username_options) > 1:
+                _default_send_as = st.session_state.get("send_as_default", _logged_username)
+                _options_with_default = ["__default__"] + _username_options
+
+                def _fmt_override(val: str) -> str:
+                    if val == "__default__":
+                        return f"Padrao da sessao ({_render_sender_label(_default_send_as)})"
+                    return _render_sender_label(val)
+
+                _cur_override = st.session_state.get(f"send_as_{queue_id}", "__default__")
+                _override_idx = _options_with_default.index(_cur_override) if _cur_override in _options_with_default else 0
+                st.selectbox(
+                    "Enviar como (override desta mensagem)",
+                    options=_options_with_default,
+                    format_func=_fmt_override,
+                    index=_override_idx,
+                    key=f"send_as_{queue_id}",
+                    help="Sobrescreve o sender padrao apenas para esta mensagem.",
+                )
+
             # --- Botoes de acao ---
             st.markdown("")
 
@@ -811,9 +885,11 @@ with tab_aprovacao:
                              icon=":material/check_circle:"):
                     sub = edited_subject if subject_changed else None
                     bod = edited_body if body_changed else None
+                    _final_send_as = _resolve_send_as(queue_id)
                     ok = queue_manager.approve(
                         queue_id, edited_subject=sub, edited_body=bod,
                         scheduled_send_at=scheduled_send_at_iso,
+                        send_as_username=_final_send_as if _final_send_as != _logged_username else None,
                     )
                     if ok:
                         extra_ids = st.session_state.get(f"extra_contacts_{queue_id}", [])
@@ -1528,17 +1604,24 @@ with tab_templates:
     # ---- Assinatura de Email ----
     section_header("Assinatura de Email", "draw")
 
+    # Identifica o usuario logado para deixar claro qual assinatura esta sendo editada
+    _current_user_for_sig = st.session_state.get("username", "")
+    _current_name_for_sig = st.session_state.get("name", _current_user_for_sig or "?")
+
     st.markdown(
-        '<div style="font-size:13px;color:#757575;margin-bottom:12px">'
-        'A assinatura e adicionada automaticamente ao final de <strong>todo email</strong> '
-        'enviado pelo IAlex (emails iniciais, follow-ups, etc). Suporta texto + imagem.'
-        '</div>',
+        f'<div style="font-size:13px;color:#757575;margin-bottom:12px">'
+        f'Esta eh a assinatura do <strong>seu perfil</strong> '
+        f'(<code>{_current_user_for_sig}</code> &mdash; {_current_name_for_sig}). '
+        f'Cada usuario tem a sua. Ela eh adicionada automaticamente ao final de '
+        f'<strong>todo email enviado por voce</strong> (iniciais, follow-ups, etc).'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
     try:
         from integrations.email_signature import email_signature
 
+        # get_signature() resolve o sender ativo automaticamente (= usuario logado)
         sig = email_signature.get_signature()
 
         sig_col1, sig_col2 = st.columns([1, 1])

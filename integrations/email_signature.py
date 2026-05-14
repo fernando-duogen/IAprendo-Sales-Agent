@@ -1,29 +1,40 @@
 """
-Email Signature — Assinatura padrao para todos os emails enviados pelo IAlex.
+Email Signature — Assinatura por usuario (multi-user).
 
-Armazena a configuracao da assinatura em conversation_memory (scope=global)
-usando marker [EMAIL_SIGNATURE_V1]. Sem migration necessaria.
+Armazena a configuracao da assinatura em conversation_memory:
+- Por usuario:    scope='user',  scope_id=<username>  marker [EMAIL_SIGNATURE_V1]
+- Global (legado): scope='global', scope_id=NULL      marker [EMAIL_SIGNATURE_V1]
 
 A assinatura e injetada automaticamente pelo brevo_sender ao enviar qualquer
-email. Suporta texto livre + URL de imagem (logo, banner, etc).
+email. Resolve qual usuario usar via utils.sender_profile.get_active_sender_username()
+ou parametro username explicito.
+
+Backward compat: se um usuario nao tem assinatura propria, cai pra global
+(comportamento antigo). Quando salva pela primeira vez, vira a do usuario.
 
 Usage:
     from integrations.email_signature import email_signature
 
-    # Carregar assinatura atual
+    # Carregar assinatura do usuario ativo (dashboard logado ou IAlex thread)
     sig = email_signature.get_signature()
 
-    # Salvar nova assinatura
+    # Carregar a de um usuario especifico
+    sig = email_signature.get_signature(username="lizianne")
+
+    # Salvar a do usuario ativo
     email_signature.save_signature({
         "enabled": True,
-        "text": "Fernando Teixeira\\nIAprendo - Plataforma Educacional",
+        "text": "Lizianne Nienaber\\nIAprendo - Plataforma Educacional",
         "image_url": "https://example.com/logo.png",
         "image_width": 200,
         "link_url": "https://iaprendo.com.br",
     })
 
-    # Gerar HTML da assinatura
+    # Gerar HTML da assinatura do usuario ativo
     html = email_signature.render_html()
+
+    # Gerar HTML da assinatura de um usuario especifico (workflows de envio)
+    html = email_signature.render_html(username="fernando")
 """
 import json
 from typing import Any, Dict, Optional
@@ -34,8 +45,17 @@ from utils.logger import logger
 MARKER = "[EMAIL_SIGNATURE_V1]"
 
 
+def _resolve_active_username() -> Optional[str]:
+    """Resolve o username ativo (dashboard logado ou IAlex thread). None se fallback."""
+    try:
+        from utils.sender_profile import get_active_sender_username
+        return get_active_sender_username()
+    except Exception:
+        return None
+
+
 class EmailSignature:
-    """Gerenciador da assinatura de email."""
+    """Gerenciador da assinatura de email (por usuario, com fallback global)."""
 
     TABLE = "conversation_memory"
 
@@ -50,7 +70,25 @@ class EmailSignature:
             "separator": True,
         }
 
-    def _find_existing(self) -> Optional[Dict[str, Any]]:
+    def _find_user_signature(self, username: str) -> Optional[Dict[str, Any]]:
+        """Busca assinatura do usuario especifico (scope=user, scope_id=username)."""
+        try:
+            r = (
+                db.client.table(self.TABLE)
+                .select("*")
+                .eq("scope", "user")
+                .eq("scope_id", username)
+                .ilike("content", f"{MARKER}%")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            return (r.data or [None])[0]
+        except Exception:
+            return None
+
+    def _find_global_signature(self) -> Optional[Dict[str, Any]]:
+        """Busca a assinatura global (legado, fallback)."""
         try:
             r = (
                 db.client.table(self.TABLE)
@@ -65,12 +103,33 @@ class EmailSignature:
         except Exception:
             return None
 
-    def get_signature(self) -> Dict[str, Any]:
-        existing = self._find_existing()
-        if not existing:
-            return self.default_signature()
+    def get_signature(self, username: Optional[str] = None) -> Dict[str, Any]:
+        """Retorna assinatura. Se username=None, resolve do sender ativo.
+
+        Ordem de resolucao:
+        1. Assinatura do usuario explicito ou ativo (scope=user)
+        2. Fallback: assinatura global (legado, compat)
+        3. Default vazio
+        """
+        u = username or _resolve_active_username()
+
+        # 1. Tentar buscar a do usuario
+        if u:
+            user_sig = self._find_user_signature(u)
+            if user_sig:
+                return self._parse_payload(user_sig)
+
+        # 2. Fallback: global
+        global_sig = self._find_global_signature()
+        if global_sig:
+            return self._parse_payload(global_sig)
+
+        # 3. Default vazio
+        return self.default_signature()
+
+    def _parse_payload(self, row: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            content = existing.get("content", "")
+            content = row.get("content", "")
             payload = content[len(MARKER):].strip()
             data = json.loads(payload)
             defaults = self.default_signature()
@@ -78,32 +137,46 @@ class EmailSignature:
         except Exception:
             return self.default_signature()
 
-    def save_signature(self, sig: Dict[str, Any]) -> bool:
+    def save_signature(self, sig: Dict[str, Any], username: Optional[str] = None) -> bool:
+        """Salva assinatura para o usuario (default = ativo).
+
+        Se username=None e nao houver sender ativo, salva como global (compat).
+        """
+        u = username or _resolve_active_username()
         try:
-            # Remover antigas
-            db.client.table(self.TABLE).delete().eq("scope", "global").ilike(
+            scope = "user" if u else "global"
+            scope_id = u  # None se global
+            # Remover antigas (mesmo escopo)
+            q = db.client.table(self.TABLE).delete().eq("scope", scope).ilike(
                 "content", f"{MARKER}%"
-            ).execute()
+            )
+            if u:
+                q = q.eq("scope_id", u)
+            else:
+                q = q.is_("scope_id", "null")
+            q.execute()
             # Inserir nova
             payload = MARKER + json.dumps(sig, ensure_ascii=False)
             db.client.table(self.TABLE).insert({
-                "scope": "global",
-                "scope_id": None,
+                "scope": scope,
+                "scope_id": scope_id,
                 "category": "fact",
                 "content": payload[:2000],
                 "importance": 8,
                 "source": "ialex",
             }).execute()
-            logger.info("Assinatura de email salva")
+            logger.info(
+                f"Assinatura de email salva (scope={scope}, user={u or 'global'})"
+            )
             return True
         except Exception as e:
             logger.error(f"Erro ao salvar assinatura: {e}")
             return False
 
-    def render_html(self) -> str:
+    def render_html(self, username: Optional[str] = None) -> str:
         """Gera HTML da assinatura para injetar no email.
         Retorna string vazia se assinatura desabilitada ou vazia."""
-        sig = self.get_signature()
+        sig = self.get_signature(username=username)
         if not sig.get("enabled"):
             return ""
 
@@ -148,9 +221,9 @@ class EmailSignature:
 
         return "\n".join(parts)
 
-    def render_text(self) -> str:
+    def render_text(self, username: Optional[str] = None) -> str:
         """Gera versao texto puro da assinatura (para textContent)."""
-        sig = self.get_signature()
+        sig = self.get_signature(username=username)
         if not sig.get("enabled"):
             return ""
         text = (sig.get("text") or "").strip()

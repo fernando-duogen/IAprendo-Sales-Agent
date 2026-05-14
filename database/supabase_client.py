@@ -554,9 +554,16 @@ class Database:
         edited_subject: str = None,
         edited_body: str = None,
         scheduled_send_at: str = None,
+        send_as_username: str = None,
     ) -> bool:
         """Aprova mensagem para envio. Se scheduled_send_at fornecido, agenda
-        o envio para o horario especificado (ISO 8601). Se None, envia imediatamente."""
+        o envio para o horario especificado (ISO 8601). Se None, envia imediatamente.
+
+        Args:
+            send_as_username: Override admin para enviar como outro usuario.
+                Salvo em metadata.send_as_username e lido por send_approved.py.
+                None = usa o sender ativo no momento do envio (padrao).
+        """
         try:
             from datetime import datetime
             update = {'status': 'approved', 'approved_at': datetime.utcnow().isoformat()}
@@ -566,12 +573,30 @@ class Database:
                 update['body'] = edited_body
             if scheduled_send_at:
                 update['scheduled_send_at'] = scheduled_send_at
+            if send_as_username:
+                # Merge com metadata existente (preservar outros campos)
+                try:
+                    cur = (self.client.table('approval_queue').select('metadata')
+                           .eq('id', queue_id).single().execute().data or {})
+                    cur_meta = cur.get('metadata') or {}
+                    if isinstance(cur_meta, str):
+                        import json as _json
+                        try:
+                            cur_meta = _json.loads(cur_meta)
+                        except Exception:
+                            cur_meta = {}
+                    cur_meta['send_as_username'] = send_as_username
+                    update['metadata'] = cur_meta
+                except Exception:
+                    update['metadata'] = {'send_as_username': send_as_username}
             result = self.client.table('approval_queue').update(update).eq('id', queue_id).execute()
             success = bool(result.data)
             if success:
                 extra = {'queue_id': queue_id}
                 if scheduled_send_at:
                     extra['scheduled_send_at'] = scheduled_send_at
+                if send_as_username:
+                    extra['send_as'] = send_as_username
                 logger.info('Mensagem aprovada', extra=extra)
             return success
         except Exception as e:
