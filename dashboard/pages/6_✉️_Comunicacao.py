@@ -1693,7 +1693,8 @@ with tab_templates:
             }
             from integrations.email_signature import EmailSignature
             temp_sig = EmailSignature()
-            temp_sig.get_signature = lambda: preview_sig
+            # Aceita kwargs (ex: username=...) para compat com a nova API multi-user
+            temp_sig.get_signature = lambda **_: preview_sig
             preview_html = temp_sig.render_html()
 
             if preview_html:
