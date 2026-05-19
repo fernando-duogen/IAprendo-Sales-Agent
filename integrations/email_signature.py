@@ -70,15 +70,26 @@ class EmailSignature:
             "separator": True,
         }
 
+    # IMPORTANTE: conversation_memory tem CHECK (scope IN ('global','company',
+    # 'contact')) e scope_id eh UUID. Por isso a assinatura por usuario NAO usa
+    # scope='user'/scope_id=username — usa scope='global', scope_id=NULL e um
+    # MARKER distinto embutido no `content`:
+    #   - Global/legado:  [EMAIL_SIGNATURE_V1]{json}
+    #   - Por usuario:     [EMAIL_SIGNATURE_USER:<username>]{json}
+    # Os markers sao mutuamente exclusivos (um nunca eh prefixo do outro).
+
+    @staticmethod
+    def _user_marker(username: str) -> str:
+        return f"[EMAIL_SIGNATURE_USER:{username}]"
+
     def _find_user_signature(self, username: str) -> Optional[Dict[str, Any]]:
-        """Busca assinatura do usuario especifico (scope=user, scope_id=username)."""
+        """Busca assinatura do usuario (marker [EMAIL_SIGNATURE_USER:<username>])."""
         try:
             r = (
                 db.client.table(self.TABLE)
                 .select("*")
-                .eq("scope", "user")
-                .eq("scope_id", username)
-                .ilike("content", f"{MARKER}%")
+                .eq("scope", "global")
+                .ilike("content", f"{self._user_marker(username)}%")
                 .order("created_at", desc=True)
                 .limit(1)
                 .execute()
@@ -88,7 +99,7 @@ class EmailSignature:
             return None
 
     def _find_global_signature(self) -> Optional[Dict[str, Any]]:
-        """Busca a assinatura global (legado, fallback)."""
+        """Busca a assinatura global/legado (marker [EMAIL_SIGNATURE_V1])."""
         try:
             r = (
                 db.client.table(self.TABLE)
@@ -128,9 +139,14 @@ class EmailSignature:
         return self.default_signature()
 
     def _parse_payload(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Extrai o JSON apos o marker. Markers tem tamanho variavel
+        ([EMAIL_SIGNATURE_V1] vs [EMAIL_SIGNATURE_USER:lizianne]) — o primeiro
+        ']' fecha o marker, entao split(']', 1)[1] pega o payload."""
         try:
             content = row.get("content", "")
-            payload = content[len(MARKER):].strip()
+            if "]" not in content:
+                return self.default_signature()
+            payload = content.split("]", 1)[1].strip()
             data = json.loads(payload)
             defaults = self.default_signature()
             return {**defaults, **data}
@@ -138,35 +154,35 @@ class EmailSignature:
             return self.default_signature()
 
     def save_signature(self, sig: Dict[str, Any], username: Optional[str] = None) -> bool:
-        """Salva assinatura para o usuario (default = ativo).
+        """Salva assinatura para o usuario (default = sender ativo).
 
-        Se username=None e nao houver sender ativo, salva como global (compat).
+        Sempre grava scope='global', scope_id=NULL (respeita CHECK + tipo UUID
+        de conversation_memory). O usuario eh distinguido pelo MARKER no content.
+        Se username=None e sem sender ativo, salva como global (compat legado).
         """
         u = username or _resolve_active_username()
         try:
-            scope = "user" if u else "global"
-            scope_id = u  # None se global
-            # Remover antigas (mesmo escopo)
-            q = db.client.table(self.TABLE).delete().eq("scope", scope).ilike(
-                "content", f"{MARKER}%"
+            marker = self._user_marker(u) if u else MARKER
+            # Remover antigas do MESMO marker (mesma assinatura logica)
+            (
+                db.client.table(self.TABLE)
+                .delete()
+                .eq("scope", "global")
+                .ilike("content", f"{marker}%")
+                .execute()
             )
-            if u:
-                q = q.eq("scope_id", u)
-            else:
-                q = q.is_("scope_id", "null")
-            q.execute()
             # Inserir nova
-            payload = MARKER + json.dumps(sig, ensure_ascii=False)
+            payload = marker + json.dumps(sig, ensure_ascii=False)
             db.client.table(self.TABLE).insert({
-                "scope": scope,
-                "scope_id": scope_id,
+                "scope": "global",
+                "scope_id": None,
                 "category": "fact",
                 "content": payload[:2000],
                 "importance": 8,
                 "source": "ialex",
             }).execute()
             logger.info(
-                f"Assinatura de email salva (scope={scope}, user={u or 'global'})"
+                f"Assinatura de email salva (user={u or 'global'})"
             )
             return True
         except Exception as e:
