@@ -1446,7 +1446,14 @@ if st.session_state.escola_detail_id:
         if _is_cloud_pp1():
             st.caption(":material/cloud_off: Busca no Perplexity desabilitada no Streamlit Cloud (precisa de Chrome local). Use a versao local do dashboard ou o IAlex via WhatsApp.")
         elif st.button("Buscar contatos no Perplexity", icon=":material/search:", help="Abre o Perplexity no navegador e busca a equipe de gestao desta escola"):
-            import subprocess, json as json_mod
+            import subprocess, json as json_mod, importlib.util as _ilu_pp
+            if _ilu_pp.find_spec("playwright") is None:
+                st.error(
+                    "Playwright nao instalado neste ambiente. No servidor local rode:\n"
+                    "`venv\\Scripts\\python.exe -m pip install playwright`\n"
+                    "`venv\\Scripts\\python.exe -m playwright install chromium`"
+                )
+                st.stop()
             school_name = company.get("name", "")
             city = company.get("city", "")
             state = company.get("state", "")

@@ -25,6 +25,18 @@ st.markdown("# Mapa de Escolas")
 def _run_perplexity_search(school_name: str, city: str, state: str):
     """Executa busca Perplexity como subprocesso. Retorna lista de contatos."""
     import subprocess, json as _json, os
+    # Pre-checagem: playwright instalado? (subprocess usa o mesmo venv)
+    try:
+        import importlib.util as _ilu
+        if _ilu.find_spec("playwright") is None:
+            st.error(
+                "Playwright nao instalado neste ambiente. No servidor local rode:\n"
+                "`venv\\Scripts\\python.exe -m pip install playwright`\n"
+                "`venv\\Scripts\\python.exe -m playwright install chromium`"
+            )
+            return []
+    except Exception:
+        pass
     python_exe = str(ROOT / "venv" / "Scripts" / "python.exe")
     safe_name = school_name.replace("'", "\\'").replace('"', '\\"')
     safe_city = city.replace("'", "\\'").replace('"', '\\"')
