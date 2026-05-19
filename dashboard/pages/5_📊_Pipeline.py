@@ -773,11 +773,26 @@ def render_kanban_comercial():
             if _e.get("replied_at"):
                 entry["replied"] = True
 
+        # Mapa do status tecnico (companies.status) -> stage do Kanban comercial.
+        # Sem isto, mudar status para 'responded'/'contacted'/'converted' fazia a
+        # escola SUMIR do Kanban (caia em return None).
+        STATUS_TO_STAGE = {
+            "responded": "respondeu",
+            "contacted": "contatado",
+            "converted": "cliente",
+            "rejected": "perdido",
+            "descartado": "perdido",
+        }
+
         def _infer_stage(comp):
-            """Prioridade: commercial_stage manual > inferencia automatica."""
+            """Prioridade: commercial_stage manual > status tecnico mapeado >
+            inferencia (meeting/email) > prospectado (status inicial)."""
             manual = comp.get("commercial_stage")
             if manual:
                 return manual
+            st_tech = (comp.get("status") or "").lower()
+            if st_tech in STATUS_TO_STAGE:
+                return STATUS_TO_STAGE[st_tech]
             cid = comp["id"]
             if cid in _meeting_set:
                 return "reuniao"
@@ -785,7 +800,7 @@ def render_kanban_comercial():
                 return "respondeu"
             if cid in _email_map:
                 return "contatado"
-            if comp.get("status") in ("raw", "qualified", "enriched", "filtered"):
+            if st_tech in ("raw", "qualified", "enriched", "filtered"):
                 return "prospectado"
             return None
 
