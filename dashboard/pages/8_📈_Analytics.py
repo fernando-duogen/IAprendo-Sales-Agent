@@ -935,8 +935,11 @@ try:
             if ev.get("viewed_at", "") > by_inep[inep]["last_viewed"]:
                 by_inep[inep]["last_viewed"] = ev.get("viewed_at", "")
 
-        # Buscar nomes das escolas
-        inep_ids = list(by_inep.keys())
+        # Buscar nomes das escolas — 2 fontes em cascata:
+        # 1) companies (escolas importadas no CRM — nome pode estar editado)
+        # 2) school_censo_yearly (base MEC ~215k — pega o nome oficial mais recente)
+        # Mostra "INEP {x}" so se nenhuma das duas tem o INEP.
+        inep_ids = [str(i) for i in by_inep.keys()]
         try:
             r = db.client.table("companies").select("id, inep_code, name, city, state").in_(
                 "inep_code", inep_ids
@@ -944,6 +947,25 @@ try:
             inep_to_company = {str(c["inep_code"]): c for c in (r.data or [])}
         except Exception:
             inep_to_company = {}
+
+        # Fallback: INEPs nao encontrados em companies -> buscar em school_censo_yearly
+        missing_ineps = [i for i in inep_ids if i not in inep_to_company]
+        if missing_ineps:
+            try:
+                r2 = (
+                    db.client.table("school_censo_yearly")
+                    .select("inep_code, name, city, state, vintage_censo")
+                    .in_("inep_code", missing_ineps)
+                    .order("vintage_censo", desc=True)
+                    .execute()
+                )
+                # Pega o mais recente por INEP (a query ja vem ordenada desc)
+                for row in (r2.data or []):
+                    key = str(row.get("inep_code", ""))
+                    if key and key not in inep_to_company:
+                        inep_to_company[key] = row
+            except Exception:
+                pass
 
         # Tabela
         rows = []
