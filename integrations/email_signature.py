@@ -161,8 +161,16 @@ class EmailSignature:
         Se username=None e sem sender ativo, salva como global (compat legado).
         """
         u = username or _resolve_active_username()
+        marker = self._user_marker(u) if u else MARKER
+        insert_payload = {
+            "scope": "global",
+            "scope_id": None,
+            "category": "fact",
+            "content": (marker + json.dumps(sig, ensure_ascii=False))[:2000],
+            "importance": 8,
+            "source": "ialex",
+        }
         try:
-            marker = self._user_marker(u) if u else MARKER
             # Remover antigas do MESMO marker (mesma assinatura logica)
             (
                 db.client.table(self.TABLE)
@@ -172,21 +180,28 @@ class EmailSignature:
                 .execute()
             )
             # Inserir nova
-            payload = marker + json.dumps(sig, ensure_ascii=False)
-            db.client.table(self.TABLE).insert({
-                "scope": "global",
-                "scope_id": None,
-                "category": "fact",
-                "content": payload[:2000],
-                "importance": 8,
-                "source": "ialex",
-            }).execute()
+            db.client.table(self.TABLE).insert(insert_payload).execute()
             logger.info(
                 f"Assinatura de email salva (user={u or 'global'})"
             )
             return True
         except Exception as e:
-            logger.error(f"Erro ao salvar assinatura: {e}")
+            # Log enriquecido para diagnostico: revela payload exato + tipo do erro.
+            # Util para identificar regressao (ex: scope_id=username string) ou
+            # cache do Streamlit Cloud rodando versao antiga.
+            logger.error(
+                "Erro ao salvar assinatura",
+                extra={
+                    "username": u,
+                    "marker": marker,
+                    "scope_sent": insert_payload["scope"],
+                    "scope_id_sent": insert_payload["scope_id"],
+                    "scope_id_type": type(insert_payload["scope_id"]).__name__,
+                    "error_type": type(e).__name__,
+                    "error_msg": str(e)[:300],
+                },
+                exc_info=True,
+            )
             return False
 
     def render_html(self, username: Optional[str] = None) -> str:
