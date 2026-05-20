@@ -86,7 +86,7 @@ with col_f3:
 # ===========================================================================
 try:
     all_companies = db.client.table("companies").select(
-        "id,name,city,state,qualification_score,status,"
+        "id,name,inep_code,city,state,qualification_score,status,"
         "matriculas_fund_af,matriculas_medio,nivel_tecnologico,"
         "qt_coordenadores,fonte_dados,categoria_privada,admin_dependency"
     ).order("qualification_score", desc=True).limit(200).execute().data or []
