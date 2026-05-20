@@ -870,6 +870,8 @@ if selected_rows:
                                     ct_data["notes"] = "Email sugerido por padrao (nao verificado)"
                             if ct.get("phone"):
                                 ct_data["phone"] = ct["phone"]
+                            if ct.get("phone_whatsapp"):
+                                ct_data["phone_whatsapp"] = ct["phone_whatsapp"]
                             if ct.get("_is_general_email"):
                                 ct_data["decision_maker_type"] = "administrativo"
                                 ct_data["outreach_priority"] = 99

@@ -1521,6 +1521,8 @@ if st.session_state.escola_detail_id:
                     label_parts.append(f"| {ct['_suggested_email']} (sugerido)")
                 if ct.get("phone"):
                     label_parts.append(f"| {ct['phone']}")
+                if ct.get("phone_whatsapp"):
+                    label_parts.append(f"| WhatsApp: {ct['phone_whatsapp']}")
                 if is_general:
                     label_parts.append("[DEPARTAMENTO]")
                 label = " ".join(label_parts)
@@ -1556,6 +1558,8 @@ if st.session_state.escola_detail_id:
                                 ct_data_new["notes"] = "Email sugerido por padrao (nao verificado)"
                         if ct.get("phone"):
                             ct_data_new["phone"] = ct["phone"]
+                        if ct.get("phone_whatsapp"):
+                            ct_data_new["phone_whatsapp"] = ct["phone_whatsapp"]
                         if ct.get("_is_general_email"):
                             ct_data_new["decision_maker_type"] = "administrativo"
                             ct_data_new["outreach_priority"] = 99

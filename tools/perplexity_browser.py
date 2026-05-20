@@ -389,6 +389,46 @@ class PerplexityBrowser:
         "empossa", "novo", "nova", "resultado", "informacao",
     }
 
+    # Keywords (sem acento, lower) que indicam que um numero proximo eh WhatsApp.
+    _WHATSAPP_KEYWORDS = ("whatsapp", "whats app", "whats-app", "wpp", " zap ", "(zap)", "celular", "cel.", "matriculas", "matricula:")
+
+    def _extract_whatsapp(self, line_text: str, line_phone: Optional[str]) -> Optional[str]:
+        """Decide se um numero capturado eh WhatsApp.
+
+        Heuristica conservadora:
+        1. Se a linha contem keyword de WhatsApp (case-insensitive, sem acento)
+           E ha um numero >= 10 digitos -> esse numero eh phone_whatsapp.
+        2. Senao, se o numero capturado eh celular brasileiro (>=11 digitos com
+           '9' apos os 2 digitos de DDD) -> assume phone_whatsapp tambem.
+           Isso reflete que praticamente todo celular BR tem WhatsApp.
+        3. Caso contrario (telefone fixo de 8/10 digitos, etc.) -> None.
+
+        Returns: numero limpo (so digitos) ou None.
+        """
+        if not line_phone or len(line_phone) < 10:
+            return None
+        # Normaliza linha para detectar keyword
+        try:
+            import unicodedata
+            normalized = unicodedata.normalize("NFKD", line_text or "")
+            normalized = "".join(c for c in normalized if not unicodedata.combining(c)).lower()
+        except Exception:
+            normalized = (line_text or "").lower()
+        has_keyword = any(k in normalized for k in self._WHATSAPP_KEYWORDS)
+
+        # Detectar celular BR: 11 digitos comecando com 9 apos DDD
+        # Formato: DDDD9XXXXXXXX (DDD 2 digitos + 9 + 8 digitos = 11)
+        digits = "".join(c for c in line_phone if c.isdigit())
+        # Strip de prefixo internacional comum '55'
+        local = digits[2:] if digits.startswith("55") and len(digits) >= 12 else digits
+        is_mobile_br = len(local) == 11 and local[2] == "9"
+
+        if has_keyword and len(digits) >= 10:
+            return digits
+        if is_mobile_br:
+            return digits
+        return None
+
     def _is_valid_name(self, text: str) -> bool:
         """Verifica se o texto parece um nome de pessoa."""
         if not text or len(text) < 4:
@@ -525,6 +565,10 @@ class PerplexityBrowser:
                     phone_m = re.search(phone_pattern, p_clean)
                     if phone_m:
                         line_phone = re.sub(r'[^\d+]', '', phone_m.group())
+                # WhatsApp: se linha menciona keyword (whatsapp/wpp/zap/celular)
+                # OU o numero capturado eh celular brasileiro (>=10 digitos com 9
+                # no inicio do DDN), promove para phone_whatsapp.
+                line_whatsapp = self._extract_whatsapp(line, line_phone)
                 # Tambem buscar email no cargo (ex: "secretariaescolar@joaoxxiii.com")
                 if not line_email and "@" in role_candidate:
                     em = re.search(r'[\w.+-]+@[\w-]+\.[\w.]+', role_candidate)
@@ -553,6 +597,7 @@ class PerplexityBrowser:
                             "role": role_candidate,
                             "email": person_email,
                             "phone": line_phone if line_phone and len(line_phone) >= 8 else None,
+                            "phone_whatsapp": line_whatsapp,
                             "source": "perplexity",
                             "confidence_score": 70,
                         }))
@@ -573,6 +618,7 @@ class PerplexityBrowser:
                         "role": f"Departamento ({line_email.split('@')[0]}@...)",
                         "email": line_email,
                         "phone": line_phone if line_phone and len(line_phone) >= 8 else None,
+                        "phone_whatsapp": line_whatsapp,
                         "source": "perplexity",
                         "confidence_score": 45,
                         "_is_general_email": True,
