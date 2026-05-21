@@ -1116,7 +1116,12 @@ if st.session_state.escola_detail_id:
                 edit_city = st.text_input("Cidade", value=company.get("city", ""))
                 edit_state = st.text_input("UF", value=company.get("state", ""), max_chars=2)
                 edit_address = st.text_input("Endereco", value=company.get("address", "") or "")
-                edit_phone = st.text_input("Telefone", value=company.get("phone", "") or "")
+                edit_phone = st.text_input("Telefone (fixo)", value=company.get("phone", "") or "")
+                edit_whatsapp = st.text_input(
+                    "📱 WhatsApp da Escola",
+                    value=company.get("phone_whatsapp", "") or "",
+                    help="Celular/WhatsApp da secretaria (separado do telefone fixo). Usado como fallback no envio se nenhum contato tiver WhatsApp.",
+                )
                 edit_website = st.text_input("Website", value=company.get("website", "") or "")
             with c2:
                 status_options = list(STATUS_PT.values())
@@ -1136,6 +1141,7 @@ if st.session_state.escola_detail_id:
                     "state": edit_state.upper(),
                     "address": edit_address,
                     "phone": edit_phone,
+                    "phone_whatsapp": (edit_whatsapp or "").strip() or None,
                     "website": edit_website,
                     "status": PT_TO_EN.get(edit_status, "raw"),
                     "qualification_score": edit_score,
@@ -1352,7 +1358,12 @@ if st.session_state.escola_detail_id:
             for ct in contacts:
                 ct_color = COLORS["success"] if ct.get("email") else COLORS["warning"]
                 email_str = ct.get("email", "") or "sem email"
-                phone_str = ct.get("phone", "")
+                phone_str = ct.get("phone", "") or ""
+                whatsapp_str = ct.get("phone_whatsapp", "") or ""
+                wpp_html = (
+                    f'<div style="font-size:12px; color:#25D366; margin-top:2px;">📱 WhatsApp: {whatsapp_str}</div>'
+                    if whatsapp_str else ''
+                )
                 st.markdown(f"""
                 <div class="data-card" style="border-left: 4px solid {ct_color};">
                     <div style="display:flex; align-items:center; gap:12px;">
@@ -1360,7 +1371,8 @@ if st.session_state.escola_detail_id:
                         <div style="flex:1;">
                             <div style="font-weight:600; font-size:14px; color:#212121;">{ct.get('full_name', '?')}</div>
                             <div style="font-size:12px; color:#757575;">{ct.get('role', '?')} &middot; {ct.get('decision_maker_type', '')} &middot; {ct.get('source', '')}</div>
-                            <div style="font-size:12px; color:#757575; margin-top:2px;">{email_str}{' &middot; ' + phone_str if phone_str else ''}</div>
+                            <div style="font-size:12px; color:#757575; margin-top:2px;">{email_str}{' &middot; ☎️ ' + phone_str if phone_str else ''}</div>
+                            {wpp_html}
                         </div>
                     </div>
                 </div>

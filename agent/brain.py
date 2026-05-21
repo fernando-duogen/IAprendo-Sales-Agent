@@ -6355,12 +6355,27 @@ def _handle_enviar_whatsapp_escola(params: Dict) -> str:
             contato_nome = c.get("full_name")
             break
 
+    # Fallback: phone_whatsapp da propria escola (companies.phone_whatsapp)
+    # quando nenhum contato tem celular cadastrado.
+    if not phone:
+        try:
+            comp_r = db.client.table("companies").select(
+                "phone_whatsapp"
+            ).eq("id", company_id).single().execute()
+            comp_wpp = ((comp_r.data or {}).get("phone_whatsapp") or "").strip()
+            if comp_wpp:
+                phone = comp_wpp
+                contato_nome = escola_nome  # sem contato especifico, usa nome da escola
+        except Exception:
+            pass
+
     if not phone:
         return json.dumps({
             "erro": (
                 f"Escola '{escola_nome or '?'}' nao tem phone_whatsapp cadastrado "
-                "em nenhum contato. Rode scripts/seed_whatsapp_numbers.py ou adicione "
-                "o numero manualmente pelo dashboard (pagina Contatos)."
+                "em nenhum contato nem na propria escola. Rode "
+                "scripts/seed_whatsapp_numbers.py ou adicione o numero "
+                "manualmente pelo dashboard (pagina Contatos ou Escolas)."
             )
         })
 

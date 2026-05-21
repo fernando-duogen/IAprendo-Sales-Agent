@@ -83,10 +83,14 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
                 pass
 
         # Se nao tem telefone do contato, buscar da escola (fallback para email)
-        if not to_phone and company_id:
+        # Tambem busca phone_whatsapp da escola como fallback para canal whatsapp.
+        if (not to_phone or (channel == "whatsapp" and not to_phone_whatsapp)) and company_id:
             try:
-                comp = db.client.table("companies").select("phone").eq("id", company_id).single().execute()
-                to_phone = (comp.data or {}).get("phone")
+                comp = db.client.table("companies").select("phone,phone_whatsapp").eq("id", company_id).single().execute()
+                _c = comp.data or {}
+                to_phone = to_phone or _c.get("phone")
+                if channel == "whatsapp" and not to_phone_whatsapp:
+                    to_phone_whatsapp = _c.get("phone_whatsapp") or to_phone_whatsapp
             except Exception:
                 pass
 

@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS companies (
 
     -- Contato
     phone VARCHAR(50),
+    phone_whatsapp VARCHAR(50),   -- celular/WhatsApp da escola (separado do fixo)
     website VARCHAR(500),
 
     -- Qualificação IA

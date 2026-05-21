@@ -324,6 +324,7 @@ def render_contact_card_md(ct, h, company_id, col):
     role_detail = ct.get("role", "") or h["label"]
     email_str = ct.get("email", "") or "sem email"
     phone_str = ct.get("phone", "") or ""
+    wpp_str = ct.get("phone_whatsapp", "") or ""
     src = ct.get("source", "")
     src_label = SRC_LABELS.get(src, src)
     card_color = h.get("color", COLORS["primary"])
@@ -335,7 +336,8 @@ def render_contact_card_md(ct, h, company_id, col):
             f'<strong style="font-size:13px;color:#212121">{ct.get("full_name", "?")}</strong><br/>'
             f'<span style="font-size:11px;color:#757575">{role_detail}</span><br/>'
             f'<span style="font-size:11px;color:#1976D2">{email_str}</span>'
-            f'{"<br/><span style=font-size:11px;color:#757575>" + phone_str + "</span>" if phone_str else ""}'
+            f'{"<br/><span style=font-size:11px;color:#757575>☎️ " + phone_str + "</span>" if phone_str else ""}'
+            f'{"<br/><span style=font-size:11px;color:#25D366>📱 " + wpp_str + "</span>" if wpp_str else ""}'
             f'</p>',
             unsafe_allow_html=True,
         )
@@ -623,11 +625,12 @@ with tab_lista:
             "Tipo": st.column_config.TextColumn("Tipo", width="small"),
             "Email": st.column_config.TextColumn("Email", width="medium"),
             "Telefone": st.column_config.TextColumn("Telefone", width="small"),
+            "WhatsApp": st.column_config.TextColumn("📱 WhatsApp", width="small"),
             "Prioridade": st.column_config.NumberColumn("Prior.", width="small", format="%d"),
             "Fonte": st.column_config.TextColumn("Fonte", width="small"),
             "Confiança": st.column_config.ProgressColumn("Confiança", width="small", min_value=0, max_value=100, format="%d"),
         }
-        display_cols = ["Escola", "Cidade", "UF", "Nome", "Cargo", "Tipo", "Email", "Telefone", "Prioridade", "Fonte", "Confiança", "Score Escola"]
+        display_cols = ["Escola", "Cidade", "UF", "Nome", "Cargo", "Tipo", "Email", "Telefone", "WhatsApp", "Prioridade", "Fonte", "Confiança", "Score Escola"]
 
         # ========== TABELA PLANA (sem agrupamento) ==========
         if ct_group_by == "Nenhum (tabela plana)":
