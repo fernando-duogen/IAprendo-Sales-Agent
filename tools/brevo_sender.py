@@ -32,7 +32,8 @@ class BrevoSender:
     def send_email(self, to_email: str, to_name: str, subject: str, body: str,
                    queue_id: str = None, chart_urls: list = None,
                    from_email: str = None, from_name: str = None,
-                   from_username: str = None) -> Dict[str, Any]:
+                   from_username: str = None,
+                   attachments: list = None) -> Dict[str, Any]:
         """
         Envia um email via Brevo. Retorna dict com status, message_id e tracking_id.
 
@@ -46,6 +47,10 @@ class BrevoSender:
             from_username: Username do perfil para resolver email/name/assinatura
                         (ex: 'fernando', 'lizianne'). Se passado, sobrescreve a
                         resolucao automatica e usa a ASSINATURA desse usuario.
+            attachments: Lista de dicts [{"name": str, "url": str}] para anexar
+                        PDFs/arquivos. Brevo baixa do URL no momento do envio.
+                        Se None, resolve dos anexos ativos do sender (sticky).
+                        Se lista vazia [], envia SEM anexos (override pra desligar).
         """
         if not self._enabled:
             logger.warning("BREVO DESABILITADO - email NAO enviado (configure BREVO_API_KEY no .env)",
@@ -78,6 +83,19 @@ class BrevoSender:
         # Gerar tracking ID unico para rastreamento
         tracking_id = str(uuid.uuid4())
 
+        # Resolver anexos: explicitos > sticky do sender ativo (None) >
+        # nenhum (lista vazia explicita = override pra desligar)
+        if attachments is None:
+            try:
+                from integrations.email_attachments import email_attachments
+                resolved_attachments = email_attachments.get_active_attachments(
+                    username=signature_username
+                )
+            except Exception:
+                resolved_attachments = []
+        else:
+            resolved_attachments = attachments or []
+
         payload = {
             "sender": {"name": from_name, "email": from_email},
             "to": [{"email": to_email, "name": to_name}],
@@ -88,6 +106,16 @@ class BrevoSender:
             ),
             "textContent": body + self._get_text_signature(username=signature_username),
         }
+        if resolved_attachments:
+            # Brevo espera [{"name": str, "url": str}] — baixa do URL no envio.
+            # Filtrar entries invalidas pra evitar 400 do Brevo.
+            valid = [
+                {"name": a.get("name") or "anexo.pdf", "url": a["url"]}
+                for a in resolved_attachments
+                if isinstance(a, dict) and a.get("url")
+            ]
+            if valid:
+                payload["attachment"] = valid
         if queue_id:
             payload["tags"] = [f"queue:{queue_id}"]
         # Adicionar header customizado com tracking_id para correlacao

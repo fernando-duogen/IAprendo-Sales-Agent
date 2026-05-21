@@ -200,6 +200,12 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
                     _meta = {}
             _send_as = (_meta or {}).get("send_as_username") or msg.get("send_as_username")
 
+            # Resolver anexos: metadata.attachment_urls (override por mensagem)
+            # tem prioridade. Se ausente (None), brevo_sender resolve do sender
+            # ativo (sticky). Se lista vazia, sai sem anexos.
+            _att_override = (_meta or {}).get("attachment_urls")
+            _attachments_arg = _att_override if _att_override is not None else None
+
             result = brevo_sender.send_email(
                 to_email=to_email,
                 to_name=to_name,
@@ -208,6 +214,7 @@ def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
                 queue_id=queue_id,
                 chart_urls=_chart_urls,
                 from_username=_send_as,  # None -> brevo_sender resolve do sender ativo / fallback
+                attachments=_attachments_arg,
             )
         if result.get("success"):
             # Marcar como enviada
