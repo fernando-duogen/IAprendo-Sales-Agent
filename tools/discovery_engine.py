@@ -588,9 +588,16 @@ class DiscoveryEngine:
         )
 
         # === Tentativa 1: DuckDuckGo snippets + GPT ===
+        # 5 queries diversificadas pra maximizar cobertura sem custo (DDG gratis).
         queries = [
             f'"{name}" {city} premio ranking educacao',
             f'"{name}" {city} noticias destaque',
+            # Imprensa local RS — onde maioria dos premios/noticias de escolas saem
+            f'"{name}" {city} site:gauchazh.clicrbs.com.br OR site:g1.globo.com',
+            # ENEM eh forte sinal de qualidade no RS (escola que destaca em ENEM aparece)
+            f'"{name}" {city} ENEM resultado destaque',
+            # Estado (nao so cidade) — captura redes/franquias maiores
+            f'"{name}" {state} reconhecimento educacao',
         ]
         all_snippets = []
         for q in queries:
@@ -646,7 +653,9 @@ class DiscoveryEngine:
             return {
                 "company_id": company_id,
                 "escola": name,
+                "sinais_encontrados": 0,
                 "sinais_adicionados": 0,
+                "fonte_usada": fonte_usada,
                 "preview": [],
                 "erros": [erro_msg],
             }
@@ -708,6 +717,7 @@ class DiscoveryEngine:
             "cidade": city,
             "sinais_encontrados": len(signals),
             "sinais_adicionados": added,
+            "fonte_usada": fonte_usada,
             "preview": preview,
             "erros": erros,
         }

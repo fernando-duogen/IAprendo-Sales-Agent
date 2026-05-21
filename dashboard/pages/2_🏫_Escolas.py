@@ -903,21 +903,43 @@ if st.session_state.escola_detail_id:
     with header_cols[1]:
         if st.button("Buscar sinais", icon=":material/psychology:",
                      use_container_width=True, key="escola_buscar_sinais",
-                     help="Pesquisa rankings, premios e noticias via web. Salva como memorias."):
+                     help="Pesquisa rankings, premios e noticias via web (DuckDuckGo + Perplexity). Salva como memorias."):
             try:
                 from tools.discovery_engine import discovery_engine
-                with st.spinner(f"Buscando sinais de {company.get('name', '?')}..."):
+                with st.status(f"Buscando sinais de {company.get('name', '?')}...",
+                                expanded=True) as status:
+                    st.write("🔍 Tentando DuckDuckGo (5 queries: rankings, noticias, imprensa local, ENEM, estado)...")
                     sinais_result = discovery_engine.enrich_signals(company_id)
-                n_sinais = sinais_result.get("sinais_adicionados", 0)
+                    n_sinais = sinais_result.get("sinais_adicionados", 0)
+                    n_found = sinais_result.get("sinais_encontrados", 0)
+                    fonte = sinais_result.get("fonte_usada") or "nenhuma"
+                    erros = sinais_result.get("erros") or []
+                    st.write(f"📊 Fonte usada: **{fonte}** | encontrados: {n_found} | salvos: {n_sinais}")
+                    for e in erros[:3]:
+                        st.write(f"⚠️ {e}")
+                    if sinais_result.get("preview"):
+                        st.write("✨ Preview:")
+                        for p in sinais_result["preview"][:5]:
+                            st.write(f"  • {p}")
+                    status.update(
+                        label=f"Concluido: {n_sinais} sinal(is) novo(s) salvos",
+                        state="complete" if n_sinais > 0 else "error",
+                        expanded=(n_sinais == 0),  # expande se falhou pra usuario ver o motivo
+                    )
                 if n_sinais > 0:
                     st.session_state.escola_msg = (
                         "success",
-                        f"{n_sinais} sinal(is) adicionado(s). Veja nas memorias da escola.",
+                        f"{n_sinais} sinal(is) salvo(s) (de {n_found} encontrado(s) via {fonte}).",
+                    )
+                elif erros:
+                    st.session_state.escola_msg = (
+                        "warning",
+                        f"Sem sinais novos. Motivo: {erros[0]}",
                     )
                 else:
                     st.session_state.escola_msg = (
                         "info",
-                        "Nenhum sinal novo encontrado.",
+                        "Nenhum sinal novo encontrado (busca completou sem erros).",
                     )
                 st.rerun()
             except Exception as e:
@@ -1364,19 +1386,22 @@ if st.session_state.escola_detail_id:
                     f'<div style="font-size:12px; color:#25D366; margin-top:2px;">📱 WhatsApp: {whatsapp_str}</div>'
                     if whatsapp_str else ''
                 )
-                st.markdown(f"""
-                <div class="data-card" style="border-left: 4px solid {ct_color};">
-                    <div style="display:flex; align-items:center; gap:12px;">
-                        {avatar(ct.get('full_name', '?'), ct_color)}
-                        <div style="flex:1;">
-                            <div style="font-weight:600; font-size:14px; color:#212121;">{ct.get('full_name', '?')}</div>
-                            <div style="font-size:12px; color:#757575;">{ct.get('role', '?')} &middot; {ct.get('decision_maker_type', '')} &middot; {ct.get('source', '')}</div>
-                            <div style="font-size:12px; color:#757575; margin-top:2px;">{email_str}{' &middot; ☎️ ' + phone_str if phone_str else ''}</div>
-                            {wpp_html}
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                phone_html = f' &middot; ☎️ {phone_str}' if phone_str else ''
+                # HTML compactado em UMA linha logica (sem newlines/indent) para
+                # nao acionar o parser de markdown como code-block quando
+                # wpp_html for vazio (regra: 4+ espacos de indent = <pre>).
+                card_html = (
+                    f'<div class="data-card" style="border-left: 4px solid {ct_color};">'
+                    f'<div style="display:flex; align-items:center; gap:12px;">'
+                    f'{avatar(ct.get("full_name", "?"), ct_color)}'
+                    f'<div style="flex:1;">'
+                    f'<div style="font-weight:600; font-size:14px; color:#212121;">{ct.get("full_name", "?")}</div>'
+                    f'<div style="font-size:12px; color:#757575;">{ct.get("role", "?")} &middot; {ct.get("decision_maker_type", "")} &middot; {ct.get("source", "")}</div>'
+                    f'<div style="font-size:12px; color:#757575; margin-top:2px;">{email_str}{phone_html}</div>'
+                    f'{wpp_html}'
+                    f'</div></div></div>'
+                )
+                st.markdown(card_html, unsafe_allow_html=True)
 
             st.markdown("")
             with st.expander("Excluir contatos"):
