@@ -859,6 +859,34 @@ with tab_aprovacao:
                     help="Sobrescreve o sender padrao apenas para esta mensagem.",
                 )
 
+            # --- Override de Anexos PDF para esta mensagem ---
+            # Mostra os anexos sticky do user efetivo (apos override de sender) e
+            # permite desmarcar/marcar individualmente apenas para esta mensagem.
+            try:
+                from integrations.email_attachments import email_attachments as _ea_msg
+                _effective_sender = _resolve_send_as(queue_id) or _logged_username
+                _sticky_atts = _ea_msg.list_attachments(username=_effective_sender) or []
+                if _sticky_atts:
+                    with st.expander(
+                        f"Anexos PDF ({sum(1 for a in _sticky_atts if a.get('enabled', True))} ativo/s)",
+                        icon=":material/attach_file:",
+                    ):
+                        st.caption(
+                            "Por padrao envia os anexos ativos do remetente efetivo. "
+                            "Desmarque para EXCLUIR desta mensagem (sem afetar a config sticky)."
+                        )
+                        for _a in _sticky_atts:
+                            _aid_msg = _a.get("id", "")
+                            _aname = _a.get("name", "?")
+                            _aenabled = bool(_a.get("enabled", True))
+                            st.checkbox(
+                                f"{_aname} {'' if _aenabled else '(inativo no sticky)'}",
+                                value=_aenabled,
+                                key=f"att_for_{queue_id}_{_aid_msg}",
+                            )
+            except Exception:
+                pass
+
             # --- Botoes de acao ---
             st.markdown("")
 
@@ -886,10 +914,37 @@ with tab_aprovacao:
                     sub = edited_subject if subject_changed else None
                     bod = edited_body if body_changed else None
                     _final_send_as = _resolve_send_as(queue_id)
+                    # Coletar override de anexos: snapshot apenas dos checados nesta msg
+                    _att_override = None
+                    try:
+                        from integrations.email_attachments import email_attachments as _ea_apv
+                        _sticky_for_approve = _ea_apv.list_attachments(
+                            username=(_final_send_as or _logged_username)
+                        ) or []
+                        if _sticky_for_approve:
+                            _selected_for_msg = []
+                            for _a in _sticky_for_approve:
+                                _aid_apv = _a.get("id", "")
+                                _key_apv = f"att_for_{queue_id}_{_aid_apv}"
+                                if st.session_state.get(_key_apv, _a.get("enabled", True)):
+                                    _selected_for_msg.append({
+                                        "name": _a.get("name", "anexo.pdf"),
+                                        "url": _a.get("url", ""),
+                                    })
+                            # So registra override se difere do sticky-defaults
+                            _sticky_active = [
+                                {"name": a.get("name"), "url": a.get("url")}
+                                for a in _sticky_for_approve if a.get("enabled", True) and a.get("url")
+                            ]
+                            if _selected_for_msg != _sticky_active:
+                                _att_override = _selected_for_msg
+                    except Exception:
+                        _att_override = None
                     ok = queue_manager.approve(
                         queue_id, edited_subject=sub, edited_body=bod,
                         scheduled_send_at=scheduled_send_at_iso,
                         send_as_username=_final_send_as if _final_send_as != _logged_username else None,
+                        attachment_urls=_att_override,
                     )
                     if ok:
                         extra_ids = st.session_state.get(f"extra_contacts_{queue_id}", [])
@@ -1753,6 +1808,131 @@ with tab_templates:
 
     except Exception as e:
         st.warning(f"Assinatura indisponivel: {e}")
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ============================================================
+    # Anexos de Email (sticky por usuario)
+    # ============================================================
+    section_header("Anexos de Email (PDF)", "attach_file")
+    _att_user = st.session_state.get("username", "")
+    _att_name = st.session_state.get("name", _att_user or "?")
+    st.markdown(
+        f'<div style="font-size:13px;color:#757575;margin-bottom:12px">'
+        f'Anexos do <strong>seu perfil</strong> '
+        f'(<code>{_att_user}</code> &mdash; {_att_name}). '
+        f'PDFs marcados como <strong>ativos</strong> sao anexados '
+        f'<strong>automaticamente</strong> em todos os emails enviados por voce '
+        f'(iniciais e follow-ups). Voce pode excluir/incluir individualmente por '
+        f'mensagem na aba <em>Aprovacao</em>. Limite recomendado: <strong>10 MB</strong> por anexo.'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    _MAX_ATT_MB = 10
+
+    try:
+        from integrations.email_attachments import email_attachments
+        from database.supabase_client import db as _db_att
+        from datetime import datetime as _dtatt
+
+        # --- Uploader ---
+        att_up_col1, att_up_col2 = st.columns([3, 1])
+        with att_up_col1:
+            _uploaded = st.file_uploader(
+                "Adicionar PDF",
+                type=["pdf"],
+                key="comm_att_uploader",
+                accept_multiple_files=False,
+                help=f"Maximo {_MAX_ATT_MB} MB.",
+            )
+        with att_up_col2:
+            st.markdown('<div style="margin-top:28px"></div>', unsafe_allow_html=True)
+            _do_upload = st.button(
+                "Enviar para a biblioteca",
+                use_container_width=True,
+                disabled=(_uploaded is None or not _att_user),
+                key="comm_btn_upload_att",
+            )
+
+        if _do_upload and _uploaded and _att_user:
+            _fbytes = _uploaded.getvalue()
+            _fsize = len(_fbytes)
+            if _fsize > _MAX_ATT_MB * 1024 * 1024:
+                st.error(
+                    f"Arquivo de {_fsize / 1024 / 1024:.1f} MB excede o limite "
+                    f"de {_MAX_ATT_MB} MB. Reduza ou hospede em link externo."
+                )
+            else:
+                _ts = _dtatt.utcnow().strftime("%Y%m%d_%H%M%S")
+                _safe_name = _re.sub(r"[^A-Za-z0-9._-]+", "_", _uploaded.name)
+                _path = f"attachments/{_att_user}/{_ts}_{_safe_name}"
+                _url = _db_att.upload_attachment(
+                    _path, _fbytes, content_type="application/pdf"
+                )
+                if _url:
+                    _aid = email_attachments.add_attachment(
+                        name=_uploaded.name,
+                        url=_url,
+                        size_bytes=_fsize,
+                        storage_path=_path,
+                    )
+                    if _aid:
+                        st.success(f"Anexo '{_uploaded.name}' carregado.")
+                        st.rerun()
+                    else:
+                        st.error("Falha ao registrar o anexo na biblioteca.")
+                else:
+                    st.error("Falha no upload para o Storage.")
+
+        # --- Lista atual ---
+        _items = email_attachments.list_attachments()
+        if not _items:
+            alert_banner("Nenhum anexo cadastrado ainda. Faca upload acima.", "info")
+        else:
+            st.caption(f"{len(_items)} anexo(s) cadastrado(s) - {sum(1 for it in _items if it.get('enabled', True))} ativo(s).")
+            for _it in _items:
+                _aid_it = _it.get("id", "")
+                _name_it = _it.get("name", "?")
+                _size_mb = (_it.get("size_bytes", 0) or 0) / 1024 / 1024
+                _enabled_it = bool(_it.get("enabled", True))
+                _url_it = _it.get("url", "")
+                _row_a, _row_b, _row_c, _row_d = st.columns([4, 1, 1, 1])
+                with _row_a:
+                    _link_html = (
+                        f'<a href="{_url_it}" target="_blank" style="text-decoration:none;color:#1976D2">'
+                        f'{_name_it}</a>' if _url_it else _name_it
+                    )
+                    st.markdown(
+                        f'<div style="padding:4px 0;"><strong>{_link_html}</strong> '
+                        f'<span style="color:#9E9E9E;font-size:12px">'
+                        f'({_size_mb:.2f} MB)</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                with _row_b:
+                    _new_enabled = st.checkbox(
+                        "Ativo",
+                        value=_enabled_it,
+                        key=f"comm_att_enabled_{_aid_it}",
+                    )
+                    if _new_enabled != _enabled_it:
+                        email_attachments.toggle_attachment(_aid_it, _new_enabled)
+                        st.rerun()
+                with _row_c:
+                    if st.button("Remover", key=f"comm_att_rm_{_aid_it}", use_container_width=True):
+                        email_attachments.remove_attachment(_aid_it, also_delete_file=True)
+                        st.success(f"'{_name_it}' removido.")
+                        st.rerun()
+                with _row_d:
+                    if _url_it:
+                        st.markdown(
+                            f'<a href="{_url_it}" target="_blank" style="text-decoration:none">'
+                            f'<button style="background:#E0E0E0;border:0;padding:4px 12px;border-radius:4px;cursor:pointer;width:100%">Abrir</button></a>',
+                            unsafe_allow_html=True,
+                        )
+
+    except Exception as _e_att:
+        st.warning(f"Anexos indisponiveis: {_e_att}")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
