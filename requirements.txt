@@ -16,3 +16,18 @@ requests>=2.31.0
 schedule>=1.2.1
 python-dateutil>=2.8.2
 python-json-logger>=2.0.7
+
+# ---- Pipeline (enrich + contacts + write) ----
+beautifulsoup4>=4.12.0           # HTML parsing (agents/enricher.py, contact_finder.py, tools/phone_finder.py)
+lxml>=5.1.0                      # parser rapido pro bs4
+unidecode>=1.3.8                 # normalizacao de strings (tools/email_deducer.py)
+
+# ---- LLM APIs (qualifier, writer, perda_classifier, IAlex) ----
+anthropic>=0.39.0                # Claude API (tools/perda_classifier.py top-level + agents lazy)
+openai>=1.50.0                   # OpenAI API (agent/brain.py top-level + intent classifier)
+
+# ---- CRM integrations ----
+hubspot-api-client>=9.0.0        # HubSpot sync bidirecional (integrations/hubspot_client.py)
+
+# ---- Utils ----
+phonenumbers>=8.13.30            # Validacao/formatacao de telefones BR
