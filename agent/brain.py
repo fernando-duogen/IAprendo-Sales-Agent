@@ -8817,6 +8817,32 @@ class Brain:
 
             parts = [SYSTEM_PROMPT]
 
+            # 0. Identidade do USUARIO ATIVO (multi-user)
+            # webhook_server.set_active_sender_for_thread() ja resolveu pelo numero
+            # do WhatsApp (Fernando/Lizianne/Felipe). No dashboard, vem do session_state.
+            try:
+                from utils.sender_profile import get_active_sender
+                _u = get_active_sender()
+                _full = _u.get("name") or ""
+                _first = (_full.split()[0] if _full.strip() else "Fernando")
+                _username = _u.get("username") or "fernando"
+                _role = _u.get("role") or ""
+                _email = _u.get("email") or "?"
+                parts.append(
+                    f"\n== USUARIO ATIVO (a pessoa com quem voce esta conversando AGORA) ==\n"
+                    f"- Nome completo: {_full or '?'}\n"
+                    f"- Tratar como: **{_first}** (use o primeiro nome ao se dirigir a ele/ela)\n"
+                    f"- Username interno: {_username}\n"
+                    f"- Email: {_email}\n"
+                    f"- Cargo: {_role}\n"
+                    f"\n"
+                    f"IMPORTANTE: cumprimente e se dirija sempre como '{_first}' (nao 'Fernando' por padrao). "
+                    f"Quando MOSTRAR/PERGUNTAR/CONFIRMAR (regra zero), fale com {_first}. "
+                    f"A REGRA ZERO continua valida — nunca aprovar/enviar email sem confirmacao explicita de {_first}.\n"
+                )
+            except Exception as _e_user:
+                logger.debug(f"Falha ao injetar identidade do usuario ativo: {_e_user}")
+
             # 1. Memorias globais importantes (top 5)
             globals_mem = memory.get_for("global", limit=5)
             if globals_mem:
