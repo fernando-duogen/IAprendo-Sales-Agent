@@ -256,7 +256,111 @@ def render_execucao():
             st.toast("Selecao limpa!")
             st.rerun()
 
-    # --- Autocomplete multiselect + Colar Lista ---
+    # --- Tabela de selecao com checkbox (interativa, escala melhor que autocomplete) ---
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    section_header("Tabela de Selecao", "checklist")
+
+    # Filtros inline acima da tabela (combinam em AND, alem dos filtros de preparo)
+    tf1, tf2, tf3, tf4 = st.columns([2, 2, 2, 2])
+    with tf1:
+        cidades_disp = sorted({c.get("city") or "?" for c in filtered_base})
+        tbl_cidade = st.multiselect(
+            "Cidade:", cidades_disp, default=[],
+            key="tbl_filter_cidade", placeholder="Todas",
+        )
+    with tf2:
+        status_disp = sorted({c.get("status") or "raw" for c in filtered_base})
+        tbl_status = st.multiselect(
+            "Status:", status_disp, default=[],
+            key="tbl_filter_status",
+            format_func=lambda s: f"{STATUS_ICON.get(s, '')} {STATUS_PT.get(s, s)}",
+            placeholder="Todos",
+        )
+    with tf3:
+        tbl_score_min = st.slider(
+            "Score min:", 0, 100, 0, key="tbl_filter_score",
+        )
+    with tf4:
+        tbl_busca = st.text_input(
+            "Buscar nome:", key="tbl_filter_busca",
+            placeholder="Digite parte do nome...",
+        )
+
+    def _passes_tbl_filter(c):
+        if tbl_cidade and (c.get("city") or "?") not in tbl_cidade:
+            return False
+        if tbl_status and (c.get("status") or "raw") not in tbl_status:
+            return False
+        if (c.get("qualification_score") or 0) < tbl_score_min:
+            return False
+        if tbl_busca and tbl_busca.lower() not in (c.get("name", "") or "").lower():
+            return False
+        return True
+
+    tbl_filtered = [c for c in filtered_base if _passes_tbl_filter(c)]
+    current_sel_set = set(st.session_state.get("pipeline_selected_ids", []))
+
+    st.caption(
+        f"Mostrando **{len(tbl_filtered)}** escola(s) (de {len(filtered_base)} apos filtros de preparo). "
+        f"**{len(current_sel_set)}** selecionada(s) no total (incluindo as fora deste filtro)."
+    )
+
+    if not tbl_filtered:
+        alert_banner("Nenhuma escola corresponde aos filtros da tabela.", "info")
+    else:
+        df_tbl = pd.DataFrame([{
+            "Sel": c["id"] in current_sel_set,
+            "Escola": (c.get("name") or "?")[:60],
+            "Cidade": c.get("city") or "",
+            "UF": c.get("state") or "",
+            "Status": f"{STATUS_ICON.get(c.get('status',''), '')} {STATUS_PT.get(c.get('status',''), '')}",
+            "Score": c.get("qualification_score") or 0,
+            "Fit": c.get("_fit") or 0,
+            "Tipo": (c.get("admin_dependency") or "")[:20],
+            "_id": c["id"],
+        } for c in tbl_filtered])
+
+        edited_tbl = st.data_editor(
+            df_tbl[["Sel", "Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"]],
+            use_container_width=True,
+            hide_index=True,
+            height=400,
+            column_config={
+                "Sel": st.column_config.CheckboxColumn(
+                    "✓", default=False, width="small",
+                    help="Marcar pra incluir na selecao do pipeline",
+                ),
+                "Score": st.column_config.ProgressColumn(
+                    "Score", width="small", min_value=0, max_value=100, format="%d",
+                ),
+                "Fit": st.column_config.ProgressColumn(
+                    "Fit", width="small", min_value=0, max_value=100, format="%d",
+                ),
+            },
+            disabled=["Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"],
+            key="tbl_pipeline_editor",
+        )
+
+        # Sincronizacao bidirecional: ids fora do filtro permanecem como estao,
+        # so atualizamos os ids visiveis. Pattern "preserve fora do filtro".
+        new_marked = {
+            df_tbl.iloc[i]["_id"]
+            for i in edited_tbl.index
+            if bool(edited_tbl.iloc[i]["Sel"])
+        }
+        new_unmarked = {
+            df_tbl.iloc[i]["_id"]
+            for i in edited_tbl.index
+            if not bool(edited_tbl.iloc[i]["Sel"])
+        }
+        next_sel = (current_sel_set - new_unmarked) | new_marked
+        if next_sel != current_sel_set:
+            st.session_state["pipeline_selected_ids"] = list(next_sel)
+            st.rerun()
+
+    # --- Autocomplete multiselect + Colar Lista (fallback pra busca por nome / cola externa) ---
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    section_header("Busca avancada (opcional)", "search")
     sub_tab_auto, sub_tab_paste = st.tabs(["Autocomplete", "Colar Lista"])
 
     with sub_tab_auto:

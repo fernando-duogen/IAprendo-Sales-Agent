@@ -1931,6 +1931,20 @@ with tab_templates:
                             unsafe_allow_html=True,
                         )
 
+    except AttributeError as _e_att:
+        # Cache stale do Streamlit: codigo foi atualizado mas sys.modules ainda
+        # serve a versao antiga do supabase_client (sem upload_attachment/remove_attachment).
+        # Acontece quando deploy faz hot-reload parcial em vez de full restart.
+        _err_str = str(_e_att)
+        if "upload_attachment" in _err_str or "remove_attachment" in _err_str:
+            st.error(
+                "⚠️ **Cache desatualizado** — o codigo foi atualizado mas o app esta servindo "
+                "uma versao antiga em memoria. **Reinicie o app**: canto inferior direito "
+                "do Streamlit Cloud → **Manage app** → menu **⋮** → **Reboot app** "
+                "(local: Ctrl+C no terminal e rodar `streamlit run dashboard/app.py` de novo)."
+            )
+        else:
+            st.warning(f"Anexos indisponiveis (AttributeError): {_err_str}")
     except Exception as _e_att:
         st.warning(f"Anexos indisponiveis: {_e_att}")
 
