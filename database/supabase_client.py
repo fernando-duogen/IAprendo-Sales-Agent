@@ -555,6 +555,7 @@ class Database:
         edited_body: str = None,
         scheduled_send_at: str = None,
         send_as_username: str = None,
+        attachment_urls: list = None,
     ) -> bool:
         """Aprova mensagem para envio. Se scheduled_send_at fornecido, agenda
         o envio para o horario especificado (ISO 8601). Se None, envia imediatamente.
@@ -563,6 +564,10 @@ class Database:
             send_as_username: Override admin para enviar como outro usuario.
                 Salvo em metadata.send_as_username e lido por send_approved.py.
                 None = usa o sender ativo no momento do envio (padrao).
+            attachment_urls: Override de anexos para esta mensagem especifica.
+                Lista de dicts [{"name", "url"}]. Salvo em metadata.attachment_urls.
+                Se None = sticky default (anexos ativos do user resolvidos no envio).
+                Se [] (lista vazia explicita) = enviar SEM anexos.
         """
         try:
             from datetime import datetime
@@ -573,8 +578,9 @@ class Database:
                 update['body'] = edited_body
             if scheduled_send_at:
                 update['scheduled_send_at'] = scheduled_send_at
-            if send_as_username:
-                # Merge com metadata existente (preservar outros campos)
+            # Merge metadata (envia ambos os overrides quando aplicavel)
+            need_metadata = send_as_username is not None or attachment_urls is not None
+            if need_metadata:
                 try:
                     cur = (self.client.table('approval_queue').select('metadata')
                            .eq('id', queue_id).single().execute().data or {})
@@ -585,10 +591,14 @@ class Database:
                             cur_meta = _json.loads(cur_meta)
                         except Exception:
                             cur_meta = {}
-                    cur_meta['send_as_username'] = send_as_username
-                    update['metadata'] = cur_meta
                 except Exception:
-                    update['metadata'] = {'send_as_username': send_as_username}
+                    cur_meta = {}
+                if send_as_username:
+                    cur_meta['send_as_username'] = send_as_username
+                if attachment_urls is not None:
+                    # Aceita lista vazia (override pra "sem anexos")
+                    cur_meta['attachment_urls'] = list(attachment_urls)
+                update['metadata'] = cur_meta
             result = self.client.table('approval_queue').update(update).eq('id', queue_id).execute()
             success = bool(result.data)
             if success:
@@ -1134,6 +1144,60 @@ class Database:
         except Exception as e:
             logger.error(f"Erro upload chart: {e}", extra={"path": path})
             return None
+
+    def upload_attachment(
+        self,
+        path: str,
+        file_bytes: bytes,
+        content_type: str = "application/pdf",
+    ) -> Optional[str]:
+        """Upload de arquivo arbitrario (PDF, etc) para Supabase Storage.
+
+        Reusa o bucket `insight-charts` (publico) e segue o mesmo padrao de
+        upload_chart/upload_report (delete+reupload em fallback).
+
+        Args:
+            path: Caminho relativo dentro do bucket. Ex: 'attachments/fernando/1234_proposta.pdf'
+            file_bytes: Conteudo do arquivo em bytes.
+            content_type: MIME type. Default 'application/pdf'.
+
+        Returns:
+            URL publica do arquivo, ou None se falhar.
+        """
+        self._ensure_chart_bucket()
+        try:
+            bucket = self.client.storage.from_(self._CHART_BUCKET)
+            try:
+                bucket.upload(
+                    path,
+                    file_bytes,
+                    file_options={"content-type": content_type, "upsert": "true"},
+                )
+            except Exception:
+                try:
+                    bucket.remove([path])
+                except Exception:
+                    pass
+                bucket.upload(
+                    path,
+                    file_bytes,
+                    file_options={"content-type": content_type},
+                )
+            url = bucket.get_public_url(path)
+            logger.info("Attachment uploaded", extra={"path": path, "url": url[:80], "size": len(file_bytes)})
+            return url
+        except Exception as e:
+            logger.error(f"Erro upload attachment: {e}", extra={"path": path})
+            return None
+
+    def remove_attachment(self, path: str) -> bool:
+        """Remove arquivo do Supabase Storage. Retorna True se OK."""
+        try:
+            self.client.storage.from_(self._CHART_BUCKET).remove([path])
+            return True
+        except Exception as e:
+            logger.error(f"Erro remove attachment: {e}", extra={"path": path})
+            return False
 
     def upload_report(self, path: str, html_content: str) -> Optional[str]:
         """Upload de HTML report para Supabase Storage. Retorna URL publica.
