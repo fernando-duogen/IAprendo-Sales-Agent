@@ -58,40 +58,52 @@ STATUS_ICON = {
 # ======================================================================
 # PIPELINE STEPPER
 # ======================================================================
-try:
-    all_companies = db.client.table("companies").select(
+
+# Cache de all_companies: evita SELECT+fit_score pesado a cada rerun
+# (ex: ao marcar checkbox Forcar/Dry-run, mudar filtros, etc).
+# TTL curto (30s) pra refletir mudancas razoavelmente rapido.
+# Botao "Atualizar dados" abaixo invalida manualmente apos rodar pipeline.
+@st.cache_data(ttl=30, show_spinner=False)
+def _load_all_companies_cached() -> list:
+    rows = db.client.table("companies").select(
         "id,name,city,state,status,qualification_score,admin_dependency,admin_category,"
         "categoria_privada,school_size,fonte_dados,matriculas_fund_af,matriculas_medio,"
         "nivel_tecnologico,qt_coordenadores,phone,website,latitude,longitude,urgency_score,urgency_tier"
     ).order("qualification_score", desc=True).execute().data or []
-
-    # Calcular alvo (Fund AF + Medio) e Fit Score IAprendo para cada escola
     from utils.fit_score import calcular_fit_score
-    for _c in all_companies:
+    for _c in rows:
         _c["_alvo"] = int((_c.get("matriculas_fund_af") or 0) + (_c.get("matriculas_medio") or 0))
         _fit = calcular_fit_score(_c)
         _c["_fit"] = _fit["score"] or 0
+    return rows
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _load_queue_counts_cached() -> dict:
+    counts = {"pending": 0, "approved": 0, "sent": 0}
+    try:
+        q_data = db.client.table("approval_queue").select("status").execute().data or []
+        for q in q_data:
+            qs = q.get("status", "")
+            if qs in counts:
+                counts[qs] += 1
+    except Exception:
+        pass
+    return counts
+
+
+try:
+    all_companies = _load_all_companies_cached()
 
     status_counts = {}
     for c in all_companies:
         s = c.get("status", "raw")
         status_counts[s] = status_counts.get(s, 0) + 1
 
-    pending_count = 0
-    approved_count = 0
-    sent_count = 0
-    try:
-        q_data = db.client.table("approval_queue").select("status").execute().data or []
-        for q in q_data:
-            qs = q.get("status", "")
-            if qs == "pending":
-                pending_count += 1
-            elif qs == "approved":
-                approved_count += 1
-            elif qs == "sent":
-                sent_count += 1
-    except Exception:
-        pass
+    _qc = _load_queue_counts_cached()
+    pending_count = _qc["pending"]
+    approved_count = _qc["approved"]
+    sent_count = _qc["sent"]
 
     # Stepper at top
     pipeline_stepper([
@@ -103,6 +115,16 @@ try:
         {"label": "Aprovadas", "count": approved_count, "color": STATUS_COLORS["approved"]},
         {"label": "Enviadas", "count": sent_count, "color": STATUS_COLORS["sent"]},
     ])
+
+    # Botao pra invalidar cache (uso depois de rodar pipeline pra ver status atualizado)
+    _refresh_cols = st.columns([5, 1])
+    with _refresh_cols[1]:
+        if st.button("🔄 Atualizar dados", key="pipe_refresh_cache",
+                      use_container_width=True,
+                      help="Re-carrega lista de escolas e contadores. Use apos rodar pipeline pra ver status novo."):
+            _load_all_companies_cached.clear()
+            _load_queue_counts_cached.clear()
+            st.rerun()
 
 except Exception as e:
     st.warning(f"Nao foi possivel carregar metricas: {e}")
@@ -344,20 +366,26 @@ def render_execucao():
 
         # Sincronizacao bidirecional: ids fora do filtro permanecem como estao,
         # so atualizamos os ids visiveis. Pattern "preserve fora do filtro".
-        new_marked = {
-            df_tbl.iloc[i]["_id"]
-            for i in edited_tbl.index
-            if bool(edited_tbl.iloc[i]["Sel"])
-        }
-        new_unmarked = {
-            df_tbl.iloc[i]["_id"]
-            for i in edited_tbl.index
-            if not bool(edited_tbl.iloc[i]["Sel"])
-        }
+        # CRITICO: cast explicito pra bool Python (evita drift numpy.bool_ vs bool
+        # que causa loop infinito quando outros widgets disparam rerun).
+        new_marked = set()
+        new_unmarked = set()
+        for i in edited_tbl.index:
+            cid = df_tbl.iloc[i]["_id"]
+            is_sel = bool(edited_tbl.iloc[i]["Sel"]) is True
+            if is_sel:
+                new_marked.add(cid)
+            else:
+                new_unmarked.add(cid)
         next_sel = (current_sel_set - new_unmarked) | new_marked
-        if next_sel != current_sel_set:
-            st.session_state["pipeline_selected_ids"] = list(next_sel)
-            st.rerun()
+        # Comparar como frozenset pra ignorar ordering/tipo de container
+        if frozenset(next_sel) != frozenset(current_sel_set):
+            # Sorted pra estabilidade entre runs (evita drift de ordering)
+            st.session_state["pipeline_selected_ids"] = sorted(next_sel)
+            # NOTA: NAO chamamos st.rerun() aqui pra evitar loop com outros
+            # widgets (ex: checkbox Forcar Reprocessar). Streamlit re-renderiza
+            # naturalmente no proximo evento. Contador "X selecionadas" pode
+            # ficar 1 frame atrasado — aceitavel vs travar a pagina inteira.
 
     # --- Autocomplete multiselect + Colar Lista (fallback pra busca por nome / cola externa) ---
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
