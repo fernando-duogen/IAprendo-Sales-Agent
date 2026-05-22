@@ -331,8 +331,11 @@ def render_execucao():
     if not tbl_filtered:
         alert_banner("Nenhuma escola corresponde aos filtros da tabela.", "info")
     else:
+        # Usar st.dataframe com selection_mode="multi-row" (componente NATIVO
+        # do Streamlit para selecao tabular). NAO usar st.data_editor com
+        # coluna checkbox manual — esse padrao causa loop infinito quando o
+        # df de entrada muda entre runs.
         df_tbl = pd.DataFrame([{
-            "Sel": c["id"] in current_sel_set,
             "Escola": (c.get("name") or "?")[:60],
             "Cidade": c.get("city") or "",
             "UF": c.get("state") or "",
@@ -340,19 +343,23 @@ def render_execucao():
             "Score": c.get("qualification_score") or 0,
             "Fit": c.get("_fit") or 0,
             "Tipo": (c.get("admin_dependency") or "")[:20],
-            "_id": c["id"],
         } for c in tbl_filtered])
 
-        edited_tbl = st.data_editor(
-            df_tbl[["Sel", "Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"]],
+        st.caption(
+            "👆 **Clique nas linhas** para selecionar (Ctrl+click pra multipla, "
+            "Shift+click pra intervalo). Use os filtros acima pra navegar; "
+            "a selecao acumula entre filtros (escolas selecionadas em outras "
+            "buscas aparecem em '✓ Selecionadas' abaixo)."
+        )
+
+        event = st.dataframe(
+            df_tbl,
             use_container_width=True,
             hide_index=True,
             height=400,
+            on_select="rerun",
+            selection_mode="multi-row",
             column_config={
-                "Sel": st.column_config.CheckboxColumn(
-                    "✓", default=False, width="small",
-                    help="Marcar pra incluir na selecao do pipeline",
-                ),
                 "Score": st.column_config.ProgressColumn(
                     "Score", width="small", min_value=0, max_value=100, format="%d",
                 ),
@@ -360,32 +367,56 @@ def render_execucao():
                     "Fit", width="small", min_value=0, max_value=100, format="%d",
                 ),
             },
-            disabled=["Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"],
-            key="tbl_pipeline_editor",
+            key="tbl_pipeline_dataframe",
         )
 
-        # Sincronizacao bidirecional: ids fora do filtro permanecem como estao,
-        # so atualizamos os ids visiveis. Pattern "preserve fora do filtro".
-        # CRITICO: cast explicito pra bool Python (evita drift numpy.bool_ vs bool
-        # que causa loop infinito quando outros widgets disparam rerun).
-        new_marked = set()
-        new_unmarked = set()
-        for i in edited_tbl.index:
-            cid = df_tbl.iloc[i]["_id"]
-            is_sel = bool(edited_tbl.iloc[i]["Sel"]) is True
-            if is_sel:
-                new_marked.add(cid)
-            else:
-                new_unmarked.add(cid)
-        next_sel = (current_sel_set - new_unmarked) | new_marked
-        # Comparar como frozenset pra ignorar ordering/tipo de container
-        if frozenset(next_sel) != frozenset(current_sel_set):
-            # Sorted pra estabilidade entre runs (evita drift de ordering)
-            st.session_state["pipeline_selected_ids"] = sorted(next_sel)
-            # NOTA: NAO chamamos st.rerun() aqui pra evitar loop com outros
-            # widgets (ex: checkbox Forcar Reprocessar). Streamlit re-renderiza
-            # naturalmente no proximo evento. Contador "X selecionadas" pode
-            # ficar 1 frame atrasado — aceitavel vs travar a pagina inteira.
+        # Sincronizacao ACUMULATIVA: adiciona ids selecionados ao set atual.
+        # NAO remove ids fora do filtro (preserva selecao incremental).
+        selected_rows_idx = []
+        try:
+            if event and getattr(event, "selection", None):
+                selected_rows_idx = event.selection.get("rows", []) or []
+        except Exception:
+            selected_rows_idx = []
+
+        if selected_rows_idx:
+            new_ids = {tbl_filtered[i]["id"] for i in selected_rows_idx if i < len(tbl_filtered)}
+            # Adiciona ao set (nao substitui — preserva fora do filtro)
+            if not new_ids.issubset(current_sel_set):
+                next_sel = current_sel_set | new_ids
+                st.session_state["pipeline_selected_ids"] = sorted(next_sel)
+                # NAO chamar st.rerun() — Streamlit re-renderiza via on_select
+
+    # ----- Lista visual "Selecionadas atualmente" -----
+    # st.dataframe(multi-row) nao tem default selection visual (limitacao
+    # Streamlit). Compensamos com esta lista clara + botoes pra remover.
+    _current_sel = set(st.session_state.get("pipeline_selected_ids", []))
+    if _current_sel:
+        with st.expander(
+            f"✓ {len(_current_sel)} escola(s) selecionada(s) — clique ✕ pra remover individual",
+            expanded=False,
+        ):
+            for cid in sorted(_current_sel):
+                comp = next((c for c in all_companies if c["id"] == cid), None)
+                if not comp:
+                    continue
+                rm_cols = st.columns([6, 1])
+                with rm_cols[0]:
+                    _st = comp.get("status", "raw")
+                    st.markdown(
+                        f"- **{comp.get('name', '?')}** ({comp.get('city', '?')}/"
+                        f"{comp.get('state', '?')}) — "
+                        f"{STATUS_ICON.get(_st, '')} {STATUS_PT.get(_st, _st)} "
+                        f"· Score {comp.get('qualification_score') or 0}"
+                    )
+                with rm_cols[1]:
+                    if st.button("✕", key=f"rm_sel_{cid}",
+                                  use_container_width=True,
+                                  help="Remover da selecao"):
+                        _sel = set(st.session_state.get("pipeline_selected_ids", []))
+                        _sel.discard(cid)
+                        st.session_state["pipeline_selected_ids"] = sorted(_sel)
+                        st.rerun()
 
     # --- Autocomplete multiselect + Colar Lista (fallback pra busca por nome / cola externa) ---
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
