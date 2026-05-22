@@ -476,7 +476,7 @@ def render_execucao():
     contactable_count = qualified_count + enriched_count + sel_by_status.get("contacted", 0)
 
     # Controles do pipeline
-    ctrl1, ctrl2, ctrl3 = st.columns(3)
+    ctrl1, ctrl2, ctrl3, ctrl4 = st.columns(4)
     with ctrl1:
         write_mode_label = st.selectbox("Modo de mensagem:", ["IA (personalizada)", "Template (padrao)"],
                                          key="pipe_write_mode")
@@ -487,6 +487,20 @@ def render_execucao():
         dry_run = st.checkbox("Modo simulado (dry run)", value=False, key="pipe_dry_run")
         if dry_run:
             alert_banner("Nenhuma acao real sera executada", "warning")
+    with ctrl4:
+        force_reprocess = st.checkbox(
+            "Forcar reprocessar",
+            value=False,
+            key="pipe_force_reprocess",
+            help=(
+                "Ignora o status atual das escolas selecionadas. "
+                "Use quando quiser RE-rodar enrich numa ja enriched, "
+                "ou re-qualify numa ja qualified, etc. "
+                "Sem essa opcao, a etapa pula escolas que ja passaram dela."
+            ),
+        )
+        if force_reprocess:
+            alert_banner("Modo 'Forcar' ATIVO", "warning")
 
     # Pipeline steps as cards — cascata (cada botao roda TODAS as etapas
     # anteriores + a sua). Garante que Top N por Fit (em qualquer status)
@@ -494,9 +508,81 @@ def render_execucao():
     sel_total = len(selected_ids)
     no_selection = sel_total == 0
 
+    # Mapa: cada step espera escolas em quais status?
+    _STEP_INPUT_STATUS = {
+        "qualify": {"raw"},
+        "enrich": {"qualified"},
+        "contacts": {"enriched"},
+        "write": {"enriched", "qualified", "contacted"},
+    }
+    _STATUS_LABEL = {
+        "raw": "Novas", "qualified": "Qualificadas", "enriched": "Enriquecidas",
+        "contacted": "Contatadas", "responded": "Respondeu", "converted": "Convertida",
+    }
+
+    def _precheck_eligibility(step_list: list) -> dict:
+        """Conta quantas escolas selecionadas se encaixam em cada step (por status).
+        Considera cascata: o status pos-step anterior conta como entrada do proximo.
+        """
+        # Status atuais das escolas selecionadas
+        sel_status_counts = dict(sel_by_status)  # {raw: N, qualified: M, ...}
+        eligible_per_step = {}
+        cum_counts = dict(sel_status_counts)  # simula avanco da cascata
+
+        for step in step_list:
+            expected = _STEP_INPUT_STATUS.get(step, set())
+            elig = sum(cum_counts.get(s, 0) for s in expected)
+            eligible_per_step[step] = elig
+            # Simula avanco da cascata: o que rodou neste step "avanca" pro proximo
+            if step == "qualify":
+                advanced = cum_counts.pop("raw", 0)
+                cum_counts["qualified"] = cum_counts.get("qualified", 0) + advanced
+            elif step == "enrich":
+                advanced = cum_counts.pop("qualified", 0)
+                cum_counts["enriched"] = cum_counts.get("enriched", 0) + advanced
+            elif step == "contacts":
+                # contacts nao muda status — fica em enriched
+                pass
+            elif step == "write":
+                advanced = (
+                    cum_counts.pop("enriched", 0)
+                    + cum_counts.pop("qualified", 0)
+                    + cum_counts.pop("contacted", 0)
+                )
+                cum_counts["contacted"] = cum_counts.get("contacted", 0) + advanced
+        return eligible_per_step
+
     def _cascade(step_name: str, step_list: list, extra_kwargs: dict = None):
-        """Executa run_pipeline com a cascata de steps ate step_name."""
+        """Executa run_pipeline com pre-check + feedback rico."""
         from workflows.daily_pipeline import run_pipeline
+
+        # PRE-CHECK: se nao em modo forcar, validar elegibilidade dos steps
+        if not force_reprocess:
+            elig = _precheck_eligibility(step_list)
+            total_elig_last = elig.get(step_name, 0)
+            if total_elig_last == 0:
+                # Nenhuma escola selecionada eh elegivel — explica claramente
+                status_atual = ", ".join(
+                    f"{_STATUS_LABEL.get(s, s)}: {n}"
+                    for s, n in sorted(sel_by_status.items())
+                ) or "(vazio)"
+                status_esperado_set = _STEP_INPUT_STATUS.get(step_name, set())
+                status_esperado_txt = ", ".join(
+                    _STATUS_LABEL.get(s, s) for s in sorted(status_esperado_set)
+                )
+                st.error(
+                    f"**Nenhuma das {sel_total} escola(s) selecionada(s) eh elegivel "
+                    f"para '{step_name}'.**\n\n"
+                    f"- Status atual das selecionadas: {status_atual}\n"
+                    f"- A etapa '{step_name}' precisa de escolas em: **{status_esperado_txt}**\n\n"
+                    f"💡 **Soluções:**\n"
+                    f"1. Marque o checkbox **'Forcar reprocessar'** ali em cima e clique de novo "
+                    f"(vai rodar nas selecionadas mesmo que ja tenham passado dessa etapa).\n"
+                    f"2. OU selecione outras escolas que estejam no status necessario."
+                )
+                return
+
+        # Executar pipeline
         kwargs = {
             "qualify_limit": sel_total,
             "enrich_limit": sel_total,
@@ -506,21 +592,63 @@ def render_execucao():
             "write_mode": write_mode,
             "company_ids": selected_ids,
             "steps": step_list,
+            "force": force_reprocess,
         }
         if extra_kwargs:
             kwargs.update(extra_kwargs)
-        with st.spinner(f"Executando cascata ate '{step_name}' em {sel_total} escola(s)..."):
+
+        with st.spinner(
+            f"Executando '{step_name}' em {sel_total} escola(s)"
+            f"{' (modo FORCAR)' if force_reprocess else ''}..."
+        ):
             report = run_pipeline(**kwargs)
-        # Toast com resumo por etapa
-        parts = []
-        for s in step_list:
-            r = report.get("steps", {}).get(s, {})
+
+        # FEEDBACK RICO: caixa colorida + breakdown por step
+        steps_data = report.get("steps", {})
+        last_step_out = steps_data.get(step_name, {}).get("output", 0)
+        total_processed = sum(
+            steps_data.get(s, {}).get("output", 0) for s in step_list
+        )
+
+        if last_step_out > 0:
+            st.success(
+                f"✅ **'{step_name}' concluido com sucesso:** "
+                f"{last_step_out} escola(s) processada(s) nesta etapa "
+                f"(total na cascata: {total_processed})."
+            )
+        elif total_processed > 0:
+            st.warning(
+                f"⚠️ **Cascata rodou** mas a etapa final '{step_name}' processou 0. "
+                f"Outras etapas processaram: {total_processed}. "
+                f"Veja detalhes abaixo."
+            )
+        else:
+            st.error(
+                f"❌ **Nenhuma escola foi processada em '{step_name}'.** "
+                f"Possiveis causas: rate limit de API atingido, API key faltando, "
+                f"ou escolas ja processadas (use 'Forcar reprocessar')."
+            )
+
+        # Breakdown por etapa em formato visual
+        breakdown_cols = st.columns(len(step_list))
+        for i, s in enumerate(step_list):
+            r = steps_data.get(s, {})
+            inp = r.get("input", 0)
             out = r.get("output", 0)
-            parts.append(f"{s}:{out}")
-        st.toast(f"Cascata: {' | '.join(parts)}")
-        with st.expander("Ver relatorio da execucao", expanded=False):
+            with breakdown_cols[i]:
+                _color = "#4CAF50" if out > 0 else ("#FF9800" if inp > 0 else "#9E9E9E")
+                st.markdown(
+                    f'<div style="border-left:4px solid {_color}; padding:8px 12px; '
+                    f'background:#f5f5f5; border-radius:4px">'
+                    f'<div style="font-size:11px; color:#757575; text-transform:uppercase">{s}</div>'
+                    f'<div style="font-size:14px; font-weight:600">{out}/{inp}</div>'
+                    f'<div style="font-size:10px; color:#999">processadas/entradas</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        with st.expander("Ver relatorio JSON completo", expanded=False):
             st.json(report)
-        st.rerun()
 
     pc1, pc2, pc3, pc4, pc5 = st.columns(5)
 

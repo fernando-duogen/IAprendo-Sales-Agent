@@ -379,18 +379,22 @@ class Database:
     def get_companies_by_ids_and_status(
         self,
         company_ids: List[str],
-        status: str
+        status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Retorna empresas que estao na lista de IDs E tem o status especificado."""
+        """Retorna empresas filtradas por IDs (e opcionalmente status).
+
+        Args:
+            company_ids: Lista de UUIDs a buscar.
+            status: Status para filtrar. Se None, retorna TODAS as escolas
+                    nos IDs sem filtro de status (modo "forcar reprocessar").
+        """
         if not company_ids:
             return []
         try:
-            result = self.client.table('companies')\
-                .select('*')\
-                .in_('id', company_ids)\
-                .eq('status', status)\
-                .order('qualification_score', desc=True)\
-                .execute()
+            q = self.client.table('companies').select('*').in_('id', company_ids)
+            if status is not None:
+                q = q.eq('status', status)
+            result = q.order('qualification_score', desc=True).execute()
             return result.data or []
         except Exception as e:
             logger.error("Erro ao buscar empresas por IDs e status",
