@@ -8,6 +8,7 @@
 import streamlit as st
 import sys
 import pandas as pd
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
@@ -475,8 +476,8 @@ def render_execucao():
     enriched_count = sel_by_status.get("enriched", 0)
     contactable_count = qualified_count + enriched_count + sel_by_status.get("contacted", 0)
 
-    # Controles do pipeline
-    ctrl1, ctrl2, ctrl3, ctrl4 = st.columns(4)
+    # Controles do pipeline (3 colunas — Forcar fica em destaque mais abaixo)
+    ctrl1, ctrl2, ctrl3 = st.columns(3)
     with ctrl1:
         write_mode_label = st.selectbox("Modo de mensagem:", ["IA (personalizada)", "Template (padrao)"],
                                          key="pipe_write_mode")
@@ -484,23 +485,21 @@ def render_execucao():
     with ctrl2:
         score_min = st.slider("Score minimo para email:", 0, 100, 60, key="pipe_score_min")
     with ctrl3:
-        dry_run = st.checkbox("Modo simulado (dry run)", value=False, key="pipe_dry_run")
-        if dry_run:
-            alert_banner("Nenhuma acao real sera executada", "warning")
-    with ctrl4:
-        force_reprocess = st.checkbox(
-            "Forcar reprocessar",
-            value=False,
-            key="pipe_force_reprocess",
-            help=(
-                "Ignora o status atual das escolas selecionadas. "
-                "Use quando quiser RE-rodar enrich numa ja enriched, "
-                "ou re-qualify numa ja qualified, etc. "
-                "Sem essa opcao, a etapa pula escolas que ja passaram dela."
-            ),
-        )
-        if force_reprocess:
-            alert_banner("Modo 'Forcar' ATIVO", "warning")
+        dry_run = st.checkbox("Modo simulado (dry run)", value=False, key="pipe_dry_run",
+                               help="Apenas simula, nao executa de verdade.")
+
+    # Forcar reprocessar — destaque visual maior, perto dos botoes
+    force_reprocess = st.checkbox(
+        "🔁 **Forcar reprocessar** (use pra rodar enrich numa escola ja enriched, etc)",
+        value=False,
+        key="pipe_force_reprocess",
+        help=(
+            "Sem essa opcao, cada etapa pula escolas que ja passaram dela "
+            "(ex: enrich nao roda em escolas em status enriched). "
+            "Marque pra forcar a re-execucao. Agents tambem vao tentar refetch "
+            "(re-buscar Google Places, re-rodar cascata de contatos, etc)."
+        ),
+    )
 
     # Pipeline steps as cards — cascata (cada botao roda TODAS as etapas
     # anteriores + a sua). Garante que Top N por Fit (em qualquer status)
@@ -553,7 +552,11 @@ def render_execucao():
         return eligible_per_step
 
     def _cascade(step_name: str, step_list: list, extra_kwargs: dict = None):
-        """Executa run_pipeline com pre-check + feedback rico."""
+        """Executa run_pipeline com pre-check + salva resultado em session_state.
+
+        O resultado eh persistido pra continuar visivel mesmo apos reruns
+        causados por outros widgets (marcar checkbox, etc).
+        """
         from workflows.daily_pipeline import run_pipeline
 
         # PRE-CHECK: se nao em modo forcar, validar elegibilidade dos steps
@@ -561,7 +564,7 @@ def render_execucao():
             elig = _precheck_eligibility(step_list)
             total_elig_last = elig.get(step_name, 0)
             if total_elig_last == 0:
-                # Nenhuma escola selecionada eh elegivel — explica claramente
+                # Salvar o erro de pre-check pra renderizar de forma persistente
                 status_atual = ", ".join(
                     f"{_STATUS_LABEL.get(s, s)}: {n}"
                     for s, n in sorted(sel_by_status.items())
@@ -570,16 +573,15 @@ def render_execucao():
                 status_esperado_txt = ", ".join(
                     _STATUS_LABEL.get(s, s) for s in sorted(status_esperado_set)
                 )
-                st.error(
-                    f"**Nenhuma das {sel_total} escola(s) selecionada(s) eh elegivel "
-                    f"para '{step_name}'.**\n\n"
-                    f"- Status atual das selecionadas: {status_atual}\n"
-                    f"- A etapa '{step_name}' precisa de escolas em: **{status_esperado_txt}**\n\n"
-                    f"💡 **Soluções:**\n"
-                    f"1. Marque o checkbox **'Forcar reprocessar'** ali em cima e clique de novo "
-                    f"(vai rodar nas selecionadas mesmo que ja tenham passado dessa etapa).\n"
-                    f"2. OU selecione outras escolas que estejam no status necessario."
-                )
+                st.session_state["pipeline_last_run"] = {
+                    "kind": "precheck_error",
+                    "step_name": step_name,
+                    "step_list": step_list,
+                    "sel_total": sel_total,
+                    "status_atual": status_atual,
+                    "status_esperado": status_esperado_txt,
+                    "timestamp": datetime.now().isoformat() if "datetime" in globals() else "",
+                }
                 return
 
         # Executar pipeline
@@ -603,52 +605,15 @@ def render_execucao():
         ):
             report = run_pipeline(**kwargs)
 
-        # FEEDBACK RICO: caixa colorida + breakdown por step
-        steps_data = report.get("steps", {})
-        last_step_out = steps_data.get(step_name, {}).get("output", 0)
-        total_processed = sum(
-            steps_data.get(s, {}).get("output", 0) for s in step_list
-        )
-
-        if last_step_out > 0:
-            st.success(
-                f"✅ **'{step_name}' concluido com sucesso:** "
-                f"{last_step_out} escola(s) processada(s) nesta etapa "
-                f"(total na cascata: {total_processed})."
-            )
-        elif total_processed > 0:
-            st.warning(
-                f"⚠️ **Cascata rodou** mas a etapa final '{step_name}' processou 0. "
-                f"Outras etapas processaram: {total_processed}. "
-                f"Veja detalhes abaixo."
-            )
-        else:
-            st.error(
-                f"❌ **Nenhuma escola foi processada em '{step_name}'.** "
-                f"Possiveis causas: rate limit de API atingido, API key faltando, "
-                f"ou escolas ja processadas (use 'Forcar reprocessar')."
-            )
-
-        # Breakdown por etapa em formato visual
-        breakdown_cols = st.columns(len(step_list))
-        for i, s in enumerate(step_list):
-            r = steps_data.get(s, {})
-            inp = r.get("input", 0)
-            out = r.get("output", 0)
-            with breakdown_cols[i]:
-                _color = "#4CAF50" if out > 0 else ("#FF9800" if inp > 0 else "#9E9E9E")
-                st.markdown(
-                    f'<div style="border-left:4px solid {_color}; padding:8px 12px; '
-                    f'background:#f5f5f5; border-radius:4px">'
-                    f'<div style="font-size:11px; color:#757575; text-transform:uppercase">{s}</div>'
-                    f'<div style="font-size:14px; font-weight:600">{out}/{inp}</div>'
-                    f'<div style="font-size:10px; color:#999">processadas/entradas</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-        with st.expander("Ver relatorio JSON completo", expanded=False):
-            st.json(report)
+        # Salvar resultado em session_state pra persistir entre reruns
+        st.session_state["pipeline_last_run"] = {
+            "kind": "execution",
+            "step_name": step_name,
+            "step_list": step_list,
+            "report": report,
+            "force_used": force_reprocess,
+            "timestamp": datetime.now().isoformat() if "datetime" in globals() else "",
+        }
 
     pc1, pc2, pc3, pc4, pc5 = st.columns(5)
 
@@ -692,9 +657,116 @@ def render_execucao():
                     send_approved=True, dry_run=dry_run,
                     steps=["send"],
                 )
-            result = report.get("steps", {}).get("send", {})
-            st.toast(f"{result.get('sent', 0)} emails enviados!")
-            st.rerun()
+            # Persistir em vez de toast (que some no proximo rerun)
+            st.session_state["pipeline_last_run"] = {
+                "kind": "execution",
+                "step_name": "send",
+                "step_list": ["send"],
+                "report": report,
+                "force_used": False,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+    # ======================================================================
+    # FEEDBACK PERSISTENTE — sempre renderiza o ultimo resultado (sobrevive a reruns)
+    # ======================================================================
+    _last = st.session_state.get("pipeline_last_run")
+    if _last:
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        _hdr_cols = st.columns([5, 1])
+        with _hdr_cols[0]:
+            section_header(
+                f"Ultimo resultado: {_last.get('step_name', '?')}"
+                f"{' (FORCAR)' if _last.get('force_used') else ''}",
+                "history",
+            )
+        with _hdr_cols[1]:
+            if st.button("Limpar", key="clear_last_run", use_container_width=True,
+                          icon=":material/close:"):
+                st.session_state.pop("pipeline_last_run", None)
+                st.rerun()
+
+        _ts = _last.get("timestamp", "")
+        if _ts:
+            st.caption(f"Executado em {_ts[:19].replace('T', ' ')}")
+
+        if _last.get("kind") == "precheck_error":
+            st.error(
+                f"**Nenhuma das {_last['sel_total']} escola(s) selecionada(s) eh elegivel "
+                f"para '{_last['step_name']}'.**\n\n"
+                f"- Status atual das selecionadas: {_last['status_atual']}\n"
+                f"- A etapa '{_last['step_name']}' precisa de escolas em: **{_last['status_esperado']}**\n\n"
+                f"💡 **Soluções:**\n"
+                f"1. Marque o checkbox **'🔁 Forcar reprocessar'** acima e clique de novo "
+                f"(vai rodar nas selecionadas mesmo que ja tenham passado dessa etapa).\n"
+                f"2. OU selecione outras escolas que estejam no status necessario."
+            )
+        else:
+            # kind=execution
+            _report = _last.get("report", {}) or {}
+            _steps_data = _report.get("steps", {})
+            _step_name = _last.get("step_name", "?")
+            _step_list = _last.get("step_list", [_step_name])
+
+            if _step_name == "send":
+                _send_r = _steps_data.get("send", {}) or {}
+                _sent = _send_r.get("sent", 0)
+                _failed = _send_r.get("failed", 0)
+                if _sent > 0:
+                    st.success(f"✅ **{_sent} email(s) enviado(s)** com sucesso. Falhas: {_failed}.")
+                elif _failed > 0:
+                    st.error(f"❌ **0 enviados, {_failed} falharam.** Veja detalhes abaixo.")
+                else:
+                    st.info("ℹ️ Nenhum email aprovado aguardando envio.")
+            else:
+                _last_step_out = _steps_data.get(_step_name, {}).get("output", 0)
+                _total_proc = sum(
+                    _steps_data.get(s, {}).get("output", 0) for s in _step_list
+                )
+                if _last_step_out > 0:
+                    st.success(
+                        f"✅ **'{_step_name}' concluido:** "
+                        f"{_last_step_out} escola(s) processada(s) nesta etapa "
+                        f"(total na cascata: {_total_proc})."
+                    )
+                elif _total_proc > 0:
+                    st.warning(
+                        f"⚠️ **Cascata rodou** mas a etapa final '{_step_name}' "
+                        f"processou 0. Outras etapas processaram: {_total_proc}."
+                    )
+                else:
+                    st.error(
+                        f"❌ **Nenhuma escola foi processada em '{_step_name}'.**\n\n"
+                        f"Possiveis causas:\n"
+                        f"- API key faltando no Streamlit Cloud (OPENAI_API_KEY, "
+                        f"ANTHROPIC_API_KEY, GOOGLE_MAPS_API_KEY, APOLLO_API_KEY, etc)\n"
+                        f"- Rate limit atingido\n"
+                        f"- Escolas ja completas (todos os campos preenchidos) — "
+                        f"agents 'inteligentes' so atualizam o que esta vazio. "
+                        f"Use **'🔁 Forcar reprocessar'** pra forcar refetch."
+                    )
+
+            # Breakdown por etapa
+            if _step_list and _step_name != "send":
+                _bd_cols = st.columns(len(_step_list))
+                for _i, _s in enumerate(_step_list):
+                    _r = _steps_data.get(_s, {}) or {}
+                    _inp = _r.get("input", 0)
+                    _out = _r.get("output", 0)
+                    with _bd_cols[_i]:
+                        _color = "#4CAF50" if _out > 0 else ("#FF9800" if _inp > 0 else "#9E9E9E")
+                        st.markdown(
+                            f'<div style="border-left:4px solid {_color}; padding:8px 12px; '
+                            f'background:#f5f5f5; border-radius:4px">'
+                            f'<div style="font-size:11px; color:#757575; text-transform:uppercase">{_s}</div>'
+                            f'<div style="font-size:18px; font-weight:600">{_out}/{_inp}</div>'
+                            f'<div style="font-size:10px; color:#999">processadas/entradas</div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
+            with st.expander("Ver relatorio JSON completo", expanded=False):
+                st.json(_report)
 
     # Full pipeline button
     st.markdown("")
@@ -703,7 +775,9 @@ def render_execucao():
         if st.button("Pipeline Completo", type="primary", use_container_width=True,
                       icon=":material/rocket_launch:"):
             from workflows.daily_pipeline import run_pipeline
-            with st.spinner("Executando pipeline completo..."):
+            with st.spinner(
+                f"Executando pipeline completo{'(modo FORCAR)' if force_reprocess else ''}..."
+            ):
                 report = run_pipeline(
                     qualify_limit=raw_count or 50,
                     enrich_limit=qualified_count or 50,
@@ -712,11 +786,17 @@ def render_execucao():
                     dry_run=dry_run,
                     write_mode=write_mode,
                     company_ids=selected_ids,
+                    force=force_reprocess,
                 )
-            st.toast("Pipeline concluido!")
-            with st.expander("Ver relatorio completo"):
-                st.json(report)
-            st.rerun()
+            # Persistir resultado (sobrevive a reruns)
+            st.session_state["pipeline_last_run"] = {
+                "kind": "execution",
+                "step_name": "write",
+                "step_list": ["qualify", "enrich", "contacts", "write"],
+                "report": report,
+                "force_used": force_reprocess,
+                "timestamp": datetime.now().isoformat(),
+            }
     with full2:
         st.caption(
             "Executa todas as etapas em sequencia: Qualificar \u2192 Enriquecer \u2192 "

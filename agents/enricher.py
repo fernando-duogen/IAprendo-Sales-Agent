@@ -27,29 +27,38 @@ class EnricherAgent(BaseAgent):
         """Enriquece lista de escolas com dados adicionais.
         Args:
             companies: Lista de escolas qualificadas (status=qualified).
+            force: Se True (kwarg), reenriquece sobrescrevendo campos ja
+                   preenchidos (web/phone/coords/address vem do Google Places).
         Returns:
-            Lista de escolas enriquecidas.
+            Lista de escolas enriquecidas (count de mudancas).
         """
+        force = bool(kwargs.get("force", False))
         results: List[Dict[str, Any]] = []
         for company in companies:
             try:
-                result = self.enrich_company(company)
+                result = self.enrich_company(company, force=force)
                 if result:
                     results.append(result)
             except Exception as e:
                 logger.error("Erro ao enriquecer empresa",
                     extra={"company_id": company.get("id"), "error": str(e)})
         logger.info("Enriquecimento batch concluido",
-            extra={"total": len(companies), "enriched": len(results)})
+            extra={"total": len(companies), "enriched": len(results), "force": force})
         return results
 
-    def enrich_company(self, company: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Enriquece uma empresa com Google Places (primary) + DuckDuckGo (fallback)."""
+    def enrich_company(self, company: Dict[str, Any], force: bool = False) -> Optional[Dict[str, Any]]:
+        """Enriquece uma empresa com Google Places (primary) + DuckDuckGo (fallback).
+
+        Args:
+            force: Se True, sobrescreve campos ja preenchidos (refetch).
+                   Default False = preserva valores existentes (so preenche vazios).
+        """
         company_id = company.get("id")
         school_name = company.get("name", "Desconhecida")
         city = company.get("city", "")
         state = company.get("state", "")
-        logger.info("Enriquecendo empresa", extra={"company_id": company_id, "school_name": school_name})
+        logger.info("Enriquecendo empresa",
+            extra={"company_id": company_id, "school_name": school_name, "force": force})
         updates: Dict[str, Any] = {}
 
         # === GOOGLE PLACES (primary) ===
@@ -63,15 +72,17 @@ class EnricherAgent(BaseAgent):
                         "school": school_name, "telefone": google_data.get("telefone"),
                         "site": google_data.get("site"),
                     })
-                    # Preencher campos faltantes
-                    if not company.get("website") and google_data.get("site"):
+                    # force=True: sobrescreve. force=False: so preenche se vazio.
+                    def _should_update(field_key: str) -> bool:
+                        return force or not company.get(field_key)
+                    if google_data.get("site") and _should_update("website"):
                         updates["website"] = google_data["site"]
-                    if not company.get("phone") and google_data.get("telefone"):
+                    if google_data.get("telefone") and _should_update("phone"):
                         updates["phone"] = google_data["telefone"]
-                    if not company.get("latitude") and google_data.get("latitude"):
+                    if google_data.get("latitude") and _should_update("latitude"):
                         updates["latitude"] = google_data["latitude"]
                         updates["longitude"] = google_data["longitude"]
-                    if not company.get("address") and google_data.get("endereco"):
+                    if google_data.get("endereco") and _should_update("address"):
                         updates["address"] = google_data["endereco"]
         except Exception as e:
             logger.debug(f"Google Places skip: {e}")

@@ -92,7 +92,7 @@ def run_pipeline(
         to_qualify = _get_schools("raw", qualify_limit, company_ids, force=force)
         if not dry_run and to_qualify:
             qualifier = QualifierAgent()
-            qualified = qualifier.execute(to_qualify)
+            qualified = qualifier.execute(to_qualify, force=force)
             report["steps"]["qualify"] = {"input": len(to_qualify), "output": len(qualified)}
         else:
             report["steps"]["qualify"] = {"input": len(to_qualify), "output": 0, "skipped": dry_run}
@@ -104,7 +104,7 @@ def run_pipeline(
         to_enrich = _get_schools("qualified", enrich_limit, company_ids, force=force)
         if not dry_run and to_enrich:
             enricher = EnricherAgent()
-            enriched = enricher.execute(to_enrich)
+            enriched = enricher.execute(to_enrich, force=force)
             report["steps"]["enrich"] = {"input": len(to_enrich), "output": len(enriched)}
         else:
             report["steps"]["enrich"] = {"input": len(to_enrich), "output": 0, "skipped": dry_run}
@@ -116,7 +116,7 @@ def run_pipeline(
         to_find_contact = _get_schools("enriched", enrich_limit, company_ids, force=force)
         if not dry_run and to_find_contact:
             contact_finder = ContactFinderAgent()
-            contacts_found = contact_finder.execute(to_find_contact)
+            contacts_found = contact_finder.execute(to_find_contact, force=force)
             report["steps"]["contacts"] = {"input": len(to_find_contact), "output": len(contacts_found)}
         else:
             report["steps"]["contacts"] = {"input": len(to_find_contact), "output": 0, "skipped": dry_run}
@@ -137,7 +137,7 @@ def run_pipeline(
         to_write = to_write[:write_limit]
         if not dry_run and to_write:
             writer = WriterAgent()
-            messages = writer.execute(to_write, mode=write_mode)
+            messages = writer.execute(to_write, mode=write_mode, force=force)
             report["steps"]["write"] = {"input": len(to_write), "output": len(messages)}
         else:
             report["steps"]["write"] = {"input": len(to_write), "output": 0, "skipped": dry_run}

@@ -49,11 +49,17 @@ class ContactFinderAgent(BaseAgent):
         super().__init__(agent_name="contact_finder")
 
     def execute(self, companies: List[Dict[str, Any]], **kwargs: Any) -> List[Dict[str, Any]]:
-        """Encontra decisores para lista de escolas."""
+        """Encontra decisores para lista de escolas.
+
+        Args:
+            force: Se True (kwarg), ignora 'ja tem diretor com email real'
+                   e re-roda a cascata pra tentar achar mais/melhores contatos.
+        """
+        force = bool(kwargs.get("force", False))
         results: List[Dict[str, Any]] = []
         for company in companies:
             try:
-                found = self.find_contacts(company)
+                found = self.find_contacts(company, force=force)
                 if found:
                     results.extend(found)
             except Exception as e:
@@ -63,7 +69,7 @@ class ContactFinderAgent(BaseAgent):
                 )
         logger.info(
             "Busca de contatos concluida",
-            extra={"total_companies": len(companies), "contacts_found": len(results)},
+            extra={"total_companies": len(companies), "contacts_found": len(results), "force": force},
         )
         return results
 
@@ -75,22 +81,28 @@ class ContactFinderAgent(BaseAgent):
             for c in contacts
         )
 
-    def find_contacts(self, company: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def find_contacts(self, company: Dict[str, Any], force: bool = False) -> List[Dict[str, Any]]:
         """Encontra contatos/decisores de uma empresa em cascata.
 
         Prioriza encontrar Diretor com email real.
         Scraping sempre roda (gratis). APIs pagas so se nao tem Diretor.
         Salva multiplos contatos (ate 5) com classificacao de papel.
+
+        Args:
+            force: Se True, ignora early-return de "ja tem diretor com email"
+                   e re-roda a cascata pra tentar achar contatos novos/melhores.
         """
         company_id = company.get("id")
         school_name = company.get("name", "Desconhecida")
-        logger.info("Buscando contatos", extra={"company_id": company_id, "school_name": school_name})
+        logger.info("Buscando contatos",
+            extra={"company_id": company_id, "school_name": school_name, "force": force})
 
-        # Retornar cedo se ja tem DIRETOR com email real (nao pattern)
         existing = db.get_contacts_by_company(company_id)
-        if existing and self._has_director_with_real_email(existing):
+
+        # Retornar cedo SO SE nao em modo force E ja tem diretor com email real
+        if not force and existing and self._has_director_with_real_email(existing):
             logger.debug(
-                "Diretor com email real ja existe - pulando",
+                "Diretor com email real ja existe - pulando (use force=True pra reforcar)",
                 extra={"company_id": company_id},
             )
             return existing  # Retorna TODOS os contatos existentes
