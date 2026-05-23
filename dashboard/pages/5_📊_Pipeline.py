@@ -116,19 +116,28 @@ try:
         {"label": "Enviadas", "count": sent_count, "color": STATUS_COLORS["sent"]},
     ])
 
-    # Botao pra invalidar cache (uso depois de rodar pipeline pra ver status atualizado)
-    _refresh_cols = st.columns([5, 1])
-    with _refresh_cols[1]:
-        if st.button("🔄 Atualizar dados", key="pipe_refresh_cache",
-                      use_container_width=True,
-                      help="Re-carrega lista de escolas e contadores. Use apos rodar pipeline pra ver status novo."):
-            _load_all_companies_cached.clear()
-            _load_queue_counts_cached.clear()
-            st.rerun()
-
 except Exception as e:
     st.warning(f"Nao foi possivel carregar metricas: {e}")
     all_companies = []
+
+# Botao "Atualizar dados" — DISCRETO, separado do stepper pra nao sobrepor cards.
+# Cache tem TTL=30s; usuario pode forcar refresh apos rodar pipeline.
+_ref_cols = st.columns([9, 1.3])
+with _ref_cols[1]:
+    if st.button("🔄 Atualizar", key="pipe_refresh_cache",
+                  use_container_width=True,
+                  help=("Limpa cache local (TTL 30s) e recarrega dados do banco. "
+                        "Use apos rodar pipeline pra ver contadores atualizados."),
+                  type="secondary"):
+        try:
+            _load_all_companies_cached.clear()
+        except Exception:
+            pass
+        try:
+            _load_queue_counts_cached.clear()
+        except Exception:
+            pass
+        st.rerun()
 
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -158,6 +167,16 @@ def render_execucao():
 
     if "pipeline_selected_ids" not in st.session_state:
         st.session_state["pipeline_selected_ids"] = []
+
+    def _reset_ckbox_keys():
+        """Limpa todos os checkboxes da tabela (ck_pipe_*) do session_state.
+        Chamar SEMPRE que pipeline_selected_ids for substituido externamente
+        (presets, colar lista, limpar) pra que os checkboxes sejam
+        re-renderizados com o novo valor de current_sel_set.
+        """
+        for _k in list(st.session_state.keys()):
+            if _k.startswith("ck_pipe_"):
+                del st.session_state[_k]
 
     # --- Filtros rapidos de preparo (novo) ---
     contact_stats = _load_contact_stats()
@@ -240,6 +259,7 @@ def render_execucao():
             scored = [c for c in filtered_base if c.get("qualification_score")]
             scored.sort(key=lambda x: x.get("qualification_score", 0), reverse=True)
             st.session_state["pipeline_selected_ids"] = [c["id"] for c in scored[:10]]
+            _reset_ckbox_keys()
             st.toast("Top 10 por score selecionadas!")
             st.rerun()
     with preset_cols[1]:
@@ -249,6 +269,7 @@ def render_execucao():
             by_fit = sorted(filtered_base, key=lambda x: x.get("_fit", 0), reverse=True)
             by_fit = [c for c in by_fit if c.get("_fit", 0) > 0]
             st.session_state["pipeline_selected_ids"] = [c["id"] for c in by_fit[:10]]
+            _reset_ckbox_keys()
             st.toast("Top 10 por Fit IAprendo selecionadas!")
             st.rerun()
     with preset_cols[2]:
@@ -256,6 +277,7 @@ def render_execucao():
                      icon=":material/fiber_new:", key="preset_raw"):
             raw = [c for c in filtered_base if c.get("status") == "raw"]
             st.session_state["pipeline_selected_ids"] = [c["id"] for c in raw]
+            _reset_ckbox_keys()
             st.toast(f"{len(raw)} escolas selecionadas!")
             st.rerun()
     with preset_cols[3]:
@@ -263,6 +285,7 @@ def render_execucao():
                      icon=":material/lock:", key="preset_private"):
             private = [c for c in filtered_base if "privad" in (c.get("admin_dependency", "") or "").lower()]
             st.session_state["pipeline_selected_ids"] = [c["id"] for c in private]
+            _reset_ckbox_keys()
             st.toast(f"{len(private)} escolas privadas selecionadas!")
             st.rerun()
     with preset_cols[4]:
@@ -270,12 +293,14 @@ def render_execucao():
                      icon=":material/mark_email_read:", key="preset_ready"):
             ready = [c for c in filtered_base if c.get("status") in ("qualified", "enriched", "contacted")]
             st.session_state["pipeline_selected_ids"] = [c["id"] for c in ready]
+            _reset_ckbox_keys()
             st.toast(f"{len(ready)} escolas prontas selecionadas!")
             st.rerun()
     with preset_cols[5]:
         if st.button("Limpar selecao", use_container_width=True,
                      icon=":material/delete_sweep:", key="preset_clear"):
             st.session_state["pipeline_selected_ids"] = []
+            _reset_ckbox_keys()
             st.toast("Selecao limpa!")
             st.rerun()
 
@@ -323,100 +348,120 @@ def render_execucao():
     tbl_filtered = [c for c in filtered_base if _passes_tbl_filter(c)]
     current_sel_set = set(st.session_state.get("pipeline_selected_ids", []))
 
-    st.caption(
-        f"Mostrando **{len(tbl_filtered)}** escola(s) (de {len(filtered_base)} apos filtros de preparo). "
-        f"**{len(current_sel_set)}** selecionada(s) no total (incluindo as fora deste filtro)."
+    # ----- Contador destacado (substitui o caption + painel "Selecionadas") -----
+    _sel_count = len(current_sel_set)
+    _color = "#4CAF50" if _sel_count > 0 else "#9E9E9E"
+    st.markdown(
+        f'<div style="background:{_color}15; border-left:4px solid {_color}; '
+        f'padding:10px 14px; border-radius:4px; margin:8px 0">'
+        f'<span style="font-size:16px; font-weight:600; color:{_color}">'
+        f'✓ {_sel_count} escola(s) selecionada(s) no total'
+        f'</span><br/>'
+        f'<span style="font-size:12px; color:#757575">'
+        f'Tabela mostra {len(tbl_filtered)} (de {len(filtered_base)} apos filtros de preparo). '
+        f'Escolas selecionadas FORA do filtro atual permanecem.'
+        f'</span></div>',
+        unsafe_allow_html=True,
     )
 
     if not tbl_filtered:
         alert_banner("Nenhuma escola corresponde aos filtros da tabela.", "info")
     else:
-        # Usar st.dataframe com selection_mode="multi-row" (componente NATIVO
-        # do Streamlit para selecao tabular). NAO usar st.data_editor com
-        # coluna checkbox manual — esse padrao causa loop infinito quando o
-        # df de entrada muda entre runs.
-        df_tbl = pd.DataFrame([{
-            "Escola": (c.get("name") or "?")[:60],
-            "Cidade": c.get("city") or "",
-            "UF": c.get("state") or "",
-            "Status": f"{STATUS_ICON.get(c.get('status',''), '')} {STATUS_PT.get(c.get('status',''), '')}",
-            "Score": c.get("qualification_score") or 0,
-            "Fit": c.get("_fit") or 0,
-            "Tipo": (c.get("admin_dependency") or "")[:20],
-        } for c in tbl_filtered])
+        # Render manual linha-a-linha com st.checkbox individual.
+        # Cada checkbox tem key=ck_pipe_{id} (NAO indice) → Streamlit gerencia
+        # cada um isoladamente, sem reconciliation de DataFrame, SEM LOOP.
+        MAX_PER_PAGE = 100
+        if len(tbl_filtered) > MAX_PER_PAGE:
+            st.info(
+                f"📋 Mostrando primeiras **{MAX_PER_PAGE}** de {len(tbl_filtered)} escolas. "
+                f"Use os filtros acima pra reduzir."
+            )
+            tbl_visible = tbl_filtered[:MAX_PER_PAGE]
+        else:
+            tbl_visible = tbl_filtered
 
-        st.caption(
-            "👆 **Clique nas linhas** para selecionar (Ctrl+click pra multipla, "
-            "Shift+click pra intervalo). Use os filtros acima pra navegar; "
-            "a selecao acumula entre filtros (escolas selecionadas em outras "
-            "buscas aparecem em '✓ Selecionadas' abaixo)."
+        # Header da tabela
+        _col_ratios = [0.5, 3.5, 2, 0.6, 1.8, 0.8, 0.8, 1.6]
+        hdr_cols = st.columns(_col_ratios)
+        hdr_style = (
+            "font-size:11px; font-weight:600; color:#757575; "
+            "text-transform:uppercase; letter-spacing:0.5px"
+        )
+        for col, lbl in zip(hdr_cols, ["✓", "Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"]):
+            with col:
+                st.markdown(f'<div style="{hdr_style}">{lbl}</div>',
+                             unsafe_allow_html=True)
+        st.markdown(
+            '<hr style="margin:4px 0 8px 0; border:none; border-top:1px solid #e0e0e0">',
+            unsafe_allow_html=True,
         )
 
-        event = st.dataframe(
-            df_tbl,
-            use_container_width=True,
-            hide_index=True,
-            height=400,
-            on_select="rerun",
-            selection_mode="multi-row",
-            column_config={
-                "Score": st.column_config.ProgressColumn(
-                    "Score", width="small", min_value=0, max_value=100, format="%d",
-                ),
-                "Fit": st.column_config.ProgressColumn(
-                    "Fit", width="small", min_value=0, max_value=100, format="%d",
-                ),
-            },
-            key="tbl_pipeline_dataframe",
-        )
-
-        # Sincronizacao ACUMULATIVA: adiciona ids selecionados ao set atual.
-        # NAO remove ids fora do filtro (preserva selecao incremental).
-        selected_rows_idx = []
-        try:
-            if event and getattr(event, "selection", None):
-                selected_rows_idx = event.selection.get("rows", []) or []
-        except Exception:
-            selected_rows_idx = []
-
-        if selected_rows_idx:
-            new_ids = {tbl_filtered[i]["id"] for i in selected_rows_idx if i < len(tbl_filtered)}
-            # Adiciona ao set (nao substitui — preserva fora do filtro)
-            if not new_ids.issubset(current_sel_set):
-                next_sel = current_sel_set | new_ids
-                st.session_state["pipeline_selected_ids"] = sorted(next_sel)
-                # NAO chamar st.rerun() — Streamlit re-renderiza via on_select
-
-    # ----- Lista visual "Selecionadas atualmente" -----
-    # st.dataframe(multi-row) nao tem default selection visual (limitacao
-    # Streamlit). Compensamos com esta lista clara + botoes pra remover.
-    _current_sel = set(st.session_state.get("pipeline_selected_ids", []))
-    if _current_sel:
-        with st.expander(
-            f"✓ {len(_current_sel)} escola(s) selecionada(s) — clique ✕ pra remover individual",
-            expanded=False,
-        ):
-            for cid in sorted(_current_sel):
-                comp = next((c for c in all_companies if c["id"] == cid), None)
-                if not comp:
-                    continue
-                rm_cols = st.columns([6, 1])
-                with rm_cols[0]:
-                    _st = comp.get("status", "raw")
-                    st.markdown(
-                        f"- **{comp.get('name', '?')}** ({comp.get('city', '?')}/"
-                        f"{comp.get('state', '?')}) — "
-                        f"{STATUS_ICON.get(_st, '')} {STATUS_PT.get(_st, _st)} "
-                        f"· Score {comp.get('qualification_score') or 0}"
+        # Render linhas com checkbox individual (cada widget tem key estavel)
+        _row_text_style = "font-size:12px; padding-top:6px; margin:0; line-height:1.3"
+        with st.container(height=420, border=False):
+            for c in tbl_visible:
+                cid = c["id"]
+                row_cols = st.columns(_col_ratios)
+                with row_cols[0]:
+                    sel = st.checkbox(
+                        "sel",
+                        value=cid in current_sel_set,
+                        key=f"ck_pipe_{cid}",
+                        label_visibility="collapsed",
                     )
-                with rm_cols[1]:
-                    if st.button("✕", key=f"rm_sel_{cid}",
-                                  use_container_width=True,
-                                  help="Remover da selecao"):
-                        _sel = set(st.session_state.get("pipeline_selected_ids", []))
-                        _sel.discard(cid)
-                        st.session_state["pipeline_selected_ids"] = sorted(_sel)
-                        st.rerun()
+                with row_cols[1]:
+                    st.markdown(
+                        f'<div style="{_row_text_style}; font-weight:500">'
+                        f'{(c.get("name") or "?")[:48]}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with row_cols[2]:
+                    st.markdown(
+                        f'<div style="{_row_text_style}; color:#757575">'
+                        f'{(c.get("city") or "")[:18]}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with row_cols[3]:
+                    st.markdown(
+                        f'<div style="{_row_text_style}">{c.get("state") or ""}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with row_cols[4]:
+                    _s = c.get("status", "raw")
+                    st.markdown(
+                        f'<div style="{_row_text_style}">'
+                        f'{STATUS_ICON.get(_s, "")} {STATUS_PT.get(_s, _s)}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with row_cols[5]:
+                    st.markdown(
+                        f'<div style="{_row_text_style}; font-weight:600">'
+                        f'{c.get("qualification_score") or 0}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with row_cols[6]:
+                    st.markdown(
+                        f'<div style="{_row_text_style}; font-weight:600">'
+                        f'{c.get("_fit") or 0}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with row_cols[7]:
+                    st.markdown(
+                        f'<div style="{_row_text_style}; color:#757575">'
+                        f'{(c.get("admin_dependency") or "")[:16]}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                # Sincronizar checkbox state -> pipeline_selected_ids (sem rerun)
+                if sel and cid not in current_sel_set:
+                    current_sel_set.add(cid)
+                elif not sel and cid in current_sel_set:
+                    current_sel_set.discard(cid)
+
+        # Persistir mudancas no session_state (sorted pra estabilidade)
+        _new_sel_list = sorted(current_sel_set)
+        if _new_sel_list != sorted(st.session_state.get("pipeline_selected_ids", [])):
+            st.session_state["pipeline_selected_ids"] = _new_sel_list
 
     # --- Autocomplete multiselect + Colar Lista (fallback pra busca por nome / cola externa) ---
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -446,6 +491,7 @@ def render_execucao():
         new_ids = [opts_map[lbl] for lbl in selected_labels]
         if set(new_ids) != current_ids:
             st.session_state["pipeline_selected_ids"] = new_ids
+            _reset_ckbox_keys()
             st.rerun()
 
     with sub_tab_paste:
@@ -474,6 +520,7 @@ def render_execucao():
                     current = set(st.session_state["pipeline_selected_ids"])
                     current.update(found_ids)
                     st.session_state["pipeline_selected_ids"] = list(current)
+                    _reset_ckbox_keys()
                     st.toast(f"{len(found_ids)} escolas encontradas e adicionadas!")
                 if not_found:
                     st.warning(f"{len(not_found)} nao encontradas: {', '.join(not_found[:5])}")
