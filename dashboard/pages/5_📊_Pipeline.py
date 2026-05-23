@@ -120,11 +120,13 @@ except Exception as e:
     st.warning(f"Nao foi possivel carregar metricas: {e}")
     all_companies = []
 
-# Botao "Atualizar dados" — DISCRETO, separado do stepper pra nao sobrepor cards.
-# Cache tem TTL=30s; usuario pode forcar refresh apos rodar pipeline.
-_ref_cols = st.columns([9, 1.3])
-with _ref_cols[1]:
-    if st.button("🔄 Atualizar", key="pipe_refresh_cache",
+# Botao "Atualizar dados" — DISCRETO, separado do stepper.
+# Posicao: ESQUERDA (longe do card "Enviadas") + margem vertical de respiro.
+# Cache TTL=30s; usuario pode forcar refresh apos rodar pipeline.
+st.markdown('<div style="height:24px"></div>', unsafe_allow_html=True)
+_ref_cols = st.columns([1.5, 9])
+with _ref_cols[0]:
+    if st.button("🔄 Atualizar dados", key="pipe_refresh_cache",
                   use_container_width=True,
                   help=("Limpa cache local (TTL 30s) e recarrega dados do banco. "
                         "Use apos rodar pipeline pra ver contadores atualizados."),
@@ -169,13 +171,19 @@ def render_execucao():
         st.session_state["pipeline_selected_ids"] = []
 
     def _reset_ckbox_keys():
-        """Limpa todos os checkboxes da tabela (ck_pipe_*) do session_state.
+        """Reset estado dos checkboxes + cache do data_editor.
+
         Chamar SEMPRE que pipeline_selected_ids for substituido externamente
-        (presets, colar lista, limpar) pra que os checkboxes sejam
-        re-renderizados com o novo valor de current_sel_set.
+        (presets, colar lista, limpar) pra forcar a tabela a regenerar com
+        o novo valor de current_sel_set.
         """
+        # Limpa checkboxes individuais (legado da tabela linha-a-linha)
         for _k in list(st.session_state.keys()):
             if _k.startswith("ck_pipe_"):
+                del st.session_state[_k]
+        # Invalida cache do data_editor (forca regenerar df_tbl + reset widget)
+        for _k in ["_tbl_df_cached", "_tbl_filter_sig", "tbl_editor_v3"]:
+            if _k in st.session_state:
                 del st.session_state[_k]
 
     # --- Filtros rapidos de preparo (novo) ---
@@ -367,101 +375,77 @@ def render_execucao():
     if not tbl_filtered:
         alert_banner("Nenhuma escola corresponde aos filtros da tabela.", "info")
     else:
-        # Render manual linha-a-linha com st.checkbox individual.
-        # Cada checkbox tem key=ck_pipe_{id} (NAO indice) → Streamlit gerencia
-        # cada um isoladamente, sem reconciliation de DataFrame, SEM LOOP.
-        MAX_PER_PAGE = 100
-        if len(tbl_filtered) > MAX_PER_PAGE:
-            st.info(
-                f"📋 Mostrando primeiras **{MAX_PER_PAGE}** de {len(tbl_filtered)} escolas. "
-                f"Use os filtros acima pra reduzir."
-            )
-            tbl_visible = tbl_filtered[:MAX_PER_PAGE]
+        # ============================================================
+        # st.data_editor com df_tbl CACHEADO por filter_signature.
+        # Sem reconstruir df a cada run → sem reconciliation do widget →
+        # SEM LOOP. Regenera so quando filtros ou selecao externa muda.
+        # ============================================================
+        filter_signature = (
+            tuple(sorted(tbl_cidade)),
+            tuple(sorted(tbl_status)),
+            tbl_score_min,
+            tbl_busca or "",
+            tuple(c["id"] for c in tbl_filtered),
+            frozenset(current_sel_set),
+        )
+        cached_sig = st.session_state.get("_tbl_filter_sig")
+
+        if cached_sig != filter_signature:
+            # Regenera df_tbl com novo "Sel" baseado em current_sel_set
+            df_tbl = pd.DataFrame([{
+                "Sel": c["id"] in current_sel_set,
+                "Escola": (c.get("name") or "?")[:60],
+                "Cidade": c.get("city") or "",
+                "UF": c.get("state") or "",
+                "Status": f"{STATUS_ICON.get(c.get('status',''), '')} {STATUS_PT.get(c.get('status',''), '')}",
+                "Score": c.get("qualification_score") or 0,
+                "Fit": c.get("_fit") or 0,
+                "Tipo": (c.get("admin_dependency") or "")[:20],
+            } for c in tbl_filtered])
+            st.session_state["_tbl_df_cached"] = df_tbl
+            st.session_state["_tbl_filter_sig"] = filter_signature
+            # Reset widget state pra picotar o novo df (sem confusao de edited_rows)
+            if "tbl_editor_v3" in st.session_state:
+                del st.session_state["tbl_editor_v3"]
         else:
-            tbl_visible = tbl_filtered
+            df_tbl = st.session_state["_tbl_df_cached"]
 
-        # Header da tabela
-        _col_ratios = [0.5, 3.5, 2, 0.6, 1.8, 0.8, 0.8, 1.6]
-        hdr_cols = st.columns(_col_ratios)
-        hdr_style = (
-            "font-size:11px; font-weight:600; color:#757575; "
-            "text-transform:uppercase; letter-spacing:0.5px"
+        edited_tbl = st.data_editor(
+            df_tbl[["Sel", "Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"]],
+            use_container_width=True,
+            hide_index=True,
+            height=400,
+            column_config={
+                "Sel": st.column_config.CheckboxColumn(
+                    "✓", default=False, width="small",
+                    help="Marcar pra incluir na selecao do pipeline",
+                ),
+                "Score": st.column_config.ProgressColumn(
+                    "Score", width="small", min_value=0, max_value=100, format="%d",
+                ),
+                "Fit": st.column_config.ProgressColumn(
+                    "Fit", width="small", min_value=0, max_value=100, format="%d",
+                ),
+            },
+            disabled=["Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"],
+            key="tbl_editor_v3",
         )
-        for col, lbl in zip(hdr_cols, ["✓", "Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"]):
-            with col:
-                st.markdown(f'<div style="{hdr_style}">{lbl}</div>',
-                             unsafe_allow_html=True)
-        st.markdown(
-            '<hr style="margin:4px 0 8px 0; border:none; border-top:1px solid #e0e0e0">',
-            unsafe_allow_html=True,
-        )
 
-        # Render linhas com checkbox individual (cada widget tem key estavel)
-        _row_text_style = "font-size:12px; padding-top:6px; margin:0; line-height:1.3"
-        with st.container(height=420, border=False):
-            for c in tbl_visible:
-                cid = c["id"]
-                row_cols = st.columns(_col_ratios)
-                with row_cols[0]:
-                    sel = st.checkbox(
-                        "sel",
-                        value=cid in current_sel_set,
-                        key=f"ck_pipe_{cid}",
-                        label_visibility="collapsed",
-                    )
-                with row_cols[1]:
-                    st.markdown(
-                        f'<div style="{_row_text_style}; font-weight:500">'
-                        f'{(c.get("name") or "?")[:48]}</div>',
-                        unsafe_allow_html=True,
-                    )
-                with row_cols[2]:
-                    st.markdown(
-                        f'<div style="{_row_text_style}; color:#757575">'
-                        f'{(c.get("city") or "")[:18]}</div>',
-                        unsafe_allow_html=True,
-                    )
-                with row_cols[3]:
-                    st.markdown(
-                        f'<div style="{_row_text_style}">{c.get("state") or ""}</div>',
-                        unsafe_allow_html=True,
-                    )
-                with row_cols[4]:
-                    _s = c.get("status", "raw")
-                    st.markdown(
-                        f'<div style="{_row_text_style}">'
-                        f'{STATUS_ICON.get(_s, "")} {STATUS_PT.get(_s, _s)}</div>',
-                        unsafe_allow_html=True,
-                    )
-                with row_cols[5]:
-                    st.markdown(
-                        f'<div style="{_row_text_style}; font-weight:600">'
-                        f'{c.get("qualification_score") or 0}</div>',
-                        unsafe_allow_html=True,
-                    )
-                with row_cols[6]:
-                    st.markdown(
-                        f'<div style="{_row_text_style}; font-weight:600">'
-                        f'{c.get("_fit") or 0}</div>',
-                        unsafe_allow_html=True,
-                    )
-                with row_cols[7]:
-                    st.markdown(
-                        f'<div style="{_row_text_style}; color:#757575">'
-                        f'{(c.get("admin_dependency") or "")[:16]}</div>',
-                        unsafe_allow_html=True,
-                    )
-
-                # Sincronizar checkbox state -> pipeline_selected_ids (sem rerun)
-                if sel and cid not in current_sel_set:
-                    current_sel_set.add(cid)
-                elif not sel and cid in current_sel_set:
-                    current_sel_set.discard(cid)
-
-        # Persistir mudancas no session_state (sorted pra estabilidade)
-        _new_sel_list = sorted(current_sel_set)
-        if _new_sel_list != sorted(st.session_state.get("pipeline_selected_ids", [])):
-            st.session_state["pipeline_selected_ids"] = _new_sel_list
+        # Sincronizacao: ler edited_tbl (com edited_rows aplicado),
+        # comparar com current_sel_set, atualizar session_state,
+        # disparar rerun pra mostrar a secao "Executar Pipeline" imediato.
+        new_sel_in_view = set()
+        for _i in range(len(edited_tbl)):
+            if bool(edited_tbl.iloc[_i]["Sel"]) and _i < len(tbl_filtered):
+                new_sel_in_view.add(tbl_filtered[_i]["id"])
+        _visible_ids = {c["id"] for c in tbl_filtered}
+        _preserved_outside = current_sel_set - _visible_ids
+        _next_sel = _preserved_outside | new_sel_in_view
+        if frozenset(_next_sel) != frozenset(current_sel_set):
+            st.session_state["pipeline_selected_ids"] = sorted(_next_sel)
+            # rerun pra "abrir" as opcoes de pipeline (mesmo efeito do preset).
+            # Sem loop: so dispara quando _next_sel != current_sel_set.
+            st.rerun()
 
     # --- Autocomplete multiselect + Colar Lista (fallback pra busca por nome / cola externa) ---
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
