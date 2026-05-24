@@ -443,9 +443,11 @@ def render_execucao():
         _next_sel = _preserved_outside | new_sel_in_view
         if frozenset(_next_sel) != frozenset(current_sel_set):
             st.session_state["pipeline_selected_ids"] = sorted(_next_sel)
-            # rerun pra "abrir" as opcoes de pipeline (mesmo efeito do preset).
-            # Sem loop: so dispara quando _next_sel != current_sel_set.
-            st.rerun()
+            # IMPORTANTE: NAO chamar st.rerun() aqui — engoliria clicks de outros
+            # widgets (botoes Enriquecer/Qualificar, selectbox Modo, etc).
+            # A secao "Executar Pipeline" aparece naturalmente no MESMO run
+            # porque selected_ids = st.session_state.get(...) (linha 530+) le
+            # o valor JA atualizado nesta linha. Sem rerun extra necessario.
 
     # --- Autocomplete multiselect + Colar Lista (fallback pra busca por nome / cola externa) ---
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
