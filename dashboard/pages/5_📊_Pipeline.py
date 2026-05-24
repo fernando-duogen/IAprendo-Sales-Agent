@@ -464,17 +464,30 @@ def render_execucao():
             opts_map[label] = c["id"]
 
         current_ids = set(st.session_state.get("pipeline_selected_ids", []))
-        default_labels = [lbl for lbl, cid in opts_map.items() if cid in current_ids]
+        expected_labels = [lbl for lbl, cid in opts_map.items() if cid in current_ids]
+
+        # CRITICO: sincronizar state interno do multiselect com pipeline_selected_ids
+        # ANTES de renderizar. Sem isso, o widget mantem seu state antigo e
+        # SOBRESCREVE pipeline_selected_ids com valor desatualizado, zerando
+        # a selecao recem feita via tabela (checkbox).
+        _multi_key = "pipeline_multiselect"
+        if _multi_key in st.session_state:
+            if set(st.session_state[_multi_key]) != set(expected_labels):
+                st.session_state[_multi_key] = expected_labels
+        else:
+            # Primeira renderizacao — inicializar com valor atual
+            st.session_state[_multi_key] = expected_labels
 
         selected_labels = st.multiselect(
             "Escolas para o pipeline",
             options=list(opts_map.keys()),
-            default=default_labels,
+            # SEM default= — session_state ja foi setado acima e eh fonte da verdade
             help="Digite o nome pra buscar. Seleciona multiplas. Resultado sincroniza com a selecao global.",
-            key="pipeline_multiselect",
+            key=_multi_key,
             placeholder="Digite pra buscar escolas...",
         )
         new_ids = [opts_map[lbl] for lbl in selected_labels]
+        # So atualizar se houve mudanca REAL (user interagiu com o multiselect)
         if set(new_ids) != current_ids:
             st.session_state["pipeline_selected_ids"] = new_ids
             _reset_ckbox_keys()
