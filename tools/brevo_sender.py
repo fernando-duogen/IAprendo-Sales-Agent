@@ -58,6 +58,9 @@ class BrevoSender:
             return {"success": False, "error": "BREVO_API_KEY nao configurada"}
 
         # Resolver remetente — explicitamente passado > username > sender ativo > fallback
+        # IMPORTANTE: from_name usa `email_sender_name` (ex: "Lizianne | DUOGEN")
+        # ao inves de `name` (ex: "Lizianne"). Esse campo eh especifico do email
+        # — outros lugares (saudacao IAlex, dashboard, prompts LLM) usam `name`.
         signature_username = from_username  # usado para puxar a assinatura certa
         if from_username and (not from_email or not from_name):
             try:
@@ -65,7 +68,8 @@ class BrevoSender:
                 _p = get_profile_by_username(from_username)
                 if _p:
                     from_email = from_email or _p.get("email") or self.from_email
-                    from_name = from_name or _p.get("name") or self.from_name
+                    from_name = (from_name or _p.get("email_sender_name")
+                                 or _p.get("name") or self.from_name)
             except Exception:
                 pass
         if not from_email or not from_name:
@@ -73,7 +77,8 @@ class BrevoSender:
                 from utils.sender_profile import get_active_sender, get_active_sender_username
                 _active = get_active_sender()
                 from_email = from_email or _active.get("email") or self.from_email
-                from_name = from_name or _active.get("name") or self.from_name
+                from_name = (from_name or _active.get("email_sender_name")
+                             or _active.get("name") or self.from_name)
                 if not signature_username:
                     signature_username = get_active_sender_username()
             except Exception:

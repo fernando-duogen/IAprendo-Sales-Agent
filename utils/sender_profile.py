@@ -77,6 +77,10 @@ def _load_profiles() -> Dict[str, Dict[str, Any]]:
             profiles[username] = {
                 "username": username,
                 "name": info.get("name", ""),
+                # email_sender_name eh usado APENAS pelo brevo_sender (Nome | DUOGEN).
+                # Fallback pra `name` se ausente — backward-compatible.
+                # Outros lugares (saudacao IAlex, dashboard, prompts LLM) usam `name`.
+                "email_sender_name": info.get("email_sender_name", info.get("name", "")),
                 "email": info.get("email", ""),
                 "phone": info.get("phone", ""),
                 "role": info.get("role", ""),
@@ -107,9 +111,12 @@ def reload_profiles() -> None:
 # ---------------------------------------------------------------------------
 def _fallback_profile() -> Dict[str, Any]:
     """Retorna o perfil default do .env (compat com sistema antigo)."""
+    _name = os.getenv("YOUR_NAME", "Fernando")
     return {
         "username": "default",
-        "name": os.getenv("YOUR_NAME", "Fernando"),
+        "name": _name,
+        # email_sender_name: usa BREVO_SENDER_NAME se setado, senao name.
+        "email_sender_name": os.getenv("BREVO_SENDER_NAME") or _name,
         "email": os.getenv("YOUR_EMAIL", ""),
         "phone": os.getenv("YOUR_PHONE", ""),
         "role": "",
