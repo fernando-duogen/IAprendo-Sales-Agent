@@ -331,20 +331,35 @@ else:
                     env=env_extra,
                     timeout=300,
                 )
-                # Tentar extrair "inseridas: N" do output pra feedback rico
+                # Extrair contadores do stdout via regex pra feedback rico
                 import re as _re
-                _inserted_match = _re.search(r"inseridas?[:\s]+(\d+)", result.stdout or "", _re.IGNORECASE)
+                _inserted_match = _re.search(r"Inseridas?[:\s]+(\d+)", result.stdout or "", _re.IGNORECASE)
+                _duplicates_match = _re.search(r"Duplicatas?[:\s]+(\d+)", result.stdout or "", _re.IGNORECASE)
                 _inserted_count = int(_inserted_match.group(1)) if _inserted_match else None
+                _duplicates_count = int(_duplicates_match.group(1)) if _duplicates_match else 0
 
                 if result.returncode == 0:
-                    # Distinguir 3 cenarios bem-sucedidos:
+                    # Distinguir 4 cenarios bem-sucedidos:
                     # (a) inseridas > 0 → sucesso verde
-                    # (b) 0 inseridas, filtros sem match → warning amarelo (NAO erro)
-                    # (c) 0 inseridas, sem contexto claro → info azul
+                    # (b) 0 inseridas + duplicatas > 0 → info azul (escolas ja existiam)
+                    # (c) 0 inseridas, filtros sem match → warning amarelo
+                    # (d) 0 inseridas, sem contexto → info azul generico
                     if _inserted_count and _inserted_count > 0:
+                        _dup_suffix = (
+                            f" ({_duplicates_count} duplicata(s) ignorada(s).)"
+                            if _duplicates_count else ""
+                        )
                         st.success(
                             f"✅ **Importacao concluida** — {_inserted_count} escola(s) "
-                            f"inserida(s). Va pra aba **Escolas** pra ver."
+                            f"nova(s) inserida(s). Va pra aba **Escolas** pra ver."
+                            + _dup_suffix
+                        )
+                    elif _duplicates_count > 0:
+                        st.info(
+                            f"ℹ️ **Nada novo a importar** — as {_duplicates_count} "
+                            f"escola(s) processada(s) ja existem no banco (duplicatas "
+                            f"detectadas pelo codigo INEP). Use filtros diferentes "
+                            f"pra trazer escolas novas, ou aumente o limite."
                         )
                     elif "Nenhuma escola passa nos filtros" in (result.stdout or ""):
                         st.warning(

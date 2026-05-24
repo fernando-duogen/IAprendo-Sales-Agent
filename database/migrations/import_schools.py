@@ -1134,14 +1134,24 @@ def main() -> int:
             }
         )
 
-        # Retornar sucesso se pelo menos 1 escola foi inserida.
-        # 0 inseridas COM elegiveis = erro tecnico (validacao, duplicata, banco).
+        # Distinguir 4 cenarios pra exit code correto:
+        #   (a) inseridas > 0           → sucesso normal (exit 0)
+        #   (b) tudo duplicata          → idempotencia, NAO eh erro (exit 0)
+        #   (c) errors ou invalid > 0   → erro tecnico real (exit 1)
+        #   (d) tudo zero               → caso raro, exit 1 com aviso
         if import_stats['inserted'] > 0:
             return 0
+        elif (import_stats['duplicates'] >= import_stats['processed']
+              and import_stats['processed'] > 0):
+            print(f"ℹ️  Todas as {import_stats['processed']} escola(s) ja existem no "
+                  f"banco (duplicatas detectadas pelo codigo INEP). Nada a fazer.\n")
+            return 0  # NAO eh erro — eh idempotencia
+        elif import_stats['errors'] > 0 or import_stats['invalid'] > 0:
+            print(f"❌ Erro tecnico: {import_stats['errors']} erros, "
+                  f"{import_stats['invalid']} invalidas. Veja logs detalhados.\n")
+            return 1
         else:
-            print("❌ Erro tecnico: 0 inseridas apesar de ter elegiveis nos filtros.")
-            print("   Possiveis causas: duplicatas (INEP ja existe), erro de validacao,")
-            print("   ou banco offline. Veja logs detalhados acima.\n")
+            print("⚠️  0 inseridas sem causa clara identificada. Veja logs detalhados.\n")
             return 1
 
     except ValueError as e:
