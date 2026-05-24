@@ -561,10 +561,22 @@ def render_execucao():
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     section_header("Executar Pipeline", "play_circle")
 
-    raw_count = sel_by_status.get("raw", 0)
-    qualified_count = sel_by_status.get("qualified", 0)
-    enriched_count = sel_by_status.get("enriched", 0)
-    contactable_count = qualified_count + enriched_count + sel_by_status.get("contacted", 0)
+    # Ler o estado atual do checkbox Forcar (renderizado mais abaixo) pra
+    # calcular contadores corretos. Quando Forcar=True, TODAS as selecionadas
+    # viram elegiveis (porque o backend ignora filtro de status com force=True).
+    # Sem Forcar: conta apenas escolas no status compativel com cada step.
+    _force_active = bool(st.session_state.get("pipe_force_reprocess", False))
+    _sel_total_for_cards = len(selected_ids)
+    if _force_active:
+        raw_count = _sel_total_for_cards
+        qualified_count = _sel_total_for_cards
+        enriched_count = _sel_total_for_cards
+        contactable_count = _sel_total_for_cards
+    else:
+        raw_count = sel_by_status.get("raw", 0)
+        qualified_count = sel_by_status.get("qualified", 0)
+        enriched_count = sel_by_status.get("enriched", 0)
+        contactable_count = qualified_count + enriched_count + sel_by_status.get("contacted", 0)
 
     # Controles do pipeline (3 colunas — Forcar fica em destaque mais abaixo)
     ctrl1, ctrl2, ctrl3 = st.columns(3)
@@ -590,6 +602,17 @@ def render_execucao():
             "(re-buscar Google Places, re-rodar cascata de contatos, etc)."
         ),
     )
+
+    # Callout grande quando Forcar esta ATIVO — fica obvio que precisa clicar
+    # em um botao de step abaixo DEPOIS de marcar (nao executa automatico).
+    if force_reprocess:
+        st.success(
+            f"✅ **Modo FORÇAR ATIVO** — agora clique em **qualquer botão abaixo** "
+            f"(Qualificar / Enriquecer / Contatos / Gerar) pra rodar em "
+            f"**todas as {len(selected_ids)} escola(s) selecionada(s)**, "
+            f"ignorando o status atual.",
+            icon="🚀",
+        )
 
     # Pipeline steps as cards — cascata (cada botao roda TODAS as etapas
     # anteriores + a sua). Garante que Top N por Fit (em qualquer status)
