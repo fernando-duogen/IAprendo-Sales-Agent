@@ -381,6 +381,19 @@ def apply_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
         }
     )
 
+    # Early-return defensivo: se df vazio, evita bug do pandas onde
+    # .apply() sobre Series vazia retorna dtype object e o boolean
+    # indexing subsequente vira column-selection com lista vazia
+    # (perdendo todas as colunas → KeyError no proximo filtro).
+    if len(df) == 0:
+        stats['filter_3_levels'] = 0
+        stats['filter_4_approved'] = 0
+        logger.info(
+            "Filtros zerados (0 escolas apos location)",
+            extra={'target_city': target_city_raw, 'target_state': target_state_raw}
+        )
+        return df, stats
+
     # FILTRO 3: Níveis de Ensino (Fundamental OU Médio)
     logger.debug("Aplicando Filtro 3: Níveis de Ensino")
 
@@ -404,7 +417,10 @@ def apply_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
 
         return False
 
-    df = df[df[col_map['education_levels']].apply(has_target_level)]
+    # .astype(bool) preserva colunas quando df ja eh vazio (apply em Series
+    # vazia retorna dtype object por default, o que faz pandas tratar como
+    # column-selection e remover todas as colunas → KeyError no proximo filtro)
+    df = df[df[col_map['education_levels']].apply(has_target_level).astype(bool)]
 
     stats['filter_3_levels'] = len(df)
 
@@ -415,6 +431,11 @@ def apply_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
             'target_levels': settings.TARGET_EDUCATION_LEVELS
         }
     )
+
+    # Early-return defensivo (mesma logica do filtro 2)
+    if len(df) == 0:
+        stats['filter_4_approved'] = 0
+        return df, stats
 
     # FILTRO 4: Tipo de Escola (Pública, Privada, etc)
     logger.debug("Aplicando Filtro 4: Tipo de Escola")
@@ -433,7 +454,8 @@ def apply_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
 
         return False
 
-    df = df[df[col_map['admin_dependency']].apply(matches_school_type)]
+    # .astype(bool) preserva colunas em df vazio (ver explicacao no filtro 3)
+    df = df[df[col_map['admin_dependency']].apply(matches_school_type).astype(bool)]
 
     stats['filter_4_approved'] = len(df)
 

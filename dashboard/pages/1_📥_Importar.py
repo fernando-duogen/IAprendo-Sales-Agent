@@ -291,7 +291,12 @@ else:
         st.caption(
             "Use um limite durante testes (ex: 200). "
             "Para importar tudo, deixe 0. "
-            f"Com os filtros atuais ha {n_filtered} escolas."
+            f"Com os filtros atuais ha {n_filtered} escolas.\n\n"
+            "⚠️ **Atencao**: o limite eh aplicado ANTES dos filtros (le N "
+            "linhas brutas do CSV de 185k antes de filtrar). Limite pequeno "
+            "(ex: 1, 10) pode resultar em 0 escolas importadas se as N "
+            "primeiras linhas nao baterem com seus filtros. Use limite "
+            ">= 1000 ou 0 (sem limite) pra garantir resultado."
         )
 
     if st.button("Confirmar e Importar Agora", type="primary"):
