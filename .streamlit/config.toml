@@ -1,7 +1,8 @@
 [server]
 headless = true
 port = 8501
-enableCORS = false
+# enableCORS = false  # REMOVIDO: incompativel com enableXsrfProtection=true (warning)
+# Padrao Streamlit eh CORS=true + XSRF=true (mais seguro). Sem warning.
 enableXsrfProtection = true
 
 [theme]

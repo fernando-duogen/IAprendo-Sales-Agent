@@ -328,23 +328,38 @@ else:
                     env=env_extra,
                     timeout=300,
                 )
+                # Tentar extrair "inseridas: N" do output pra feedback rico
+                import re as _re
+                _inserted_match = _re.search(r"inseridas?[:\s]+(\d+)", result.stdout or "", _re.IGNORECASE)
+                _inserted_count = int(_inserted_match.group(1)) if _inserted_match else None
+
                 if result.returncode == 0:
-                    alert_banner("Importacao concluida com sucesso!", "success")
-                    output_text = result.stdout
-                    if len(output_text) > 3000:
-                        output_text = output_text[-3000:]
-                    st.code(output_text, language="text")
+                    if _inserted_count is not None:
+                        st.success(
+                            f"✅ **Importacao concluida** — {_inserted_count} escola(s) "
+                            f"inserida(s). Va pra aba **Escolas** pra ver."
+                        )
+                    else:
+                        st.success("✅ **Importacao concluida com sucesso!**")
+                    with st.expander("📋 Saida completa do script", expanded=False):
+                        output_text = result.stdout or "(sem output)"
+                        if len(output_text) > 5000:
+                            output_text = output_text[-5000:]
+                        st.code(output_text, language="text")
                 else:
-                    alert_banner("Erro durante a importacao.", "error")
-                    err_text = result.stderr
-                    if len(err_text) > 2000:
-                        err_text = err_text[-2000:]
+                    st.error(
+                        f"❌ **Erro na importacao** (returncode={result.returncode}). "
+                        f"Veja stderr e stdout abaixo pra diagnosticar."
+                    )
+                    err_text = result.stderr or "(stderr vazio)"
+                    if len(err_text) > 3000:
+                        err_text = err_text[-3000:]
                     st.code(err_text, language="text")
                     if result.stdout:
-                        with st.expander("Saida completa"):
+                        with st.expander("📋 Stdout completo", expanded=False):
                             out_text = result.stdout
-                            if len(out_text) > 3000:
-                                out_text = out_text[-3000:]
+                            if len(out_text) > 5000:
+                                out_text = out_text[-5000:]
                             st.code(out_text, language="text")
             except subprocess.TimeoutExpired:
                 alert_banner(
