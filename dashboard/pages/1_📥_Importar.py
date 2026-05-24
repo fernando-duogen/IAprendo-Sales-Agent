@@ -309,6 +309,10 @@ else:
         if not Path(python_exe).exists():
             python_exe = sys.executable
 
+        # Forcar UTF-8 no Python child pra evitar UnicodeEncodeError ao
+        # printar emojis (🧪 ⚠️ ❌ etc) com locale Windows cp1252.
+        env_extra["PYTHONIOENCODING"] = "utf-8"
+
         cmd = [python_exe, script_path]
         if sample_limit > 0:
             cmd += ["--sample", str(sample_limit)]
@@ -319,6 +323,8 @@ else:
                     cmd,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",      # leitura stdout/stderr em UTF-8 (consistente com PYTHONIOENCODING)
+                    errors="replace",      # se vier byte invalido, substitui ao inves de raise
                     env=env_extra,
                     timeout=300,
                 )

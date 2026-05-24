@@ -44,6 +44,16 @@ from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 import pandas as pd
 
+# Forcar UTF-8 no stdout/stderr (Windows local com cp1252 quebra com emojis 🧪 ❌ etc).
+# Nao tem efeito em Linux/Mac (ja sao UTF-8). Idempotente. Python 3.7+.
+try:
+    if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass  # versoes antigas de Python sem reconfigure; ignora
+
 # Adiciona o diretório raiz ao path
 ROOT_DIR = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT_DIR))
