@@ -1572,9 +1572,11 @@ if st.session_state.escola_detail_id:
                 if st.button(f"Importar {len(selected_to_import)} selecionados", type="primary", disabled=len(selected_to_import) == 0):
                     saved_count = 0
                     for ct in selected_to_import:
+                        # dict.get("k", "") retorna None se "k" existe com valor None.
+                        # Usar (... or "") pra garantir string antes de .lower().
                         existing_match = [c for c in (contacts or []) if
-                            (c.get("full_name", "").lower() == ct.get("full_name", "").lower()) or
-                            (ct.get("email") and c.get("email", "").lower() == ct.get("email", "").lower())]
+                            ((c.get("full_name") or "").lower() == (ct.get("full_name") or "").lower()) or
+                            (ct.get("email") and (c.get("email") or "").lower() == (ct.get("email") or "").lower())]
                         if existing_match:
                             continue
                         dm_type, priority = classify_role(ct.get("role", ""))
