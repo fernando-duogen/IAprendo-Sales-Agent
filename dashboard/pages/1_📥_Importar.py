@@ -289,14 +289,12 @@ else:
         )
     with imp_col2:
         st.caption(
-            "Use um limite durante testes (ex: 200). "
+            "Use um limite durante testes (ex: 1, 10, 200). "
             "Para importar tudo, deixe 0. "
             f"Com os filtros atuais ha {n_filtered} escolas.\n\n"
-            "⚠️ **Atencao**: o limite eh aplicado ANTES dos filtros (le N "
-            "linhas brutas do CSV de 185k antes de filtrar). Limite pequeno "
-            "(ex: 1, 10) pode resultar em 0 escolas importadas se as N "
-            "primeiras linhas nao baterem com seus filtros. Use limite "
-            ">= 1000 ou 0 (sem limite) pra garantir resultado."
+            "ℹ️ **Como funciona o limite**: aplicado APOS os filtros — "
+            "se voce marcar 1, vai importar 1 escola que passa nos filtros "
+            "(nao 1 escola aleatoria do CSV bruto)."
         )
 
     if st.button("Confirmar e Importar Agora", type="primary"):
@@ -339,13 +337,26 @@ else:
                 _inserted_count = int(_inserted_match.group(1)) if _inserted_match else None
 
                 if result.returncode == 0:
-                    if _inserted_count is not None:
+                    # Distinguir 3 cenarios bem-sucedidos:
+                    # (a) inseridas > 0 → sucesso verde
+                    # (b) 0 inseridas, filtros sem match → warning amarelo (NAO erro)
+                    # (c) 0 inseridas, sem contexto claro → info azul
+                    if _inserted_count and _inserted_count > 0:
                         st.success(
                             f"✅ **Importacao concluida** — {_inserted_count} escola(s) "
                             f"inserida(s). Va pra aba **Escolas** pra ver."
                         )
+                    elif "Nenhuma escola passa nos filtros" in (result.stdout or ""):
+                        st.warning(
+                            "ℹ️ **0 escolas inseridas** — nenhuma escola passa nos "
+                            "filtros atuais. Verifique sua selecao de UF, cidade e "
+                            "tipo de escola acima."
+                        )
                     else:
-                        st.success("✅ **Importacao concluida com sucesso!**")
+                        st.info(
+                            "ℹ️ Importacao concluida sem inserir escolas. "
+                            "Veja stdout abaixo pra detalhes."
+                        )
                     with st.expander("📋 Saida completa do script", expanded=False):
                         output_text = result.stdout or "(sem output)"
                         if len(output_text) > 5000:

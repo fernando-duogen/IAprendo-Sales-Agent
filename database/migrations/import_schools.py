@@ -226,14 +226,13 @@ def load_csv(sample_size: Optional[int] = None) -> pd.DataFrame:
     )
 
     try:
-        # Carregar CSV
+        # Carregar CSV INTEIRO (sample_size NAO eh mais aplicado aqui — semantica
+        # antiga lia N linhas brutas, sem garantia que batessem com filtros do user;
+        # agora sample_size eh aplicado APOS filtros em main()).
         read_kwargs = {
             'encoding': settings.CSV_ENCODING,
             'low_memory': False  # Evita warning com tipos mistos
         }
-
-        if sample_size:
-            read_kwargs['nrows'] = sample_size
 
         df = pd.read_csv(csv_path, **read_kwargs)
 
@@ -1090,9 +1089,9 @@ def main() -> int:
         validate_prerequisites()
         print("   ✓ Pré-requisitos OK\n")
 
-        # 3. Carregar CSV
+        # 3. Carregar CSV (sempre inteiro — sample_size eh aplicado apos filtros)
         print("📄 Carregando CSV...")
-        df = load_csv(sample_size=args.sample)
+        df = load_csv()
         print(f"   ✓ {len(df):,} escolas carregadas\n")
 
         # 4. Aplicar filtros ICP
@@ -1100,16 +1099,22 @@ def main() -> int:
         df_filtered, filter_stats = apply_filters(df)
         print(f"   ✓ {len(df_filtered):,} escolas aprovadas nos filtros\n")
 
-        # Verificar se há escolas para importar
+        # 4b. Aplicar sample_size APOS filtros (semantica intuitiva:
+        # "--sample N" = "importar N escolas que passam nos filtros",
+        # NAO "ler N linhas brutas do CSV antes de filtrar").
+        if args.sample and len(df_filtered) > args.sample:
+            df_filtered = df_filtered.head(args.sample)
+            print(f"   ℹ️  Modo teste: limitando a {args.sample} primeira(s) escola(s) filtradas\n")
+
+        # Verificar se há escolas para importar (filtros sem match — NAO eh erro tecnico)
         if len(df_filtered) == 0:
-            print("⚠️  AVISO: Nenhuma escola aprovada nos filtros!")
-            print("\nVerifique as configurações ICP no .env:")
+            print("ℹ️  Nenhuma escola passa nos filtros atuais. Ajuste:")
             print(f"  - TARGET_CITY: {settings.TARGET_CITY}")
             print(f"  - TARGET_STATE: {settings.TARGET_STATE}")
             print(f"  - TARGET_SCHOOL_TYPES: {settings.TARGET_SCHOOL_TYPES}")
             print(f"  - TARGET_EDUCATION_LEVELS: {settings.TARGET_EDUCATION_LEVELS}")
             print()
-            return 1
+            return 0  # NAO eh erro tecnico — eh resultado valido (filtros sem match)
 
         # 5. Importar escolas
         import_stats = import_schools(df_filtered, skip_validation=args.skip_validation)
@@ -1129,11 +1134,14 @@ def main() -> int:
             }
         )
 
-        # Retornar sucesso se pelo menos 1 escola foi inserida
+        # Retornar sucesso se pelo menos 1 escola foi inserida.
+        # 0 inseridas COM elegiveis = erro tecnico (validacao, duplicata, banco).
         if import_stats['inserted'] > 0:
             return 0
         else:
-            print("❌ Nenhuma escola foi inserida. Verifique os logs.\n")
+            print("❌ Erro tecnico: 0 inseridas apesar de ter elegiveis nos filtros.")
+            print("   Possiveis causas: duplicatas (INEP ja existe), erro de validacao,")
+            print("   ou banco offline. Veja logs detalhados acima.\n")
             return 1
 
     except ValueError as e:
