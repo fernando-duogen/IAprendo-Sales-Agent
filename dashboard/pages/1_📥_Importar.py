@@ -304,7 +304,7 @@ else:
         else:
             env_extra.pop("TARGET_SCHOOL_TYPES", None)
 
-        script_path = str(ROOT / "database" / "migrations" / "002_import_schools.py")
+        script_path = str(ROOT / "database" / "migrations" / "import_schools.py")
         python_exe = str(ROOT / "venv" / "Scripts" / "python.exe")
         if not Path(python_exe).exists():
             python_exe = sys.executable
