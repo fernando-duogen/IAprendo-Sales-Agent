@@ -60,6 +60,34 @@ if _history_key not in st.session_state:
 
 
 # ========================================================================
+# LAZY LOAD DO BRAIN (cacheado, carrega 1x por sessao Streamlit) — ANTES dos controles
+# ========================================================================
+@st.cache_resource(show_spinner="🧠 Carregando IAlex (primeira vez demora ~10s)...")
+def _get_brain():
+    """Importa a classe Brain e cria 1 instancia cacheada (1 por processo Streamlit).
+
+    NOTA: brain.py nao exporta singleton — webhook_server.py faz
+    `from agent.brain import Brain` e instancia. Aqui fazemos o mesmo,
+    mas via @st.cache_resource pra reutilizar a instancia entre reruns.
+    Multi-user simultaneo: cuidado tratado via snapshot/restore do
+    conversation_history (ver bloco do _user_msg abaixo).
+    """
+    from agent.brain import Brain
+    return Brain()
+
+
+try:
+    brain = _get_brain()
+except Exception as _e_brain:
+    st.error(
+        f"❌ Erro ao carregar Brain: {_e_brain}\n\n"
+        "Possiveis causas: OPENAI_API_KEY/ANTHROPIC_API_KEY nao configurada "
+        "nos Secrets do Streamlit Cloud."
+    )
+    st.stop()
+
+
+# ========================================================================
 # CONTROLES (topo)
 # ========================================================================
 ctop1, ctop2, ctop3 = st.columns([5, 2, 2])
@@ -78,37 +106,15 @@ with ctop2:
 with ctop3:
     if st.button("🗑️ Limpar historico", use_container_width=True, key="chat_clear"):
         st.session_state[_history_key] = []
-        # Limpar tambem o conversation_history do brain singleton
+        # Limpar tambem o conversation_history do brain cacheado
         try:
-            from agent.brain import brain as _b
-            _b.conversation_history = []
+            brain.conversation_history = []
         except Exception:
             pass
         st.toast("Historico limpo")
         st.rerun()
 
 st.divider()
-
-
-# ========================================================================
-# LAZY LOAD DO BRAIN (cacheado, carrega 1x por sessao Streamlit)
-# ========================================================================
-@st.cache_resource(show_spinner="🧠 Carregando IAlex (primeira vez demora ~10s)...")
-def _get_brain():
-    """Importa e retorna o brain singleton. Cacheado pra nao reimportar."""
-    from agent.brain import brain
-    return brain
-
-
-try:
-    brain = _get_brain()
-except Exception as _e_brain:
-    st.error(
-        f"❌ Erro ao carregar Brain: {_e_brain}\n\n"
-        "Possiveis causas: OPENAI_API_KEY/ANTHROPIC_API_KEY nao configurada "
-        "nos Secrets do Streamlit Cloud."
-    )
-    st.stop()
 
 
 # ========================================================================
