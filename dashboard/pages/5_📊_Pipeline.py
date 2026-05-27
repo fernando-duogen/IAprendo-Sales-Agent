@@ -317,9 +317,20 @@ def render_execucao():
     section_header("Tabela de Selecao", "checklist")
 
     # Filtros inline acima da tabela (combinam em AND, alem dos filtros de preparo)
-    tf1, tf2, tf3, tf4 = st.columns([2, 2, 2, 2])
+    tf0, tf1, tf2, tf3, tf4 = st.columns([1.2, 2, 2, 2, 2])
+    with tf0:
+        ufs_disp = sorted({c.get("state") or "?" for c in filtered_base})
+        tbl_uf = st.multiselect(
+            "UF:", ufs_disp, default=[],
+            key="tbl_filter_uf", placeholder="Todas",
+        )
     with tf1:
-        cidades_disp = sorted({c.get("city") or "?" for c in filtered_base})
+        # Cidades filtradas pela UF selecionada (cascata UF → Cidade)
+        if tbl_uf:
+            cidades_pool = [c for c in filtered_base if (c.get("state") or "?") in tbl_uf]
+        else:
+            cidades_pool = filtered_base
+        cidades_disp = sorted({c.get("city") or "?" for c in cidades_pool})
         tbl_cidade = st.multiselect(
             "Cidade:", cidades_disp, default=[],
             key="tbl_filter_cidade", placeholder="Todas",
@@ -343,6 +354,8 @@ def render_execucao():
         )
 
     def _passes_tbl_filter(c):
+        if tbl_uf and (c.get("state") or "?") not in tbl_uf:
+            return False
         if tbl_cidade and (c.get("city") or "?") not in tbl_cidade:
             return False
         if tbl_status and (c.get("status") or "raw") not in tbl_status:
@@ -371,6 +384,63 @@ def render_execucao():
         f'</span></div>',
         unsafe_allow_html=True,
     )
+
+    # ----- Acoes sobre selecao: EXPORTAR XLSX + DELETAR em massa -----
+    if _sel_count > 0:
+        ax1, ax2, ax3 = st.columns([2, 2, 6])
+        with ax1:
+            try:
+                from utils.export_utils import escolas_to_xlsx_bytes, export_filename
+                _selected_ids_list = sorted(current_sel_set)
+                # Gerar XLSX so quando usuario clica (lazy via funcao de bytes)
+                _xlsx_bytes = escolas_to_xlsx_bytes(_selected_ids_list)
+                st.download_button(
+                    f"📥 Exportar XLSX ({_sel_count})",
+                    data=_xlsx_bytes,
+                    file_name=export_filename("escolas_iaprendo", "xlsx"),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    help="Baixa XLSX com 2 abas: Escolas (todos os campos) + Contatos (decisores)",
+                )
+            except Exception as _ex_exp:
+                st.error(f"Export indisponivel: {_ex_exp}")
+        with ax2:
+            # Botao Deletar abre confirmacao (2-click pra evitar acidente)
+            _confirm_key = "pipe_confirm_bulk_delete"
+            if st.session_state.get(_confirm_key):
+                # Modo confirmacao — mostrar botao vermelho real
+                if st.button(
+                    f"⚠️ Confirmar DELETAR {_sel_count}",
+                    type="primary",
+                    use_container_width=True,
+                    key="pipe_do_bulk_delete",
+                    help="DESFAZER NAO EH POSSIVEL. Apaga escolas + contatos + interactions + queue.",
+                ):
+                    deleted = db.bulk_delete_companies(sorted(current_sel_set))
+                    st.session_state["pipeline_selected_ids"] = []
+                    _reset_ckbox_keys()
+                    # Invalidar cache pra refletir a remocao
+                    try:
+                        _load_all_companies_cached.clear()
+                    except Exception:
+                        pass
+                    st.session_state.pop(_confirm_key, None)
+                    st.toast(f"🗑️ {deleted} escola(s) deletada(s)")
+                    st.rerun()
+            else:
+                if st.button(
+                    f"🗑️ Deletar selecionadas",
+                    use_container_width=True,
+                    key="pipe_ask_bulk_delete",
+                    help="Clique 2x pra confirmar (irreversivel)",
+                ):
+                    st.session_state[_confirm_key] = True
+                    st.rerun()
+        with ax3:
+            if st.session_state.get("pipe_confirm_bulk_delete"):
+                if st.button("Cancelar", key="pipe_cancel_bulk_delete"):
+                    st.session_state.pop("pipe_confirm_bulk_delete", None)
+                    st.rerun()
 
     if not tbl_filtered:
         alert_banner("Nenhuma escola corresponde aos filtros da tabela.", "info")

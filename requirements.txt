@@ -31,3 +31,4 @@ hubspot-api-client>=9.0.0        # HubSpot sync bidirecional (integrations/hubsp
 
 # ---- Utils ----
 phonenumbers>=8.13.30            # Validacao/formatacao de telefones BR
+openpyxl>=3.1.2                  # Export XLSX (utils/export_utils.py)

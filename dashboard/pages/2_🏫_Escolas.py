@@ -1997,6 +1997,32 @@ else:
                                        label_visibility="collapsed",
                                        placeholder="Max gap peer (negativo=oportunidade)",
                                        help="So escolas com gap <= este valor. -10 retorna escolas com gap <= -10 pts (abaixo do peer).")
+
+        # Quarta linha: GEOGRAFICOS — UF + Cidade (cascata UF -> Cidade)
+        # Padrao do Mapa.py / Importar.py (multiselect com cascata).
+        fc_uf, fc_city, _fc_filler = st.columns([1.2, 3, 1.8])
+        with fc_uf:
+            _all_ufs_esc = sorted([u for u in df["UF"].dropna().unique().tolist() if u]) if "UF" in df.columns else []
+            sel_uf_esc = st.multiselect(
+                "UF", _all_ufs_esc, default=[],
+                label_visibility="collapsed", placeholder="UF...",
+                key="esc_filter_uf",
+            )
+        with fc_city:
+            # Cascata: cidades disponiveis dependem da UF selecionada
+            if "Cidade" in df.columns:
+                if sel_uf_esc:
+                    _city_pool = df[df["UF"].isin(sel_uf_esc)]["Cidade"]
+                else:
+                    _city_pool = df["Cidade"]
+                _all_cities_esc = sorted([c for c in _city_pool.dropna().unique().tolist() if c])
+            else:
+                _all_cities_esc = []
+            sel_city_esc = st.multiselect(
+                "Cidade", _all_cities_esc, default=[],
+                label_visibility="collapsed", placeholder="Cidade...",
+                key="esc_filter_city",
+            )
         st.markdown('</div>', unsafe_allow_html=True)
 
         # Aplicar filtros
@@ -2028,6 +2054,11 @@ else:
             df_f = df_f[df_f["Trajet. Peer"].isin(sel_traj)]
         if max_gap < 200:
             df_f = df_f[(df_f["Gap ENEM"].notna()) & (df_f["Gap ENEM"] <= max_gap)]
+        # Filtros geograficos UF / Cidade
+        if sel_uf_esc and "UF" in df_f.columns:
+            df_f = df_f[df_f["UF"].isin(sel_uf_esc)]
+        if sel_city_esc and "Cidade" in df_f.columns:
+            df_f = df_f[df_f["Cidade"].isin(sel_city_esc)]
 
         # --- Metricas ---
         avg = df["Score"].replace(0, pd.NA).dropna().mean()

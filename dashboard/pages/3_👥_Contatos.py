@@ -534,23 +534,43 @@ with tab_lista:
         'letter-spacing:0.5px;margin-bottom:4px">Filtros e agrupamento</p>',
         unsafe_allow_html=True,
     )
-    fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 2])
-    with fc1:
+    # Linha 1: busca + UF + Cidade (cascata UF → Cidade)
+    fcA, fcB, fcC = st.columns([3, 1.5, 2.5])
+    with fcA:
         ct_search = st.text_input(
             "Buscar (nome, escola, email, cargo):",
             placeholder="Digite qualquer texto...",
             key="ct_global_search",
         )
-    with fc2:
+    with fcB:
+        ufs_disp_ct = sorted({c["UF"] for c in contatos_plano if c.get("UF")})
+        ct_uf = st.multiselect(
+            "UF:", ufs_disp_ct, default=[],
+            key="ct_uf_filter", placeholder="Todas",
+        )
+    with fcC:
+        # Cidade filtrada pela UF (cascata)
+        if ct_uf:
+            cidades_pool_ct = [c for c in contatos_plano if c.get("UF") in ct_uf]
+        else:
+            cidades_pool_ct = contatos_plano
+        cidades_disp_ct = sorted({c["Cidade"] for c in cidades_pool_ct if c.get("Cidade")})
+        ct_cidade = st.multiselect(
+            "Cidade:", cidades_disp_ct, default=[],
+            key="ct_cidade_filter", placeholder="Todas",
+        )
+    # Linha 2: tipo + email + agrupar
+    fc1, fc2, fc3 = st.columns([2, 2, 2])
+    with fc1:
         tipo_opts = sorted({c["Tipo"] for c in contatos_plano})
         ct_tipo = st.multiselect("Tipo de decisor:", tipo_opts, default=[], key="ct_tipo_filter")
-    with fc3:
+    with fc2:
         ct_email_filter = st.selectbox(
             "Email:",
             ["Todos", "Com email", "Sem email"],
             key="ct_email_filter",
         )
-    with fc4:
+    with fc3:
         ct_group_by = st.selectbox(
             "Agrupar por:",
             ["Nenhum (tabela plana)", "Escola", "Cidade/UF", "Tipo", "Fonte"],
@@ -568,12 +588,36 @@ with tab_lista:
             or q in c["Email"].lower()
             or q in c["Cargo"].lower()
         ]
+    if ct_uf:
+        filtered_cts = [c for c in filtered_cts if c.get("UF") in ct_uf]
+    if ct_cidade:
+        filtered_cts = [c for c in filtered_cts if c.get("Cidade") in ct_cidade]
     if ct_tipo:
         filtered_cts = [c for c in filtered_cts if c["Tipo"] in ct_tipo]
     if ct_email_filter == "Com email":
         filtered_cts = [c for c in filtered_cts if c["Email"]]
     elif ct_email_filter == "Sem email":
         filtered_cts = [c for c in filtered_cts if not c["Email"]]
+
+    # ------------------- EXPORT DAS ESCOLAS FILTRADAS -------------------
+    if filtered_cts:
+        try:
+            from utils.export_utils import escolas_to_xlsx_bytes, export_filename
+            _exp_company_ids = sorted({c["company_id"] for c in filtered_cts if c.get("company_id")})
+            _exp_cols = st.columns([2, 8])
+            with _exp_cols[0]:
+                if _exp_company_ids:
+                    _xlsx = escolas_to_xlsx_bytes(_exp_company_ids)
+                    st.download_button(
+                        f"📥 Exportar XLSX ({len(_exp_company_ids)} escolas)",
+                        data=_xlsx,
+                        file_name=export_filename("contatos_iaprendo", "xlsx"),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        help="Baixa XLSX com escolas filtradas + todos seus contatos",
+                    )
+        except Exception as _ex_ct_exp:
+            st.caption(f"Export indisponivel: {_ex_ct_exp}")
 
     # ------------------- AVISO DUPLICATAS -------------------
     if total_duplicatas > 0:
