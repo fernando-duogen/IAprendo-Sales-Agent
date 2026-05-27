@@ -152,3 +152,82 @@ def export_filename(prefix: str = "escolas", ext: str = "xlsx") -> str:
     """Gera nome de arquivo com timestamp. Ex: 'escolas_20260525_143012.xlsx'."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"{prefix}_{ts}.{ext}"
+
+
+# Bucket reusado do Supabase Storage (mesmo dos charts/anexos, ja configurado)
+_EXPORT_BUCKET = "insight-charts"
+_EXPORT_PREFIX = "exports"
+
+
+def upload_xlsx_to_storage(
+    xlsx_bytes: bytes,
+    filename: str,
+    user: str = "default",
+    validity_hours: int = 24,
+) -> Optional[str]:
+    """Faz upload de XLSX pro Supabase Storage e retorna URL publica.
+
+    Usa bucket 'insight-charts' (mesmo dos graficos e anexos — ja configurado).
+    Caminho: exports/{user}/{filename}.xlsx
+    URL publica gerada via signed URL (validade configuravel, default 24h).
+
+    Args:
+        xlsx_bytes: conteudo do arquivo
+        filename: nome do arquivo (com extensao .xlsx)
+        user: subdir pra organizar arquivos por usuario (default 'default')
+        validity_hours: validade da signed URL em horas (default 24)
+
+    Returns:
+        URL publica pra download, ou None se falhou.
+    """
+    try:
+        path = f"{_EXPORT_PREFIX}/{user}/{filename}"
+
+        # Upload (overwrite se existir)
+        try:
+            db.client.storage.from_(_EXPORT_BUCKET).upload(
+                path=path,
+                file=xlsx_bytes,
+                file_options={
+                    "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "upsert": "true",
+                },
+            )
+        except Exception as _e_upload:
+            # Tentar update se upload falhou (arquivo ja existe sem upsert)
+            try:
+                db.client.storage.from_(_EXPORT_BUCKET).update(
+                    path=path,
+                    file=xlsx_bytes,
+                    file_options={
+                        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    },
+                )
+            except Exception as _e_update:
+                logger.error(f"Falha no upload+update XLSX: {_e_upload} / {_e_update}")
+                return None
+
+        # Gerar signed URL valida por X horas
+        validity_seconds = validity_hours * 3600
+        signed = db.client.storage.from_(_EXPORT_BUCKET).create_signed_url(path, validity_seconds)
+        # Resposta pode vir como dict ou string dependendo da versao do supabase-py
+        if isinstance(signed, dict):
+            url = signed.get("signedURL") or signed.get("signed_url") or signed.get("signedUrl") or ""
+        else:
+            url = str(signed) if signed else ""
+
+        if not url:
+            logger.warning("Signed URL vazia, tentando URL publica direta")
+            # Fallback: tentar URL publica direta (so funciona se bucket eh public)
+            try:
+                pub = db.client.storage.from_(_EXPORT_BUCKET).get_public_url(path)
+                url = pub if isinstance(pub, str) else (pub.get("publicURL") or pub.get("public_url") or "")
+            except Exception:
+                pass
+
+        logger.info(f"XLSX upload OK: {path} -> {url[:80] if url else 'NO_URL'}")
+        return url or None
+
+    except Exception as e:
+        logger.error(f"Erro ao fazer upload XLSX pro storage: {e}", exc_info=True)
+        return None

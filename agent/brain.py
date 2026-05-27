@@ -128,7 +128,7 @@ TOOLS = [
                 "status": {"type": "string", "description": "Filtrar por status: raw, filtered, qualified, enriched, contacted, sent, opened, replied"},
                 "score_minimo": {"type": "integer", "description": "Score minimo de qualificacao (0-100)"},
                 "categoria": {"type": "string", "description": "Categoria administrativa: Publica, Privada, Municipal, Estadual, Federal"},
-                "limite": {"type": "integer", "description": "Maximo de resultados (default 10, max 50)"},
+                "limite": {"type": "integer", "description": "Maximo de resultados (default 100, max 1000). Se user pedir 'todas' ou 'lista completa', use 1000. Pra listas grandes (>200), prefira exportar_escolas_xlsx em vez de listar texto."},
                 "ordenar_por": {"type": "string", "description": "Campo para ordenar: qualification_score, name, created_at, updated_at"},
                 "ordem": {"type": "string", "enum": ["asc", "desc"], "description": "Ordem: asc ou desc"}
             }
@@ -548,7 +548,39 @@ TOOLS = [
                 "tipo": {"type": "string", "description": "Tipo: 'Publica' ou 'Privada'"},
                 "dependencia": {"type": "string", "description": "Dependencia: 'Municipal', 'Estadual', 'Federal', 'Privada'"},
                 "localizacao": {"type": "string", "description": "Localizacao: 'Urbana' ou 'Rural'"},
-                "limite": {"type": "integer", "description": "Max resultados (default 10, max 20)"}
+                "limite": {"type": "integer", "description": "Max resultados (default 100, max 1000). Se user pedir 'todas' ou 'lista completa', use 1000. Pra listas grandes (>200), prefira exportar_escolas_xlsx em vez de listar texto."}
+            }
+        }
+    },
+    {
+        "name": "agregar_estatisticas_escolas",
+        "description": "Agrega metricas quantitativas (matriculas, docentes, etc) sobre conjunto filtrado de escolas. SEMPRE retorna cobertura (quantas tem dado real vs estimado) + valor concreto + valor estimado pras sem dado. Use pra responder 'quantos alunos ao todo nas estaduais de POA', 'quantos docentes nas privadas do RS', etc. NUNCA invente numero — esta tool agrega o que existe e estima o resto, explicitando.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "uf": {"type": "string", "description": "UF (ex: RS, SP). Opcional."},
+                "cidade": {"type": "string", "description": "Cidade. Opcional. Pode ser parcial (busca contains)."},
+                "admin_dependency": {"type": "string", "description": "Dependencia admin: Estadual, Municipal, Federal, Privada. Opcional."},
+                "metricas": {"type": "array", "items": {"type": "string"}, "description": "Lista de campos pra agregar. Default: ['total_matriculas', 'total_docentes']. Aceita tambem: matriculas_fund_af, matriculas_medio, qt_coordenadores, total_turmas."},
+                "estimar_faltantes": {"type": "boolean", "description": "Se true (default), pras escolas sem dado, estima usando media do grupo COM dado. Se false, retorna so soma do concreto + count das sem dado (sem estimar)."}
+            }
+        }
+    },
+    {
+        "name": "exportar_escolas_xlsx",
+        "description": "Gera arquivo XLSX com escolas filtradas + contatos + TODOS os campos disponiveis. Faz upload pro Supabase Storage e retorna URL publica pra download (validade 24h). Use SEMPRE que user pedir 'gere um excel', 'baixa as escolas', 'exportar pra arquivo', 'lista em planilha', etc. O front-end (chat web) renderiza botao de download automatico ao detectar URL .xlsx; no WhatsApp, o link eh clicavel direto.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "uf": {"type": "string", "description": "UF (ex: RS, SP). Opcional."},
+                "cidade": {"type": "string", "description": "Cidade (ex: Porto Alegre). Pode ser parcial. Opcional."},
+                "admin_dependency": {"type": "string", "description": "Estadual, Municipal, Federal, Privada. Opcional."},
+                "tem_etapa": {"type": "array", "items": {"type": "string"}, "description": "Filtra escolas que oferecem essa(s) etapa(s). Aceita: fund_ai, fund_af, medio, eja, profissionalizante. Opcional."},
+                "com_telefone": {"type": "boolean", "description": "Se true, filtra escolas que tem phone OU phone_whatsapp preenchido em companies."},
+                "com_email": {"type": "boolean", "description": "Se true, filtra escolas que tem algum contato com email cadastrado."},
+                "status": {"type": "string", "description": "raw, qualified, enriched, contacted, etc. Default: todos."},
+                "fonte": {"type": "string", "description": "censo_2025 | catalogo_inep | todos. Default: todos."},
+                "limite": {"type": "integer", "description": "Max escolas no arquivo. Default 5000. Sem limit real — pra exportar tudo, use 10000."}
             }
         }
     },
@@ -1499,7 +1531,7 @@ def _handle_consultar_escolas(params: Dict) -> str:
     order_desc = params.get("ordem", "desc") == "desc"
     query = query.order(order_field, desc=order_desc, nullsfirst=False)
 
-    limite = min(params.get("limite", 10), 50)
+    limite = min(int(params.get("limite", 100) or 100), 1000)
     result = query.limit(limite).execute()
 
     escolas = []
@@ -1552,7 +1584,7 @@ def _handle_consultar_escolas(params: Dict) -> str:
             mec_params["uf"] = params["estado"]
         if params.get("categoria"):
             mec_params["tipo"] = params["categoria"]
-        mec_params["limite"] = min(params.get("limite", 10), 20)
+        mec_params["limite"] = min(int(params.get("limite", 100) or 100), 1000)
 
         mec_result = _handle_buscar_escola_brasil(mec_params)
         mec_data = json.loads(mec_result)
@@ -1687,7 +1719,7 @@ def _handle_buscar_escola_brasil(params: Dict) -> str:
             mask &= df["_norm_localizacao"].str.contains(_normalize(params["localizacao"]), na=False)
 
     total_na_base = int(mask.sum())
-    limite = min(params.get("limite", 10), 20)
+    limite = min(int(params.get("limite", 100) or 100), 1000)
     df_found = df[mask].head(limite)
 
     if df_found.empty:
@@ -1772,6 +1804,216 @@ def _handle_buscar_escola_brasil(params: Dict) -> str:
         "escolas": escolas,
         "aviso": f"Mostrando {len(escolas)} de {total_na_base} resultados da base MEC." if total_na_base > limite else None,
     }, ensure_ascii=False, default=str)
+
+
+def _handle_agregar_estatisticas_escolas(params: Dict) -> str:
+    """Agrega metricas (matriculas, docentes, etc) sobre escolas filtradas.
+
+    Sempre retorna cobertura + concreto + estimativa transparente.
+    """
+    try:
+        # 1. Construir query com filtros
+        q = db.client.table("companies").select("*")
+        if params.get("uf"):
+            q = q.eq("state", str(params["uf"]).upper())
+        if params.get("cidade"):
+            q = q.ilike("city", f"%{params['cidade']}%")
+        if params.get("admin_dependency"):
+            q = q.ilike("admin_dependency", f"%{params['admin_dependency']}%")
+        rows = q.limit(20000).execute().data or []
+        total_escolas = len(rows)
+        if total_escolas == 0:
+            return json.dumps({
+                "filtros": {k: v for k, v in params.items() if v and k not in ("metricas", "estimar_faltantes")},
+                "total_escolas": 0,
+                "mensagem": "Nenhuma escola encontrada com esses filtros.",
+            }, ensure_ascii=False)
+
+        # 2. Metricas pra agregar (com defaults seguros)
+        metricas = params.get("metricas") or ["total_matriculas", "total_docentes"]
+        if isinstance(metricas, str):
+            metricas = [m.strip() for m in metricas.split(",") if m.strip()]
+        estimar = params.get("estimar_faltantes", True)
+
+        # 3. Agregar
+        resultado_metricas = {}
+        for m in metricas:
+            valores_com_dado = []
+            for r in rows:
+                v = r.get(m)
+                if v is None:
+                    continue
+                try:
+                    vf = float(v)
+                except Exception:
+                    continue
+                if vf > 0:
+                    valores_com_dado.append(vf)
+
+            com_dado = len(valores_com_dado)
+            sem_dado = total_escolas - com_dado
+            cobertura_pct = round((com_dado / total_escolas) * 100, 1) if total_escolas else 0
+            soma_concreto = int(sum(valores_com_dado))
+            media = (soma_concreto / com_dado) if com_dado else 0
+            estimativa_faltantes = int(round(media * sem_dado)) if estimar and com_dado else 0
+            total_estimado = soma_concreto + estimativa_faltantes
+
+            if com_dado == 0:
+                explicacao = f"Nenhuma escola tem dado de '{m}' cadastrado. Impossivel estimar."
+            elif sem_dado == 0:
+                explicacao = f"Todas as {total_escolas} escolas tem dado real: total {soma_concreto:,}."
+            elif estimar:
+                explicacao = (
+                    f"{com_dado} escola(s) com dado real (soma: {soma_concreto:,}, "
+                    f"media: {int(round(media)):,}/escola). {sem_dado} escola(s) sem dado: "
+                    f"estimativa de {estimativa_faltantes:,} (media * {sem_dado}). "
+                    f"Total ESTIMADO: {total_estimado:,}. Cobertura real: {cobertura_pct}%."
+                )
+            else:
+                explicacao = (
+                    f"{com_dado} escola(s) com dado real (total {soma_concreto:,}). "
+                    f"{sem_dado} escola(s) sem dado (estimativa desabilitada)."
+                )
+
+            resultado_metricas[m] = {
+                "com_dado": com_dado,
+                "sem_dado": sem_dado,
+                "cobertura_pct": cobertura_pct,
+                "soma_concreto": soma_concreto,
+                "media_por_escola_com_dado": int(round(media)) if com_dado else 0,
+                "estimativa_faltantes": estimativa_faltantes,
+                "total_estimado": total_estimado,
+                "explicacao": explicacao,
+            }
+
+        return json.dumps({
+            "filtros": {k: v for k, v in params.items() if v and k not in ("metricas", "estimar_faltantes")},
+            "total_escolas": total_escolas,
+            "metricas": resultado_metricas,
+            "lembrete": (
+                "IMPORTANTE: ao responder, SEMPRE distinguir CONCRETO de ESTIMADO. "
+                "Use os campos 'soma_concreto' (dado real) e 'total_estimado' (concreto + estimativa)."
+            ),
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error("Erro em agregar_estatisticas_escolas", extra={"error": str(e)})
+        return json.dumps({"erro": f"Falha ao agregar: {str(e)[:200]}"})
+
+
+def _handle_exportar_escolas_xlsx(params: Dict) -> str:
+    """Gera XLSX com escolas filtradas + contatos. Upload pro Supabase + URL publica.
+
+    Usa utils/export_utils + upload via supabase storage. URL valida 24h.
+    """
+    try:
+        # 1. Buscar escolas com filtros (sem limit baixo!)
+        q = db.client.table("companies").select("id, name, city, state")
+        if params.get("uf"):
+            q = q.eq("state", str(params["uf"]).upper())
+        if params.get("cidade"):
+            # Suporta cidades separadas por virgula
+            cs = [c.strip() for c in str(params["cidade"]).split(",") if c.strip()]
+            if len(cs) == 1:
+                q = q.ilike("city", f"%{cs[0]}%")
+            else:
+                q = q.in_("city", cs)
+        if params.get("admin_dependency"):
+            q = q.ilike("admin_dependency", f"%{params['admin_dependency']}%")
+        if params.get("status"):
+            q = q.eq("status", params["status"])
+        if params.get("fonte") and params["fonte"] not in ("todos", "all"):
+            q = q.eq("fonte_dados", params["fonte"])
+        if params.get("com_telefone"):
+            # OR no Postgrest: phone NOT NULL OR phone_whatsapp NOT NULL
+            q = q.or_("phone.not.is.null,phone_whatsapp.not.is.null")
+
+        limit = min(int(params.get("limite", 5000) or 5000), 10000)
+        rows = q.limit(limit).execute().data or []
+
+        # Filtros pos-query (precisam de join ou check Python)
+        if params.get("tem_etapa"):
+            etapas = params["tem_etapa"] if isinstance(params["tem_etapa"], list) else [params["tem_etapa"]]
+            col_map = {
+                "fund_ai": "oferece_fund_ai",
+                "fund_af": "oferece_fund_af",
+                "medio": "oferece_medio",
+                "eja": "oferece_eja",
+                "profissionalizante": "oferece_profissionalizante",
+            }
+            # Refazer query com select completo pra checar colunas oferece_*
+            full_q = db.client.table("companies").select("*").in_("id", [r["id"] for r in rows]).execute().data or []
+            etapa_cols = [col_map[e] for e in etapas if e in col_map]
+            if etapa_cols:
+                rows = [r for r in full_q if any(r.get(c) for c in etapa_cols)]
+            else:
+                rows = full_q
+
+        if params.get("com_email"):
+            # Filtra escolas com pelo menos 1 contato com email
+            company_ids = [r["id"] for r in rows]
+            if company_ids:
+                cts = db.client.table("contacts").select("company_id").in_(
+                    "company_id", company_ids
+                ).not_.is_("email", "null").execute().data or []
+                with_email = {c["company_id"] for c in cts}
+                rows = [r for r in rows if r["id"] in with_email]
+
+        if not rows:
+            return json.dumps({
+                "ok": False,
+                "mensagem": "Nenhuma escola encontrada com esses filtros. Nada pra exportar.",
+                "filtros_aplicados": {k: v for k, v in params.items() if v},
+            }, ensure_ascii=False)
+
+        company_ids = [r["id"] for r in rows]
+
+        # 2. Gerar XLSX via util ja existente
+        from utils.export_utils import escolas_to_xlsx_bytes, upload_xlsx_to_storage, export_filename
+        xlsx_bytes = escolas_to_xlsx_bytes(company_ids)
+
+        # 3. Upload pro Supabase Storage + signed URL
+        # Identificar user via sender ativo (pra organizar arquivos)
+        try:
+            from utils.sender_profile import get_active_sender_username
+            _user = get_active_sender_username() or "default"
+        except Exception:
+            _user = "default"
+        filename = export_filename(f"escolas_{_user}", "xlsx")
+        url = upload_xlsx_to_storage(xlsx_bytes, filename, user=_user)
+
+        if not url:
+            return json.dumps({
+                "ok": False,
+                "mensagem": "Falha ao fazer upload do XLSX pro Supabase Storage. Verifique bucket/permissoes.",
+                "total_escolas": len(company_ids),
+            }, ensure_ascii=False)
+
+        # Contar contatos pra info
+        try:
+            cts_count = len(
+                db.client.table("contacts").select("id").in_("company_id", company_ids).execute().data or []
+            )
+        except Exception:
+            cts_count = 0
+
+        return json.dumps({
+            "ok": True,
+            "url": url,
+            "filename": filename,
+            "total_escolas": len(company_ids),
+            "total_contatos": cts_count,
+            "validade_horas": 24,
+            "mensagem": (
+                f"Arquivo XLSX gerado: {len(company_ids)} escola(s) + {cts_count} contato(s) "
+                f"em 3 abas (Escolas, Contatos, Info). URL valida por 24h. "
+                f"No chat web aparecera botao de download; no WhatsApp, clique no link."
+            ),
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error("Erro em exportar_escolas_xlsx", extra={"error": str(e)}, exc_info=True)
+        return json.dumps({"erro": f"Falha ao exportar: {str(e)[:300]}"})
 
 
 def _handle_escolas_proximas(params: Dict) -> str:
@@ -7244,6 +7486,8 @@ TOOL_HANDLERS = {
     # Busca e gestão de escolas
     "consultar_escolas": _handle_consultar_escolas,
     "buscar_escola_brasil": _handle_buscar_escola_brasil,
+    "agregar_estatisticas_escolas": _handle_agregar_estatisticas_escolas,
+    "exportar_escolas_xlsx": _handle_exportar_escolas_xlsx,
     "escolas_proximas": _handle_escolas_proximas,
     "importar_escola": _handle_importar_escola,
     "detalhes_escola": _handle_detalhes_escola,
@@ -7358,6 +7602,31 @@ TOOL_HANDLERS.update(ENEM_TOOL_HANDLERS)
 # ===========================================================================
 
 SYSTEM_PROMPT = """REGRA ZERO (leia antes de tudo): NUNCA aprove ou envie um email sem MOSTRAR o texto completo para Fernando e ESPERAR ele confirmar com "sim" ou "aprova". Isso vale SEMPRE — apos gerar, editar, reescrever, colar texto, usar template. MOSTRE → PERGUNTE → ESPERE → so entao aprove.
+
+== TRANSPARENCIA E AGREGACAO INTELIGENTE (REGRAS CRITICAS) ==
+
+Quando o usuario perguntar metricas QUANTITATIVAS agregadas (quantos alunos, docentes, matriculas, etc):
+1. USE `agregar_estatisticas_escolas` com os filtros adequados (uf, cidade, admin_dependency)
+2. SEMPRE explicite cobertura na resposta: "X% das escolas tem dado real, Y% foi estimado"
+3. Distinga CONCRETO vs ESTIMADO. Exemplo correto:
+   "117.325 alunos no total (95.000 confirmados em 200 escolas + 22.325 estimados em
+    47 escolas sem dado, usando media de 475 alunos/escola das que tem dado real)"
+4. NUNCA invente numero sem qualificar a fonte. Se cobertura == 0%, diga "nao tenho dados".
+5. Pra perguntas tipo "quantos alunos nas escolas X", NAO responda so com subset que
+   tem ENEM ou outro filtro restritivo — USE `agregar_estatisticas_escolas` que
+   considera TODAS as escolas filtradas e estima honestamente as faltantes.
+
+Quando o usuario pedir ARQUIVO (excel, xlsx, baixar, exportar, planilha, csv):
+- USE `exportar_escolas_xlsx` com os filtros pedidos
+- Retorne a URL na resposta (front-end web renderiza botao de download automatico;
+  no WhatsApp, link eh clicavel)
+- Confirme o que esta no arquivo (N escolas, N contatos, 3 abas)
+- NUNCA responda "nao tenho capacidade de gerar arquivos" — voce TEM essa tool agora
+
+Quando o usuario pedir "todas" ou "lista completa" ou similar:
+- NAO assuma limit baixo. Use limite=1000 em `consultar_escolas` / `buscar_escola_brasil`
+- Se resultado >200 escolas, ofereca EXPORTAR XLSX em vez de listar tudo em texto
+- Cobertura completa > brevidade
 
 Voce e o *IAlex*, o especialista #1 em escolas do Brasil e assistente de vendas do Fernando para a plataforma *IAprendo*.
 

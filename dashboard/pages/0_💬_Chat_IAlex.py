@@ -134,6 +134,16 @@ for _msg in _hist:
             with st.chat_message("assistant", avatar="🤖"):
                 if _content:
                     st.markdown(_content)
+                    # Detecta URLs .xlsx no reply pra renderizar botao de download
+                    import re as _re_xlsx
+                    _urls_xlsx = _re_xlsx.findall(r'https?://[^\s)\]<>"\']+\.xlsx[^\s)\]<>"\']*', _content)
+                    for _url_x in _urls_xlsx:
+                        st.link_button(
+                            "📥 Baixar XLSX",
+                            _url_x,
+                            type="primary",
+                            help="Arquivo gerado pelo IAlex. Validade: 24h.",
+                        )
                 if _tool_calls and _show_tools:
                     with st.expander(f"🔧 {len(_tool_calls)} tool(s) chamada(s)", expanded=False):
                         for _tc in _tool_calls:
