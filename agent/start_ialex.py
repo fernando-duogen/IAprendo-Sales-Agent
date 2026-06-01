@@ -144,6 +144,29 @@ def main():
     if not wa_ok:
         return
 
+    # 2.5. Health-check REAL da sessao Baileys + auto-restart
+    # A Evolution as vezes retorna state="open" mesmo com sessao Baileys morta
+    # (Connection Closed silencioso). Esse check detecta e reinicia automatico.
+    # Isso EVITA o cenario de "IAlex iniciado, mas nao responde nem manda boot".
+    print("\n[2.5/6] Health-check da sessao Baileys (deteccao de 'Connection Closed' fantasma)...")
+    for attempt in range(3):
+        ping = bridge.ping_real()
+        if ping.get("ok"):
+            print("   [OK] Sessao Baileys saudavel — envio de mensagens vai funcionar.")
+            break
+        print(f"   [AVISO] Health-check falhou: {ping.get('error')}")
+        if ping.get("needs_restart"):
+            print(f"   [INFO] Reiniciando instancia (tentativa {attempt + 1}/3)...")
+            if bridge.restart_instance():
+                print("   [INFO] Aguardando 8s pra Baileys reconectar...")
+                time.sleep(8)
+                continue
+            print("   [ERRO] Restart falhou.")
+        if attempt == 2:
+            print("   [AVISO] Health-check NAO recuperou apos 3 tentativas.")
+            print("   Mensagens podem falhar com 'Connection Closed'.")
+            print("   Tente: reiniciar docker compose ou re-escanear QR Code.")
+
     # 3. Webhook — ja configurado globalmente via docker-compose.yml
     # (WEBHOOK_GLOBAL_URL + WEBHOOK_GLOBAL_ENABLED). A chamada POST /webhook/set/{instance}
     # e redundante e retornava 400 no schema v2 da Evolution API, entao foi removida.

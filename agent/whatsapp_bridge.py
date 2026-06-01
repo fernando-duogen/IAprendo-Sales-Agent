@@ -94,6 +94,62 @@ class WhatsAppBridge:
             logger.error(f"Erro ao verificar conexao: {exc}")
             return {}
 
+    def ping_real(self) -> Dict[str, Any]:
+        """Health-check REAL da sessao Baileys (detecta 'Connection Closed' fantasma).
+
+        Problema conhecido: a Evolution as vezes retorna state="open" em
+        /instance/connectionState mesmo quando a sessao Baileys interna
+        ja caiu (acontece apos dias parado, ou WhatsApp Web fechado no celular).
+        Mensagens enviadas nesse estado retornam HTTP 400 "Connection Closed"
+        silenciosamente — sem alertar.
+
+        Esta funcao tenta uma operacao real (findChats) que requer Baileys
+        ativo. Se retornar 'Connection Closed', sinaliza needs_restart=True.
+
+        Returns:
+            {"ok": True} se sessao saudavel
+            {"ok": False, "error": "...", "needs_restart": True/False}
+        """
+        url = f"{self.base_url}/chat/findChats/{self.instance_name}"
+        try:
+            resp = requests.post(url, json={}, headers=self._headers, timeout=10)
+            if resp.status_code in (200, 201):
+                return {"ok": True}
+            body = resp.text or ""
+            if "Connection Closed" in body or "connection closed" in body.lower():
+                return {
+                    "ok": False,
+                    "error": "Connection Closed (sessao Baileys morta — restart necessario)",
+                    "needs_restart": True,
+                }
+            return {
+                "ok": False,
+                "error": f"HTTP {resp.status_code}: {body[:120]}",
+                "needs_restart": False,
+            }
+        except requests.RequestException as exc:
+            return {"ok": False, "error": str(exc), "needs_restart": False}
+
+    def restart_instance(self) -> bool:
+        """Reinicia a sessao Baileys da instancia (resolve 'Connection Closed' fantasma).
+
+        Returns:
+            True se restart OK, False se falhou.
+        """
+        url = f"{self.base_url}/instance/restart/{self.instance_name}"
+        try:
+            resp = requests.post(url, headers=self._headers, timeout=20)
+            if resp.status_code in (200, 201, 204):
+                logger.info(f"Instancia '{self.instance_name}' reiniciada.")
+                return True
+            logger.warning(
+                f"Restart retornou {resp.status_code}: {(resp.text or '')[:200]}"
+            )
+            return False
+        except requests.RequestException as exc:
+            logger.error(f"Erro ao reiniciar instancia: {exc}")
+            return False
+
     # ------------------------------------------------------------------
     # Messaging
     # ------------------------------------------------------------------
