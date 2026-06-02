@@ -86,12 +86,24 @@ class WriterAgent(BaseAgent):
             logger.warning("Rate limit Anthropic atingido, abortando escrita")
             return []
 
-        # Carregar template se modo template
+        # Carregar template se modo template (fixo). No modo template_auto,
+        # o template e resolvido POR ESCOLA via selector (carrega todos ativos 1x).
         template_data = None
+        templates_ativos: List[Dict[str, Any]] = []
         if mode == "template":
             template_data = self._load_message_template(template_id)
             if not template_data:
                 logger.error("Template nao encontrado, abortando")
+                return []
+        elif mode == "template_auto":
+            try:
+                _r = db.client.table("message_templates").select("*").eq("is_active", True).execute()
+                templates_ativos = _r.data or []
+            except Exception as e:
+                logger.error("Erro ao carregar templates ativos (auto)", extra={"error": str(e)})
+                templates_ativos = []
+            if not templates_ativos:
+                logger.error("Nenhum template ativo pra modo template_auto, abortando")
                 return []
 
         results: List[Dict[str, Any]] = []
@@ -112,6 +124,18 @@ class WriterAgent(BaseAgent):
 
                 if mode == "ai":
                     result = self.write_message(company, contact, all_contacts=contacts)
+                elif mode == "template_auto":
+                    # Selecao automatica por alvo (audience x dados)
+                    from utils.template_selector import selecionar_template
+                    chosen = selecionar_template(company, contact, templates_ativos)
+                    if not chosen:
+                        # Fallback: default ativo (comportamento atual)
+                        chosen = self._load_message_template(None)
+                    if not chosen:
+                        logger.warning("template_auto: nenhum template aplicavel",
+                            extra={"company_id": company_id})
+                        continue
+                    result = self._apply_template(chosen, company, contact)
                 else:
                     result = self._apply_template(template_data, company, contact)
 

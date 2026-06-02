@@ -666,9 +666,24 @@ def render_execucao():
     # Controles do pipeline (3 colunas — Forcar fica em destaque mais abaixo)
     ctrl1, ctrl2, ctrl3 = st.columns(3)
     with ctrl1:
-        write_mode_label = st.selectbox("Modo de mensagem:", ["IA (personalizada)", "Template (padrao)"],
-                                         key="pipe_write_mode")
-        write_mode = "ai" if "IA" in write_mode_label else "template"
+        write_mode_label = st.selectbox(
+            "Modo de mensagem:",
+            ["IA (personalizada)", "Template (padrao)", "Template (auto por alvo)"],
+            key="pipe_write_mode",
+            help=(
+                "IA: Claude escreve do zero. "
+                "Template (padrao): usa o template marcado como padrao. "
+                "Template (auto por alvo): escolhe automaticamente o melhor template "
+                "conforme o contato (nominal/generico) e os dados da escola "
+                "(matriculas/ENEM). Configure os templates em Comunicacao > Templates."
+            ),
+        )
+        if write_mode_label.startswith("IA"):
+            write_mode = "ai"
+        elif "auto" in write_mode_label:
+            write_mode = "template_auto"
+        else:
+            write_mode = "template"
     with ctrl2:
         score_min = st.slider("Score minimo para email:", 0, 100, 60, key="pipe_score_min")
     with ctrl3:

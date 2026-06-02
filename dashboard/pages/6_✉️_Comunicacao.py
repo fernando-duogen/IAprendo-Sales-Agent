@@ -2150,6 +2150,34 @@ with tab_templates:
                                 ),
                                 key=f"comm_edit_role_{tid}",
                             )
+                            # Selecao automatica por alvo
+                            _AUD_OPTS_E = {
+                                "Qualquer": None,
+                                "Pessoa nominal (diretor, coordenador...)": "nominal",
+                                "Genérico (secretaria@, contato@...)": "generico",
+                            }
+                            _DATA_OPTS_E = {
+                                "Qualquer": None,
+                                "Matrículas + ENEM (ideal)": "ambos",
+                                "Só Matrículas (Censo)": "matriculas",
+                                "Só ENEM": "enem",
+                                "Nenhum (sem dados ricos)": "nenhum",
+                            }
+                            _aud_keys = list(_AUD_OPTS_E.keys())
+                            _data_keys = list(_DATA_OPTS_E.keys())
+                            _cur_aud = (tmpl.get("audience_type") or "")
+                            _cur_data = (tmpl.get("data_profile") or "")
+                            _aud_idx = next((i for i, k in enumerate(_aud_keys) if _AUD_OPTS_E[k] == (_cur_aud or None)), 0)
+                            _data_idx = next((i for i, k in enumerate(_data_keys) if _DATA_OPTS_E[k] == (_cur_data or None)), 0)
+                            _ec1, _ec2 = st.columns(2)
+                            with _ec1:
+                                edit_audience = st.selectbox(
+                                    "Público-alvo:", _aud_keys, index=_aud_idx, key=f"comm_edit_aud_{tid}",
+                                )
+                            with _ec2:
+                                edit_data = st.selectbox(
+                                    "Dados que usa:", _data_keys, index=_data_idx, key=f"comm_edit_data_{tid}",
+                                )
                             edit_subject = st.text_input(
                                 "Assunto:", value=tmpl.get("subject_template", ""), key=f"comm_edit_subj_{tid}"
                             )
@@ -2174,6 +2202,8 @@ with tab_templates:
                                         "subject_template": edit_subject,
                                         "body_template": edit_body,
                                         "target_role": new_target,
+                                        "audience_type": _AUD_OPTS_E[edit_audience],
+                                        "data_profile": _DATA_OPTS_E[edit_data],
                                     }).eq("id", tid).execute()
                                     st.session_state[f"comm_editing_{tid}"] = False
                                     alert_banner("Template atualizado!", "success")
@@ -2187,12 +2217,39 @@ with tab_templates:
     # --- Criar Novo Template ---
     with tpl_tab_create:
         section_header("Novo Template", "add_circle_outline")
+
+        # Opcoes pra selecao automatica por alvo (audience x dados)
+        _AUDIENCE_OPTS = {
+            "Qualquer": None,
+            "Pessoa nominal (diretor, coordenador...)": "nominal",
+            "Genérico (secretaria@, contato@...)": "generico",
+        }
+        _DATA_OPTS = {
+            "Qualquer": None,
+            "Matrículas + ENEM (ideal)": "ambos",
+            "Só Matrículas (Censo)": "matriculas",
+            "Só ENEM": "enem",
+            "Nenhum (sem dados ricos)": "nenhum",
+        }
+
         with st.form(key="comm_new_template_form"):
-            t_name = st.text_input("Nome do template:", placeholder="Primeiro contato - Geral")
+            t_name = st.text_input("Nome do template:", placeholder="Nominal · Matrículas+ENEM")
             t_role = st.selectbox(
-                "Para qual cargo?", ["Todos"] + [ROLE_LABELS[r] for r in ALL_ROLE_TYPES],
+                "Para qual cargo? (legado, opcional)", ["Todos"] + [ROLE_LABELS[r] for r in ALL_ROLE_TYPES],
                 key="comm_new_tpl_role",
             )
+            st.markdown("**Seleção automática por alvo** (usado no modo 'Template auto por alvo')")
+            _ac1, _ac2 = st.columns(2)
+            with _ac1:
+                t_audience_label = st.selectbox(
+                    "Público-alvo:", list(_AUDIENCE_OPTS.keys()), key="comm_new_tpl_audience",
+                    help="Pra quem este template foi escrito. 'Genérico' usa saudação institucional.",
+                )
+            with _ac2:
+                t_data_label = st.selectbox(
+                    "Dados que o template usa:", list(_DATA_OPTS.keys()), key="comm_new_tpl_data",
+                    help="Só será escolhido se a escola tiver esses dados. Ex: 'Matrículas+ENEM' exige ambos.",
+                )
             t_subject = st.text_input(
                 "Assunto (max 60 chars):",
                 placeholder="IAprendo -- tecnologia para {school_name}",
@@ -2222,14 +2279,47 @@ with tab_templates:
                             "subject_template": t_subject,
                             "body_template": t_body,
                             "target_role": target,
+                            "audience_type": _AUDIENCE_OPTS[t_audience_label],
+                            "data_profile": _DATA_OPTS[t_data_label],
                             "is_active": True,
                             "is_default": t_default,
                         }
-                        db.client.table("message_templates").insert(new_tmpl).execute()
+                        try:
+                            db.client.table("message_templates").insert(new_tmpl).execute()
+                        except Exception as _e_ins:
+                            # Guard: colunas audience_type/data_profile podem nao existir
+                            # se a migration add_template_selector_cols ainda nao rodou.
+                            if "audience_type" in str(_e_ins) or "data_profile" in str(_e_ins) or "column" in str(_e_ins).lower():
+                                new_tmpl.pop("audience_type", None)
+                                new_tmpl.pop("data_profile", None)
+                                db.client.table("message_templates").insert(new_tmpl).execute()
+                                st.warning("Template criado, MAS sem os campos de seleção automática. "
+                                           "Rode a migration add_template_selector_cols pra habilitar.")
+                            else:
+                                raise
                         alert_banner(f"Template '{t_name}' criado!", "success")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
+
+        # --- Matriz de cobertura (quais combos audience x dados ja tem template) ---
+        st.divider()
+        section_header("Matriz de cobertura (seleção automática)", "grid_view")
+        st.caption(
+            "Mostra quais combinações de alvo já têm template. O ideal é cobrir pelo menos "
+            "⭐ (nominal+ambos) e o último (genérico+sem dados, fallback universal)."
+        )
+        try:
+            from utils.template_selector import matriz_cobertura
+            _cob = matriz_cobertura(templates)
+            _cob_cols = st.columns(2)
+            for _i, _item in enumerate(_cob):
+                with _cob_cols[_i % 2]:
+                    _icon = "✅" if _item["coberto"] else "⬜"
+                    _names = ", ".join(_item["templates"][:2]) if _item["templates"] else "_(faltando)_"
+                    st.markdown(f"{_icon} **{_item['label']}** — {_names}")
+        except Exception as _e_cob:
+            st.caption(f"(matriz indisponivel: {_e_cob})")
 
     # --- Variaveis Disponiveis ---
     with tpl_tab_vars:

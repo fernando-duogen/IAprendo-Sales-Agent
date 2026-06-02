@@ -439,8 +439,8 @@ TOOLS = [
                         "'5 unidades na rede Marista']."
                     ),
                 },
-                "modo": {"type": "string", "enum": ["ia", "template"], "description": "Modo: 'ia' (IA gera do zero) ou 'template' (usa template salvo). Default: ia"},
-                "template_nome": {"type": "string", "description": "Nome do template a usar (se modo=template). Se nao informado, usa o template padrao."},
+                "modo": {"type": "string", "enum": ["ia", "template", "template_auto"], "description": "Modo: 'ia' (IA gera do zero), 'template' (usa template salvo por nome ou padrao), 'template_auto' (escolhe automaticamente o melhor template conforme o alvo: contato nominal/generico + dados da escola matriculas/ENEM). Default: ia"},
+                "template_nome": {"type": "string", "description": "Nome do template a usar (se modo=template). Se nao informado, usa o template padrao. Ignorado em modo template_auto."},
                 "canal": {"type": "string", "enum": ["email", "whatsapp", "ambos"], "description": "Canal de envio: 'email' (default), 'whatsapp' (msg curta), 'ambos' (gera email + whatsapp)."}
             },
             "required": ["escola_nome"]
@@ -5272,29 +5272,57 @@ def _handle_gerar_email(params: Dict) -> str:
     foco = params.get("foco", "apresentacao")
     modo = params.get("modo", "ia").lower()
 
-    # === MODO TEMPLATE: buscar template salvo e substituir variáveis ===
-    if modo == "template":
+    # === MODO TEMPLATE / TEMPLATE_AUTO: buscar template salvo e substituir variáveis ===
+    if modo in ("template", "template_auto"):
         try:
-            template_nome = params.get("template_nome")
-            if template_nome:
-                tpl_q = db.client.table("message_templates").select("*").eq(
+            if modo == "template_auto":
+                # Selecao automatica por alvo (audience x dados da escola)
+                from utils.template_selector import selecionar_template
+                _tpls = db.client.table("message_templates").select("*").eq(
                     "is_active", True
-                ).ilike("name", f"%{template_nome}%").limit(1).execute()
+                ).execute().data or []
+                # Montar contato pro selector (busca dados ricos: source, dm_type)
+                _contact_sel = None
+                try:
+                    _cr = db.client.table("contacts").select(
+                        "full_name,email,role,source,decision_maker_type"
+                    ).eq("company_id", escola["id"]).order(
+                        "outreach_priority"
+                    ).limit(1).execute()
+                    if _cr.data:
+                        _contact_sel = _cr.data[0]
+                except Exception:
+                    pass
+                if _contact_sel is None and (contato_nome or contato_email):
+                    _contact_sel = {"full_name": contato_nome, "email": contato_email, "role": contato_cargo}
+                tpl = selecionar_template(escola, _contact_sel, _tpls)
+                if not tpl:
+                    # Fallback: default ativo
+                    _def = [t for t in _tpls if t.get("is_default")]
+                    tpl = _def[0] if _def else (_tpls[0] if _tpls else None)
+                if not tpl:
+                    return json.dumps({"erro": "Nenhum template ativo encontrado pra selecao automatica. Crie templates em Comunicacao > Templates."})
             else:
-                # Buscar template padrão
-                tpl_q = db.client.table("message_templates").select("*").eq(
-                    "is_active", True
-                ).eq("is_default", True).limit(1).execute()
-                if not tpl_q.data:
-                    # Fallback: qualquer template ativo
+                template_nome = params.get("template_nome")
+                if template_nome:
                     tpl_q = db.client.table("message_templates").select("*").eq(
                         "is_active", True
-                    ).limit(1).execute()
+                    ).ilike("name", f"%{template_nome}%").limit(1).execute()
+                else:
+                    # Buscar template padrão
+                    tpl_q = db.client.table("message_templates").select("*").eq(
+                        "is_active", True
+                    ).eq("is_default", True).limit(1).execute()
+                    if not tpl_q.data:
+                        # Fallback: qualquer template ativo
+                        tpl_q = db.client.table("message_templates").select("*").eq(
+                            "is_active", True
+                        ).limit(1).execute()
 
-            if not tpl_q.data:
-                return json.dumps({"erro": "Nenhum template encontrado. Crie um em Templates no dashboard."})
+                if not tpl_q.data:
+                    return json.dumps({"erro": "Nenhum template encontrado. Crie um em Templates no dashboard."})
 
-            tpl = tpl_q.data[0]
+                tpl = tpl_q.data[0]
             meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
             meeting_link_text = os.getenv("HUBSPOT_MEETING_LINK_TEXT", "Agendar conversa com Fernando")
 
@@ -5388,7 +5416,7 @@ def _handle_gerar_email(params: Dict) -> str:
             if result.data:
                 return json.dumps({
                     "sucesso": True,
-                    "modo": "template",
+                    "modo": modo,
                     "template_usado": tpl.get("name", "?"),
                     "queue_id": result.data[0]["id"],
                     "assunto": subject,
