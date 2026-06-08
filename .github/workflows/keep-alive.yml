@@ -1,0 +1,50 @@
+name: Keep Streamlit app awake
+
+# Mantem o app do Streamlit Community Cloud acordado.
+#
+# Por que nao usar mais um ping simples no /_stcore/health:
+# a Streamlit passou a proteger /_stcore/health (e /) atras de um "auth dance"
+# (redirect -> share.streamlit.io -> volta com cookie de sessao anonima). Um GET
+# cru recebe 303 e NAO chega no app. Aqui usamos curl seguindo os redirects COM
+# cookie jar, igual a um navegador, ate o app responder 200 (o que de fato
+# reseta o timer de inatividade e impede o "app dormindo").
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # a cada ~10 min (o GitHub pode atrasar; ok p/ keep-alive)
+  workflow_dispatch: {}        # permite rodar manualmente pela aba Actions
+
+permissions: {}                # nenhum acesso ao repo necessario (so faz curl externo)
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping app (segue o auth dance com cookies ate 200)
+        run: |
+          set -uo pipefail
+          URL="https://iaprendo-sales-agent.streamlit.app/"
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 keep-alive-bot"
+          CK="$(mktemp)"
+          code="000"
+          for attempt in 1 2 3 4; do
+            code=$(curl -sSL --max-time 60 \
+              --cookie-jar "$CK" --cookie "$CK" \
+              -A "$UA" \
+              -o /dev/null -w "%{http_code}" \
+              "$URL" || echo "000")
+            echo "Tentativa $attempt: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "OK — app acordado (HTTP 200)."
+              exit 0
+            fi
+            # Se estava dormindo, o 1o request dispara o wake (~30-60s). Espera e tenta de novo.
+            sleep 20
+          done
+          echo "FALHOU — ultimo HTTP=$code (app pode estar com problema ou Streamlit fora do ar)."
+          exit 1
