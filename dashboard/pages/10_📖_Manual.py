@@ -50,7 +50,7 @@ st.caption(
     "Pipeline",
     "Comunicacao",
     "Inteligencia ENEM",
-    "IAlex (WhatsApp)",
+    "IAlex (Chat & WhatsApp)",
     "Configuracoes",
     "Boas Praticas",
     "Use Cases",
@@ -73,12 +73,17 @@ supervisao humana obrigatoria para garantir qualidade e etica em cada interacao.
 
 | Componente | Descricao |
 |---|---|
-| **Dashboard Streamlit** | Interface web com 10 paginas para gestao completa |
-| **IAlex (WhatsApp)** | Agente de IA conversacional com 83 ferramentas |
+| **Dashboard Streamlit** | Interface web com 11 paginas para gestao completa |
+| **Chat IAlex (navegador)** | Conversa com a IA dentro do dashboard (1a pagina do menu) |
+| **IAlex (WhatsApp)** | Mesmo agente de IA, via WhatsApp — 85 ferramentas |
 | **Supabase** | Banco de dados PostgreSQL com 7+ tabelas |
 | **HubSpot CRM** | Sincronizacao bidirecional de contatos e deals |
 | **Brevo / Gmail** | Envio de emails com tracking completo |
 | **ENEM Analytics** | Dados de desempenho de 185 mil escolas |
+
+> **2 jeitos de usar a IA**: pelo **💬 Chat IAlex** no navegador (1a pagina) OU pelo
+> **WhatsApp**. Os dois usam o mesmo cerebro (mesmas 85 ferramentas). Acesso
+> multi-usuario: Fernando, Lizianne e Felipe, cada um com seu login.
 """)
 
     st.divider()
@@ -119,7 +124,7 @@ supervisao humana obrigatoria para garantir qualidade e etica em cada interacao.
 
     st.markdown("""
 ```
-Camada 5 — Interface      : Dashboard Streamlit (10 paginas) + IAlex WhatsApp
+Camada 5 — Interface      : Dashboard Streamlit (11 paginas) + Chat IAlex web + IAlex WhatsApp
 Camada 4 — Orquestracao    : Pipeline diario, Follow-ups automaticos, Scheduler
 Camada 3 — Agentes IA      : Qualificador, Escritor, Enriquecedor, Buscador
 Camada 2 — Integracoes     : HubSpot, Brevo, Apollo, Snov, Hunter, Google Maps
@@ -138,7 +143,7 @@ Camada 1 — Dados           : Supabase (PostgreSQL), CSV MEC, ENEM Analytics
     with c3:
         st.metric("ENEM Analytics", "185k escolas")
     with c4:
-        st.metric("Tools IAlex", "83 ferramentas")
+        st.metric("Tools IAlex", "85 ferramentas")
 
     st.markdown("""
 ---
@@ -316,6 +321,14 @@ with tab_passo:
     section_header("Seu Primeiro Lead em 10 Minutos", "rocket_launch")
 
     alert_banner(
+        "Atalho pra quem nao e tecnico: abra a 1a pagina do menu (💬 Chat IAlex) e "
+        "digite o que voce quer em linguagem natural (ex: 'qualifica e gera email "
+        "pras 5 escolas privadas de Porto Alegre com maior fit'). O IAlex faz o "
+        "pipeline por voce, conversando. O passo a passo abaixo e o jeito manual.",
+        "success",
+    )
+
+    alert_banner(
         "Este tutorial assume que o sistema ja esta configurado (banco, APIs, .env). "
         "Se ainda nao configurou, va em Configuracoes primeiro.",
         "info",
@@ -419,13 +432,16 @@ importadas e acompanha o progresso de cada uma.
 
 **Tabela Principal**
 - Lista todas as escolas com colunas: Nome, INEP, Status, Porte, Score, Cidade
-- **Filtros** no topo: Status, Porte, Dependencia Administrativa
+- **Filtros** no topo: Status, Porte, Dependencia, Tech, Fonte, Potencial ENEM e
+  **UF + Cidade** (a Cidade filtra em cascata pela UF escolhida)
 - **Busca** por nome ou INEP
+- **📥 Exportar XLSX** das escolas filtradas (planilha com todos os campos + contatos)
 - Clique em qualquer linha para abrir o detalhe
 
 **Card de Detalhe**
 Ao clicar em uma escola, voce ve um card completo com 7 abas:
-- **Dados** — edicao inline (nome, endereco, telefone, status, etc)
+- **Dados** — edicao inline (nome, endereco, **telefone fixo**, **📱 WhatsApp da
+  escola** — campo separado do fixo, status, etc)
 - **Performance ENEM** — radar 5 areas, ranking, gap, peer group, trajetoria
 - **Contatos** — decisores encontrados (Power Map)
 - **Mensagens** — emails na fila de aprovacao desta escola
@@ -472,9 +488,15 @@ O Power Map e uma visualizacao hierarquica dos contatos por escola:
 
 ### Funcionalidades
 - **Busca** por nome, email ou escola
-- **Filtro** por tipo de cargo (decisor, influenciador, operacional)
-- **Enriquecimento**: Buscar dados complementares (LinkedIn, email profissional)
-- **Detalhes do contato**: Historico de interacoes, emails enviados, respostas
+- **Filtros**: tipo de cargo, email (com/sem), **UF + Cidade** (cascata), agrupamento
+- **📱 WhatsApp separado**: cada contato tem telefone fixo E celular/WhatsApp em
+  colunas distintas (o WhatsApp aparece em verde). O envio por WhatsApp prioriza
+  o celular; o fixo serve so pra ligacao
+- **📥 Exportar XLSX**: baixa as escolas filtradas + TODOS os seus contatos numa
+  planilha (3 abas: Escolas, Contatos, Info) — util pra trabalhar offline ou
+  compartilhar listas
+- **Enriquecimento**: buscar dados complementares (LinkedIn, email profissional)
+- **Detalhes do contato**: historico de interacoes, emails enviados, respostas
 """)
 
     if st.button("Ir para Contatos", key="crm_contatos"):
@@ -563,16 +585,43 @@ escolas e roda cada etapa manualmente.
 | **Gerar Email** | Cria mensagem personalizada | Claude Sonnet 4.5 |
 | **Enviar** | Coloca na fila de aprovacao | - |
 
-### Como Usar
-1. Selecione escolas na tabela (checkbox)
-2. Clique no botao da etapa desejada
-3. Aguarde o processamento (barra de progresso)
-4. O status da escola e atualizado automaticamente
+### Como selecionar escolas
+A tabela de selecao tem **filtros** e **checkbox** por linha:
+- **Filtros**: UF, Cidade (cascata pela UF), Status, Score minimo, busca por nome
+- **Checkbox** na 1a coluna: marque as escolas que quer processar
+- **Contador** "X escolas selecionadas no total" — escolas marcadas fora do filtro
+  atual permanecem selecionadas
+- **Selecao rapida (presets)**: Top 10 por Score, Top 10 por Fit, Todas nao
+  processadas, Todas privadas, Prontas p/ email, Limpar selecao
+- **Busca avancada**: autocomplete por nome OU colar lista de nomes/INEPs
+
+### Como rodar
+1. Selecione escolas (checkbox ou preset)
+2. Escolha o **Modo de mensagem** (so afeta a etapa "Gerar"):
+   - **IA (personalizada)** — Claude escreve do zero
+   - **Template (padrao)** — usa o template marcado como padrao
+   - **Template (auto por alvo)** — escolhe automaticamente o melhor template
+     conforme o contato (nominal/generico) e os dados da escola (matriculas/ENEM).
+     Configure os templates em Comunicacao > Templates
+3. Clique no botao da etapa (Qualificar / Enriquecer / Contatos / Gerar / Enviar)
+4. O resultado aparece logo abaixo (caixa colorida + detalhe por etapa) e fica
+   visivel ate voce limpar — sobrevive a recarregamentos da tela
 5. Para enviar, va em **Comunicacao** > **Aprovacao**
 
+### Opcoes extras
+- **🔁 Forcar reprocessar**: por padrao, cada etapa pula escolas que ja passaram
+  por ela (ex: enrich nao roda em escola ja enriquecida). Marque essa opcao pra
+  RODAR DE NOVO numa escola que ja passou (ex: re-enriquecer pra atualizar dados)
+- **📥 Exportar XLSX**: baixa as escolas selecionadas + contatos numa planilha
+- **🗑️ Deletar selecionadas**: remove as escolas selecionadas do banco (escola +
+  contatos + interacoes). Confirmacao em 2 cliques — **irreversivel**
+- **🔄 Atualizar dados**: limpa o cache local (use apos rodar pipeline pra ver os
+  contadores atualizados)
+
 ### Dicas
-- Voce pode rodar etapas em lote (varias escolas de uma vez)
-- Cada etapa depende da anterior (nao pode enriquecer sem qualificar)
+- Rode etapas em lote (varias escolas de uma vez); no Cloud, prefira lotes <= 100
+- Cada etapa depende da anterior — mas os botoes rodam em **cascata** (clicar
+  "Enriquecer" qualifica as raw e enriquece as qualified automaticamente)
 - Se uma etapa falha, a escola fica no status anterior
 """)
 
@@ -690,7 +739,45 @@ Gerencia os follow-ups automaticos para emails ja enviados.
 
     st.markdown("## Aba 3: Templates")
     st.markdown("""
-Gerencia templates de email reutilizaveis.
+Gerencia templates de email reutilizaveis, com **selecao automatica por alvo**.
+
+### Selecao automatica por alvo (matriz 2x4)
+Ao gerar emails no modo **"Template (auto por alvo)"** (no Pipeline) ou pedindo
+"template automatico" no chat, o sistema escolhe sozinho o melhor template
+conforme 2 dimensoes:
+
+- **Publico**: pessoa nominal (diretor "Maria") vs endereco generico (secretaria@)
+- **Dados da escola**: Matriculas (Censo) + ENEM / so Matriculas / so ENEM / Nenhum
+
+Sao **8 combinacoes** possiveis. O ideal e sempre o template **nominal + ambos os
+dados** (mais valor); se a escola nao tiver esses dados, o sistema degrada pro
+melhor disponivel (nunca cita ENEM/matriculas que a escola nao tem).
+
+| # | Publico | Dados | Prioridade |
+|---|---|---|---|
+| 1 | Nominal | Matriculas+ENEM | ⭐ ideal |
+| 2 | Nominal | So Matriculas | alta |
+| 3 | Nominal | So ENEM | alta |
+| 4 | Nominal | Nenhum | media |
+| 5 | Generico | Matriculas+ENEM | media |
+| 6 | Generico | So Matriculas | baixa |
+| 7 | Generico | So ENEM | baixa |
+| 8 | Generico | Nenhum | fallback universal |
+
+**Como configurar**: ao criar/editar um template, preencha os 2 campos novos
+(**Publico-alvo** + **Dados que usa**). A **Matriz de cobertura** (grid ✅/⬜ logo
+abaixo do form) mostra quais combos ja tem template. Comece pelo ⭐ (#1) e pelo
+fallback (#8); o resto pode vir depois.
+
+### Anexos PDF
+Cada usuario cadastra PDFs (ex: apresentacao institucional) que vao
+**automaticamente** anexados nos emails que ele enviar (sticky). Da pra
+sobrescrever por mensagem na tela de Aprovacao.
+
+### Nome do remetente (email_sender_name)
+O nome que aparece no "De:" do email e configuravel por usuario — ex:
+`Fernando Teixeira | DUOGEN`, `Lizianne P. K. Nienaber | DUOGEN`. Definido no
+perfil de cada usuario (config multi-user).
 
 ### Tipos de Template
 - **Primeiro contato**: Email inicial de apresentacao
@@ -710,9 +797,18 @@ Templates usam variaveis que sao substituidas automaticamente:
 | `{cidade}` | Cidade da escola |
 | `{porte}` | Porte (pequena, media, grande) |
 | `{score}` | Score de qualificacao |
+| `{contact_first_name}` | Primeiro nome do contato (saudacao pessoal) |
+| `{sender_name}` | Nome do remetente ativo |
+| `{meeting_link}` | Link de agendamento (HubSpot) |
+| `{chart_radar}` | Grafico ENEM 5 areas (inserido inline no email) |
+| `{chart_gap}` | Grafico gap vs escolas similares |
+| `{chart_trend}` | Grafico de evolucao de matriculas |
+| `{report_link}` | Link do One Page Report (OPR) da escola |
 
-**Importante**: A IA usa templates como base mas SEMPRE personaliza.
-Templates genericos nunca sao enviados como estao.
+**Importante**: no modo IA, a IA usa templates como base mas SEMPRE personaliza.
+No modo Template, as variaveis sao substituidas e o email vai como esta (mas
+ainda passa pela aprovacao humana). Templates que usam `{chart_*}`/`{report_link}`
+so devem ter Dados = Matriculas/ENEM (senao o grafico fica vazio).
 """)
 
     st.divider()
@@ -920,14 +1016,44 @@ Cada aba tem um badge visual indicando a forca do argumento comercial:
 # TAB 8 — IALEX (WHATSAPP)
 # #############################################################################
 with tab_ialex:
-    section_header("IAlex — Assistente de Vendas via WhatsApp", "smart_toy")
+    section_header("IAlex — Assistente de Vendas (Chat web + WhatsApp)", "smart_toy")
 
     st.markdown("""
-O **IAlex** e o agente de IA conversacional que opera via WhatsApp. Ele tem
-acesso a **83 ferramentas** organizadas em 12 categorias. Voce pode fazer
-tudo que o dashboard faz — e mais — apenas conversando.
+O **IAlex** e o agente de IA conversacional. Ele tem acesso a **85 ferramentas**
+organizadas em 12 categorias e pode fazer tudo que o dashboard faz — e mais —
+apenas conversando. Voce fala com ele de **2 jeitos** (mesmo cerebro nos dois):
+""")
 
-> **Novidades recentes (Abril 2026)**:
+    st.markdown("### 💬 Chat IAlex (no navegador) — 1a pagina do menu")
+    st.markdown("""
+A forma mais natural pra quem nao usa WhatsApp. Abra **💬 Chat IAlex** (primeira
+pagina) e digite o que quer em linguagem natural. Vantagens vs WhatsApp:
+- **Formatacao rica**: tabelas, listas, **botoes de download** (XLSX)
+- **Historico proprio por usuario** (Fernando, Lizianne e Felipe nao se misturam)
+- **Multi-usuario simultaneo**: varias pessoas conversando ao mesmo tempo
+
+**Exemplos do que pedir** (perguntas, acoes, agregacao e exportacao):
+- *"quantas escolas estaduais tem em Porto Alegre?"*
+- *"quantos alunos no total nessas escolas?"* → responde com **transparencia**:
+  X alunos confirmados (escolas com dado) + Y estimados (escolas sem dado, usando
+  a media do grupo) — sempre deixando claro o que e dado real vs estimativa
+- *"gera um excel com as escolas de POA com ensino medio e telefone"* → aparece
+  um **botao de download do XLSX** (escolas + contatos)
+- *"qualifica e gera email pro Colegio Anchieta com template automatico"*
+
+### 📱 WhatsApp
+Mesmo agente, pelo WhatsApp do IAlex. Ideal pra usar no celular, em movimento.
+Roda no PC do Fernando (precisa estar ligado). Detecta automaticamente quem
+mandou a mensagem (Fernando / Lizianne / Felipe) e usa o perfil/assinatura certo.
+
+> **Novidades recentes (Mai/Jun 2026)**:
+> - 💬 **Chat IAlex no navegador**: 1a pagina do dashboard, mesmas tools do WhatsApp
+> - 📊 **Agregacao inteligente**: "quantos alunos/docentes" com cobertura +
+>   estimativa transparente (concreto vs estimado)
+> - 📥 **Exportar XLSX por chat**: "gera um excel com..." entrega link de download
+> - 🎯 **Selecao automatica de template por alvo** (nominal/generico x dados)
+
+> **Novidades anteriores (Abril 2026)**:
 > - 🎯 **OPR Interativo**: relatorio HTML com seletor de benchmark (1 link, 4 comparacoes)
 > - ⭐ **Skills Aprendidas**: "padroniza isso" salva modelos de resposta reutilizaveis
 > - 🔥 **Urgency Score F2**: ranking unificado de leads (CRITICAL/HOT/WARM/COLD)
@@ -954,14 +1080,16 @@ tudo que o dashboard faz — e mais — apenas conversando.
 """)
 
     st.divider()
-    st.markdown("## Catalogo de 83 Ferramentas em 12 Categorias")
+    st.markdown("## Catalogo de 85 Ferramentas em 12 Categorias")
 
-    st.markdown("### 1. Buscar Escolas (6 ferramentas)")
+    st.markdown("### 1. Buscar Escolas e Dados (8 ferramentas)")
     st.markdown("""
 | Ferramenta | Descricao | Exemplo de uso |
 |---|---|---|
 | **Buscar no CRM** | Pesquisa escolas ja importadas | "Busque escolas privadas de Porto Alegre" |
 | **Buscar no MEC** | Pesquisa na base completa de 210k | "Procure escolas no MEC em Canoas" |
+| **Agregar estatisticas** | Soma matriculas/docentes com cobertura+estimativa | "Quantos alunos nas estaduais de POA?" |
+| **Exportar XLSX** | Gera planilha de escolas+contatos com link | "Gera um excel das escolas de POA" |
 | **Buscar Proximidade** | Encontra escolas perto de um endereco | "Escolas num raio de 2km da Av. Ipiranga" |
 | **Discovery** | Busca com criterios avancados | "Escolas privadas, medio, porte grande, RS" |
 | **Buscar Sinais** | Identifica sinais de compra | "Que sinais a escola X tem?" |
@@ -1290,11 +1418,27 @@ para acoes ambiguas (intervencao humana necessaria). Frequencia: a cada 30 min.
 
     st.divider()
 
-    st.markdown("## 6. Multi-user (login + identidades)")
+    st.markdown("## 6. Acesso, Login e Multi-user")
     st.markdown("""
-A plataforma suporta **multiplos usuarios** com identidade propria. Cada email
-gerado/enviado usa a identidade do usuario **ativo** (quem esta logado no
-dashboard ou quem mandou o comando no WhatsApp).
+### Como acessar a plataforma
+- **Pelo navegador** (Felipe, Lizianne, qualquer um, de qualquer lugar): abra o
+  endereco da plataforma — `iaprendo-sales-agent.streamlit.app` (ou o dominio
+  proprio `vendasiaprendo.duogen.com.br` quando o Cloudflare estiver ativo) — e
+  faca login com **seu usuario e senha**
+- O app fica **sempre ativo** (nao hiberna) gracas a um ping automatico
+  (keep-alive). 1o acesso apos muito tempo pode levar ~30s
+- **IAlex WhatsApp** roda no **PC do Fernando** (precisa estar ligado). Ja o
+  dashboard e o **💬 Chat IAlex** funcionam de qualquer lugar, sempre
+
+### Divisao de trabalho (importante)
+- **Importar a base bruta do MEC** (185k escolas): Fernando faz no PC dele, 1x
+  por safra. Depois, todos veem as escolas no banco automaticamente
+- **Pipeline** (qualificar/enriquecer/contatos/gerar): qualquer um roda pelo
+  dashboard, em **lotes** (no Cloud, ate ~100 escolas por vez)
+
+A plataforma suporta **3 usuarios** com identidade propria: **Fernando,
+Lizianne e Felipe**. Cada email gerado/enviado usa a identidade do usuario
+**ativo** (quem esta logado no dashboard ou quem mandou o comando no WhatsApp).
 
 ### Como funciona
 
@@ -1316,9 +1460,15 @@ dashboard ou quem mandou o comando no WhatsApp).
 
 ### Brevo (envio de email)
 Cada usuario tem seu proprio `email` no perfil. Para emails saírem de cada
-remetente, **ambos os emails precisam estar verificados como sender** na conta
+remetente, **cada email precisa estar verificado como sender** na conta
 Brevo (mesma conta — adicionar sender adicional no painel Brevo). Sem
 verificacao, o Brevo rejeita o envio.
+
+**Nome do remetente** (`email_sender_name`): o nome que aparece no "De:" do email
+e configuravel por usuario — ex: `Fernando Teixeira | DUOGEN`,
+`Lizianne P. K. Nienaber | DUOGEN`, `Felipe Fangueiro | DUOGEN`. Fica no perfil
+de cada usuario (`users.yaml` / Secrets). So afeta o email — saudacao no chat e
+sidebar continuam usando so o primeiro nome.
 
 ### Streamlit Cloud
 O `config/users.yaml` e gitignored — para o Cloud, configure via Secrets:
@@ -1719,6 +1869,23 @@ with tab_glossario:
     st.markdown("Termos tecnicos usados em todo o sistema, em ordem alfabetica.")
 
     glossary = [
+        ("Agregacao Inteligente",
+         "Quando o IAlex soma metricas (alunos, docentes) sobre um conjunto de "
+         "escolas, ele SEMPRE separa dado CONCRETO (escolas que tem o dado) de "
+         "ESTIMATIVA (escolas sem dado, usando a media do grupo). Ex: '117k alunos "
+         "= 95k confirmados + 22k estimados'. Garante transparencia, nunca inventa."),
+
+        ("Anexos PDF",
+         "Arquivos PDF (ex: apresentacao) que cada usuario cadastra em "
+         "Comunicacao > Templates. Vao anexados automaticamente nos emails que "
+         "aquele usuario enviar (sticky). Da pra sobrescrever por mensagem na Aprovacao."),
+
+        ("Audience / Data Profile",
+         "As 2 dimensoes da selecao automatica de template. Audience = publico "
+         "(nominal=pessoa real / generico=secretaria@). Data Profile = dados que o "
+         "template exige (ambos / matriculas / enem / nenhum). O sistema cruza as "
+         "2 pra escolher o melhor template pro alvo."),
+
         ("Amostra Confiavel",
          "Indicador de que uma escola tem numero suficiente de participantes "
          "no ENEM (>= 10) para que a media seja estatisticamente representativa. "
@@ -1728,6 +1895,18 @@ with tab_glossario:
          "Fila de aprovacao. Mecanismo que garante que NENHUM email e enviado "
          "sem revisao humana. Toda mensagem gerada pela IA passa por essa fila "
          "antes do envio."),
+
+        ("Chat IAlex",
+         "Pagina de conversa com a IA dentro do dashboard (1a do menu, 💬). Mesmo "
+         "cerebro e mesmas ferramentas do IAlex no WhatsApp, mas com formatacao "
+         "rica (tabelas, botoes de download) e historico proprio por usuario. "
+         "Digite em linguagem natural: perguntas, acoes, agregacoes, exports."),
+
+        ("Cobertura / Estimativa",
+         "Numa agregacao, COBERTURA = % de escolas que tem o dado real. "
+         "ESTIMATIVA = valor calculado para as escolas sem dado (media do grupo "
+         "x quantidade). A resposta sempre separa os dois pra deixar claro o que "
+         "e fato vs aproximacao."),
 
         ("Commercial Stage",
          "Pipeline Kanban da escola, separado do `status`. Valores: prospectado, "
@@ -1749,6 +1928,17 @@ with tab_glossario:
          "Processo de busca ativa por novas escolas potenciais, usando "
          "criterios avancados como sinais de compra, localizacao e perfil."),
 
+        ("email_sender_name",
+         "Nome que aparece no 'De:' do email, por usuario — ex: 'Fernando Teixeira "
+         "| DUOGEN'. So afeta o email; saudacao no chat e sidebar usam so o primeiro "
+         "nome. Configurado no perfil (users.yaml / Secrets do Cloud)."),
+
+        ("Export XLSX",
+         "Geracao de planilha Excel com escolas + contatos (3 abas: Escolas, "
+         "Contatos, Info). Disponivel no Pipeline (selecionadas), em Contatos "
+         "(filtradas) e pelo chat ('gera um excel...'). No chat/WhatsApp vem como "
+         "link de download (valido 24h)."),
+
         ("Ensino Fundamental AF",
          "Ensino Fundamental — Anos Finais (6o ao 9o ano). Faixa etaria "
          "de 11 a 14 anos. Um dos publicos-alvo do IAprendo."),
@@ -1765,6 +1955,11 @@ with tab_glossario:
         ("Follow-up",
          "Email de acompanhamento enviado apos o primeiro contato. O sistema "
          "agenda automaticamente 3 follow-ups em intervalos crescentes."),
+
+        ("Forcar Reprocessar",
+         "Opcao no Pipeline (checkbox 🔁). Por padrao cada etapa pula escolas que "
+         "ja passaram por ela; marcando 'Forcar', a etapa roda de novo (ex: "
+         "re-enriquecer uma escola ja enriquecida pra atualizar dados)."),
 
         ("Gap vs Peer",
          "Diferenca entre a media ENEM da escola e a media do seu peer group. "
@@ -1805,6 +2000,11 @@ with tab_glossario:
          "porte, regiao, nivel socioeconomico). Usado para comparacao justa "
          "de desempenho no ENEM."),
 
+        ("phone_whatsapp",
+         "Campo de celular/WhatsApp SEPARADO do telefone fixo, tanto em contatos "
+         "quanto na escola. O envio por WhatsApp prioriza esse campo (o fixo de "
+         "8 digitos nao funciona no WhatsApp). Aparece em verde 📱 na interface."),
+
         ("Pipeline",
          "Sequencia de etapas que uma escola percorre desde a importacao "
          "ate a conversao: Novo > Qualificado > Enriquecido > Contatado > "
@@ -1829,6 +2029,12 @@ with tab_glossario:
          "Componente do Qualification Score que avalia a maturidade "
          "tecnologica da escola: presenca digital, uso de plataformas, "
          "projetos de inovacao."),
+
+        ("Template Auto (selecao por alvo)",
+         "Modo de geracao de email que escolhe automaticamente o melhor template "
+         "conforme o alvo: publico (nominal/generico) x dados da escola "
+         "(matriculas/ENEM). Ideal = nominal + ambos os dados; degrada pro melhor "
+         "disponivel. Ativado no Pipeline ('Template auto por alvo') ou no chat."),
 
         ("Webhook",
          "Mecanismo de notificacao automatica entre sistemas. O HubSpot "
