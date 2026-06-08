@@ -3,7 +3,7 @@
 > Sistema híbrido (IA + Humano) de prospecção B2B para plataforma educacional
 
 **Versão**: 1.0.0  
-**Última Atualização**: 2026-04-25  
+**Última Atualização**: 2026-06-08  
 **Mantenedor**: Fernando  
 **Projeto**: IAprendo - Plataforma de IA Educacional BNCC
 
@@ -181,12 +181,21 @@ else:
 - ✅ Qualificação automática com IA (GPT-4.1-mini para score e escrita)
 - ✅ Enriquecimento multi-fonte com fallbacks (Apollo→Snov→Hunter→Perplexity→Scraping)
 - ✅ Geração de mensagens hiperpersonalizadas (nunca templates genéricos)
-- ✅ Dashboard Streamlit (10 páginas) para aprovação humana
-- ✅ IAlex — agente WhatsApp com 83 tools (24/7, acesso a CRM/ENEM/Censo)
+- ✅ Dashboard Streamlit (11 páginas) para aprovação humana
+- ✅ **Chat IAlex no navegador** (`dashboard/pages/0_💬_Chat_IAlex.py`) — 1ª página do menu; conversa com a IA no dashboard, reusa 100% do Brain (mesmas tools do WhatsApp), histórico por usuário, botões de download XLSX inline
+- ✅ IAlex — agente WhatsApp + chat web com **85 tools** (acesso a CRM/ENEM/Censo)
+- ✅ **Seleção automática de template por alvo** (`utils/template_selector.py`) — matriz audience (nominal/genérico) × dados (matrículas/ENEM); modo `template_auto` no pipeline/brain; colunas `audience_type`/`data_profile` em `message_templates`
+- ✅ **Agregação inteligente** (`agregar_estatisticas_escolas`) — soma matrículas/docentes com cobertura + estimativa transparente (concreto vs estimado)
+- ✅ **Export XLSX** (`utils/export_utils.py`) — escolas + contatos (3 abas) via Pipeline, Contatos e chat (`exportar_escolas_xlsx`, signed URL 24h)
+- ✅ **Delete em massa** de escolas no Pipeline (confirmação 2-clicks)
+- ✅ **Filtros UF + Cidade** (cascata) em Escolas, Contatos e Pipeline
+- ✅ **Anexos PDF por usuário** (sticky) nos emails (`integrations/email_attachments.py`)
+- ✅ **email_sender_name** por usuário (Nome | DUOGEN) no "De:" do email
 - ✅ Integração HubSpot bidirecional (Supabase ↔ HubSpot push + pull)
 - ✅ Tracking completo (enviado→entregue→aberto→clicado→respondido)
 - ✅ Registro manual de interações (aba "Registrar Contato" em Escolas + tool `registrar_contato` no IAlex) — paridade dashboard ↔ WhatsApp para logar contatos feitos fora da plataforma
-- ✅ Multi-user (login + identidade dinâmica) — `streamlit-authenticator` no dashboard + `utils/sender_profile.py` resolve identidade ativa em tempo real (writer/brain/brevo). IAlex detecta automaticamente quem mandou o comando pelo número do WhatsApp e usa o perfil correto (Fernando ou Lizianne, configurados em `config/users.yaml`)
+- ✅ Multi-user (login + identidade dinâmica) — **3 usuários: Fernando, Lizianne, Felipe**. `streamlit-authenticator` no dashboard + `utils/sender_profile.py` resolve identidade ativa em tempo real (writer/brain/brevo). IAlex detecta automaticamente quem mandou o comando pelo número do WhatsApp e usa o perfil correto (configurados em `config/users.yaml`)
+- ✅ Health-check robusto do IAlex no startup (`whatsapp_bridge.ping_real()` + `restart_instance()`) — detecta sessão Baileys "fantasma" (Connection Closed) e reinicia automático
 
 ### Inteligência ENEM (Fase 1-3, Abril 2026)
 - ✅ 185k escolas com analytics ENEM 2024 (média, ranking, peer group, potencial)
@@ -257,22 +266,23 @@ else:
 
 ## 📦 Estrutura de Entrega
 
-### Dashboard — 10 Paginas (reorganizado Abril 2026)
+### Dashboard — 11 Paginas (reorganizado Abril 2026; Chat IAlex adicionado Jun 2026)
 ```
 📊 Home (app.py) — Central de Comando com KPIs e tiles de acesso rapido
+0  💬 Chat IAlex      — Conversa com a IA no navegador (reusa Brain; 1a do menu)
 ─── CRM ───
-1  🏫 Escolas         — Gestao de escolas, detalhe, redes, performance ENEM
-2  👥 Contatos        — Power Map de decisores por escola
+1  🏫 Escolas         — Gestao de escolas, detalhe, redes, performance ENEM (+ filtros UF/Cidade, export XLSX, WhatsApp da escola)
+2  👥 Contatos        — Power Map de decisores (+ filtros UF/Cidade, export XLSX, phone_whatsapp separado)
 3  🗺️ Mapa           — Visualizacao geografica interativa (PyDeck)
 4  📥 Importar        — Importar escolas da base MEC (212k)
 ─── Execucao ───
-5  📊 Pipeline        — Execucao + Descoberta + Pipeline Comercial (Kanban)
-6  ✉️ Comunicacao     — Aprovacao + Follow-ups + Templates + Metricas (4 tabs)
+5  📊 Pipeline        — Execucao (tabela checkbox + filtros + 3 modos msg + Forcar + export/delete) + Descoberta + Kanban
+6  ✉️ Comunicacao     — Aprovacao + Follow-ups + Templates (selecao auto por alvo + matriz + anexos PDF) + Metricas
 ─── Inteligencia ───
 7  🎯 Inteligencia    — Ranking ENEM P1/P2/P3, Radar Comparativo, Explorador Livre
 8  📈 Analytics       — ROI, Funil, Conversoes, Custos
 ─── Sistema ───
-9  ⚙️ Configuracoes  — Automacoes, Memoria, Diagnostico
+9  ⚙️ Configuracoes  — Automacoes, Memoria, Diagnostico, Multi-user/Acesso
 10 📖 Manual          — Manual completo da plataforma (12 tabs)
 ```
 
