@@ -246,6 +246,131 @@ class Database:
             )
             raise DatabaseError(f"Falha ao inserir empresa {inep_code}") from e
 
+    # ------------------------------------------------------------------
+    # CATALOGO MEC ONLINE (tabela leve mec_catalog) — busca/import sem CSV
+    # ------------------------------------------------------------------
+    def catalog_available(self) -> bool:
+        """True se a tabela mec_catalog existe E tem linhas (base carregada)."""
+        try:
+            r = self.client.table('mec_catalog').select('inep_code', count='exact').limit(1).execute()
+            return bool(getattr(r, 'count', 0))
+        except Exception:
+            return False
+
+    def search_mec_catalog(
+        self,
+        filters: Dict[str, Any],
+        limit: int = 200
+    ) -> Dict[str, Any]:
+        """Busca escolas no catalogo MEC (Supabase) via SQL com filtros.
+
+        Funciona ONLINE sem o CSV. Filtros suportados (todos opcionais):
+            nome, cidade, uf, dependencia, tipo, niveis_ensino, porte,
+            localizacao (strings; nome/cidade/niveis usam forma normalizada).
+
+        Args:
+            filters: dicionario de filtros (chaves acima).
+            limit: maximo de linhas retornadas (cap 1000).
+
+        Returns:
+            {'rows': [...], 'total': int, 'limit': int} — total e a contagem
+            real no banco (pode ser > len(rows) se truncado pelo limit).
+        """
+        import unicodedata
+
+        def _norm(s: str) -> str:
+            return (unicodedata.normalize('NFKD', str(s)).encode('ASCII', 'ignore')
+                    .decode('ASCII').lower().strip())
+
+        limit = max(1, min(int(limit or 200), 1000))
+        try:
+            q = self.client.table('mec_catalog').select('*', count='exact')
+            if filters.get('nome'):
+                for w in [p for p in _norm(filters['nome']).split() if len(p) >= 2]:
+                    q = q.ilike('name_norm', f'%{w}%')
+            if filters.get('cidade'):
+                q = q.ilike('city_norm', f'%{_norm(filters["cidade"])}%')
+            if filters.get('uf'):
+                q = q.eq('state', str(filters['uf']).upper()[:2])
+            if filters.get('dependencia'):
+                q = q.ilike('admin_dependency', f'%{filters["dependencia"]}%')
+            if filters.get('tipo'):
+                q = q.ilike('admin_category', f'%{filters["tipo"]}%')
+            if filters.get('niveis_ensino'):
+                q = q.ilike('levels_norm', f'%{_norm(filters["niveis_ensino"])}%')
+            if filters.get('porte'):
+                q = q.ilike('school_size', f'%{filters["porte"]}%')
+            if filters.get('localizacao'):
+                q = q.ilike('localizacao', f'%{filters["localizacao"]}%')
+            res = q.limit(limit).execute()
+            rows = res.data or []
+            total = res.count if getattr(res, 'count', None) is not None else len(rows)
+            return {'rows': rows, 'total': total, 'limit': limit}
+        except Exception as e:
+            logger.warning("Falha na busca do catalogo MEC", extra={'error': str(e)})
+            return {'rows': [], 'total': 0, 'limit': limit, 'error': str(e)[:200]}
+
+    @staticmethod
+    def _catalog_row_to_company(row: Dict[str, Any]) -> Dict[str, Any]:
+        """Converte uma linha do mec_catalog em company_data pronto pra insert."""
+        inep_code = str(row.get('inep_code') or '').strip()
+        data = {
+            'name': row.get('name'), 'inep_code': inep_code,
+            'city': row.get('city'), 'state': row.get('state'),
+            'address': row.get('address'), 'phone': row.get('phone'),
+            'latitude': row.get('latitude'), 'longitude': row.get('longitude'),
+            'admin_category': row.get('admin_category'),
+            'admin_dependency': row.get('admin_dependency'),
+            'education_levels': row.get('education_levels'),
+            'school_size': row.get('school_size'),
+            'fonte_dados': row.get('fonte_dados'),
+            'total_matriculas': row.get('total_matriculas'),
+            'matriculas_fund_af': row.get('matriculas_fund_af'),
+            'matriculas_medio': row.get('matriculas_medio'),
+            'total_docentes': row.get('total_docentes'),
+            'qt_coordenadores': row.get('qt_coordenadores'),
+            'nivel_tecnologico': row.get('nivel_tecnologico'),
+            'status': 'raw',
+        }
+        return {k: v for k, v in data.items() if v is not None}
+
+    def import_company_from_catalog(
+        self,
+        inep_code: str,
+        source: str = 'catalogo_online'
+    ) -> Dict[str, Any]:
+        """Importa 1 escola do catalogo MEC pro CRM (sem depender do CSV).
+
+        Returns: {'ok': bool, 'id': str|None, 'inep': str, 'already': bool,
+                  'name': str|None, 'message': str}
+        """
+        inep_code = str(inep_code or '').strip()
+        if not inep_code:
+            return {'ok': False, 'id': None, 'inep': inep_code, 'already': False,
+                    'name': None, 'message': 'INEP vazio.'}
+        try:
+            existing = self.get_company_by_inep(inep_code)
+            if existing:
+                return {'ok': True, 'id': existing['id'], 'inep': inep_code,
+                        'already': True, 'name': existing.get('name'),
+                        'message': 'Ja estava no CRM.'}
+            r = self.client.table('mec_catalog').select('*').eq(
+                'inep_code', inep_code).limit(1).execute()
+            row = (r.data or [None])[0]
+            if not row:
+                return {'ok': False, 'id': None, 'inep': inep_code, 'already': False,
+                        'name': None, 'message': 'Nao encontrada no catalogo.'}
+            company_data = self._catalog_row_to_company(row)
+            company_data['source'] = source
+            company_id = self.insert_company(company_data)
+            return {'ok': bool(company_id), 'id': company_id, 'inep': inep_code,
+                    'already': False, 'name': company_data.get('name'),
+                    'message': 'Importada.' if company_id else 'Falha ao inserir.'}
+        except Exception as e:
+            logger.error("Erro ao importar do catalogo", extra={'inep': inep_code, 'error': str(e)})
+            return {'ok': False, 'id': None, 'inep': inep_code, 'already': False,
+                    'name': None, 'message': f'Erro: {str(e)[:150]}'}
+
     def update_company(
         self,
         company_id: str,

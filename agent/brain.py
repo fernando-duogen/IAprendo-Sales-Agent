@@ -1673,10 +1673,14 @@ def _handle_consultar_escolas(params: Dict) -> str:
 
 
 def _handle_importar_escola(params: Dict) -> str:
-    """Importa uma escola da base MEC para o banco CRM."""
+    """Importa uma escola da base MEC para o banco CRM.
+
+    Sem CSV local (ex: Cloud), importa do catalogo Supabase.
+    """
     df = _get_csv_df()
     if df is None:
-        return json.dumps({"erro": "Base MEC (CSV) nao disponivel."})
+        # Online: importar do catalogo MEC (Supabase)
+        return _import_escola_from_catalog(params)
 
     col_map = settings.get_csv_column_mapping()
     inep = params.get("inep")
@@ -1760,11 +1764,110 @@ def _handle_importar_escola(params: Dict) -> str:
         return json.dumps({"erro": f"Erro ao importar: {str(e)[:200]}"})
 
 
+def _search_mec_catalog(params: Dict) -> Optional[Dict]:
+    """Busca no CATALOGO MEC (tabela Supabase mec_catalog) via SQL.
+
+    Funciona ONLINE (Cloud) sem depender do CSV de 80MB. Retorna dict de
+    resultado, ou None se o catalogo nao estiver disponivel/carregado (ai o
+    caller cai no fallback do CSV local). Delega a query ao supabase_client.
+    """
+    if not db.catalog_available():
+        return None  # tabela vazia/inexistente -> fallback CSV
+    try:
+        limite = min(int(params.get("limite", 100) or 100), 1000)
+        out = db.search_mec_catalog(params, limit=limite)
+        rows = out.get("rows", [])
+        total = out.get("total", len(rows))
+        escolas = []
+        for r in rows:
+            _lat, _lng = r.get("latitude"), r.get("longitude")
+            escolas.append({
+                "nome": r.get("name"), "inep": r.get("inep_code"),
+                "cidade": r.get("city"), "uf": r.get("state"),
+                "bairro": r.get("bairro"), "cep": r.get("cep"),
+                "endereco": r.get("address"), "telefone": r.get("phone"),
+                "categoria": r.get("admin_category"), "dependencia": r.get("admin_dependency"),
+                "niveis_ensino": r.get("education_levels"), "perfil_ensino": r.get("perfil_ensino"),
+                "porte": r.get("school_size"), "localizacao": r.get("localizacao"),
+                "latitude": _lat, "longitude": _lng,
+                "coordenadas_disponiveis": _lat is not None and _lng is not None,
+                "fonte": "base_mec", "fonte_dados": r.get("fonte_dados"), "in_db": False,
+                "total_matriculas": r.get("total_matriculas"),
+                "matriculas_fund_af": r.get("matriculas_fund_af"),
+                "matriculas_medio": r.get("matriculas_medio"),
+                "total_docentes": r.get("total_docentes"),
+                "qt_coordenadores": r.get("qt_coordenadores"),
+                "nivel_tecnologico": r.get("nivel_tecnologico"),
+            })
+        return {
+            "total_encontradas": total, "mostrando": len(escolas),
+            "escolas": escolas, "fonte": "catalogo_supabase",
+            "aviso": (f"Mostrando {len(escolas)} de {total} resultados." if total > limite else None),
+        }
+    except Exception as e:
+        logger.warning(f"busca no catalogo MEC falhou: {e}")
+        return None
+
+
+def _import_escola_from_catalog(params: Dict) -> str:
+    """Importa uma escola do CATALOGO Supabase pro CRM (usado quando o CSV
+    local nao esta disponivel — ex: no Cloud). Resolve por INEP ou nome+cidade."""
+    inep = (params.get("inep") or "").strip()
+    if not inep and params.get("nome"):
+        # Resolver nome -> INEP via catalogo
+        try:
+            q = db.client.table("mec_catalog").select("inep_code,name").ilike(
+                "name_norm", f"%{_normalize(params['nome'])}%")
+            if params.get("cidade"):
+                q = q.ilike("city_norm", f"%{_normalize(params['cidade'])}%")
+            rows = q.limit(5).execute().data or []
+        except Exception as e:
+            return json.dumps({"erro": f"Falha ao buscar no catalogo: {str(e)[:150]}"})
+        if len(rows) == 1:
+            inep = str(rows[0].get("inep_code") or "").strip()
+        elif len(rows) > 1:
+            return json.dumps({
+                "erro": f"Encontrei {len(rows)} escolas. Seja mais especifico ou informe o INEP.",
+                "opcoes": [x.get("name") for x in rows],
+            }, ensure_ascii=False)
+        else:
+            return json.dumps({"erro": "Escola nao encontrada no catalogo MEC."})
+
+    if not inep:
+        return json.dumps({"erro": "Informe o INEP ou o nome da escola."})
+
+    res = db.import_company_from_catalog(inep, source="ialex_import_catalogo")
+    if res.get("already"):
+        return json.dumps({
+            "mensagem": f"Escola '{res.get('name')}' ja esta no CRM.",
+            "id": res.get("id"), "ja_existia": True,
+        }, ensure_ascii=False)
+    if res.get("ok"):
+        return json.dumps({
+            "sucesso": True,
+            "mensagem": f"Escola '{res.get('name')}' importada do catalogo pro CRM!",
+            "id": res.get("id"), "inep": res.get("inep"), "status": "raw",
+            "proximo_passo": "Agora da pra qualificar / buscar contatos / gerar email.",
+        }, ensure_ascii=False)
+    return json.dumps({"erro": res.get("message", "Falha ao importar do catalogo.")})
+
+
 def _handle_buscar_escola_brasil(params: Dict) -> str:
-    """Busca escolas na base completa do MEC (212k escolas do Brasil)."""
+    """Busca escolas na base completa do MEC (185k escolas do Brasil).
+
+    Prioriza o CATALOGO Supabase (funciona online); cai no CSV local se o
+    catalogo nao estiver carregado.
+    """
+    _cat = _search_mec_catalog(params)
+    if _cat is not None:
+        return json.dumps(_cat, ensure_ascii=False, default=str)
+
     df = _get_csv_df()
     if df is None:
-        return json.dumps({"erro": "Base MEC (CSV) nao disponivel."})
+        return json.dumps({"erro": (
+            "Base MEC indisponivel: o catalogo nao foi carregado no Supabase e o "
+            "CSV nao esta presente. Rode add_mec_catalog.sql + scripts/load_mec_catalog.py."
+        )})
 
     col_map = settings.get_csv_column_mapping()
     mask = pd.Series(True, index=df.index)

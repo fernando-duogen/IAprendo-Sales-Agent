@@ -66,14 +66,138 @@ def load_csv():
     return df
 
 
-# --- Carrega CSV ---
+UF_LIST = [
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS",
+    "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC",
+    "SP", "SE", "TO",
+]
+
+
+def render_online_catalog_mode():
+    """Modo ONLINE (sem CSV local, ex: Streamlit Cloud): busca e importa
+    QUALQUER escola do Brasil direto do catalogo MEC no Supabase."""
+    from database.supabase_client import db
+
+    section_header("Busca Online — Base MEC completa (185k escolas)", "travel_explore")
+    st.caption(
+        "Voce esta na versao online (sem o CSV local). A base completa do MEC esta "
+        "disponivel via catalogo no banco — busque e importe qualquer escola do Brasil."
+    )
+
+    if not db.catalog_available():
+        alert_banner(
+            "O catalogo MEC ainda nao foi carregado neste banco. Para habilitar a "
+            "busca online: 1) rode database/migrations/add_mec_catalog.sql no Supabase; "
+            "2) no PC local rode: venv\\Scripts\\python.exe scripts\\load_mec_catalog.py",
+            "warning",
+        )
+        st.stop()
+
+    # --- Formulario de busca ---
+    st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
+    bc1, bc2, bc3 = st.columns([2, 1, 2])
+    with bc1:
+        f_nome = st.text_input("Nome da escola (parcial):", key="cat_nome")
+    with bc2:
+        f_uf = st.selectbox("UF:", [""] + UF_LIST, key="cat_uf")
+    with bc3:
+        f_cidade = st.text_input("Cidade:", key="cat_cidade")
+    bc4, bc5, bc6 = st.columns([2, 2, 1])
+    with bc4:
+        f_dep = st.text_input("Tipo/Dependencia (ex: Privada, Estadual):", key="cat_dep")
+    with bc5:
+        f_niveis = st.text_input("Nivel de ensino (ex: Medio, Fundamental):", key="cat_niveis")
+    with bc6:
+        f_limite = st.number_input("Limite:", min_value=10, max_value=1000, value=200, step=50, key="cat_lim")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if st.button("🔎 Buscar na base MEC", type="primary", key="cat_search_btn"):
+        filtros = {
+            "nome": f_nome.strip() or None,
+            "uf": f_uf or None,
+            "cidade": f_cidade.strip() or None,
+            "dependencia": f_dep.strip() or None,
+            "niveis_ensino": f_niveis.strip() or None,
+        }
+        filtros = {k: v for k, v in filtros.items() if v}
+        if not filtros:
+            alert_banner("Informe ao menos um filtro (nome, UF, cidade...).", "warning")
+        else:
+            with st.spinner("Buscando na base MEC..."):
+                res = db.search_mec_catalog(filtros, limit=int(f_limite))
+            st.session_state["cat_results"] = res
+
+    res = st.session_state.get("cat_results")
+    if not res:
+        alert_banner("Defina filtros e clique em Buscar para encontrar escolas.", "info")
+        return
+
+    rows = res.get("rows", [])
+    total = res.get("total", len(rows))
+    if not rows:
+        alert_banner("Nenhuma escola encontrada com esses filtros.", "warning")
+        return
+
+    if total > len(rows):
+        alert_banner(
+            f"{total:,} escolas encontradas — mostrando as primeiras {len(rows)}. "
+            "Refine os filtros para ver outras.".replace(",", "."),
+            "info",
+        )
+    else:
+        alert_banner(f"{len(rows)} escola(s) encontrada(s).", "success")
+
+    # --- Tabela de resultados ---
+    import pandas as _pd
+    df_res = _pd.DataFrame([{
+        "Escola": r.get("name"), "Cidade": r.get("city"), "UF": r.get("state"),
+        "Tipo": r.get("admin_dependency"), "Porte": r.get("school_size"),
+        "Matriculas": r.get("total_matriculas"), "INEP": r.get("inep_code"),
+    } for r in rows])
+    st.dataframe(df_res, use_container_width=True, hide_index=True)
+
+    # --- Selecao + import ---
+    section_header("Importar para o CRM", "cloud_upload")
+    opt_map = {
+        f"{r.get('name')} — {r.get('city')}/{r.get('state')} (INEP {r.get('inep_code')})": r.get("inep_code")
+        for r in rows
+    }
+    sel = st.multiselect("Selecione as escolas para importar:", list(opt_map.keys()), key="cat_sel")
+    cimp1, cimp2 = st.columns([1, 3])
+    with cimp1:
+        do_import = st.button("Importar selecionadas", type="primary",
+                              disabled=not sel, key="cat_import_btn")
+    with cimp2:
+        st.caption(
+            "Importa direto pro banco (status 'raw'). Escolas ja existentes sao "
+            "ignoradas (chave INEP unica). Depois qualifique/enriqueca normalmente."
+        )
+
+    if do_import and sel:
+        novas, jaexist, falhas = 0, 0, 0
+        prog = st.progress(0.0)
+        for i, label in enumerate(sel):
+            inep = opt_map.get(label)
+            r = db.import_company_from_catalog(inep, source="dashboard_online")
+            if r.get("already"):
+                jaexist += 1
+            elif r.get("ok"):
+                novas += 1
+            else:
+                falhas += 1
+            prog.progress((i + 1) / len(sel))
+        msg = f"✅ {novas} nova(s) importada(s)."
+        if jaexist:
+            msg += f" {jaexist} ja existia(m)."
+        if falhas:
+            msg += f" {falhas} falhou(falharam)."
+        st.success(msg + " Va pra aba Escolas para trabalhar os leads.")
+
+
+# --- Carrega CSV (modo local) ou cai pro modo online (catalogo) ---
 df_raw = load_csv()
 if df_raw is None:
-    alert_banner(
-        f"CSV nao encontrado em {settings.CSV_PATH}. "
-        "Rode: venv/Scripts/python.exe database/migrations/merge_catalogo_inep.py",
-        "error",
-    )
+    render_online_catalog_mode()
     st.stop()
 
 # --- Base mesclada ja vem so com escolas ativas (Censo 2025 so tem ativas,
