@@ -568,6 +568,53 @@ TOOLS = [
         }
     },
     {
+        "name": "dono_escola",
+        "description": "Diz QUEM eh o dono (responsavel) de uma escola/lead e desde quando. Use quando perguntarem 'de quem e a escola X', 'quem esta cuidando da escola Y', 'a escola Z ja tem dono'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {"type": "string", "description": "Nome da escola"},
+                "escola_id": {"type": "string", "description": "UUID da escola"},
+                "inep": {"type": "string", "description": "Codigo INEP"},
+            },
+        },
+    },
+    {
+        "name": "meus_leads",
+        "description": "Lista as escolas sob gestao do USUARIO ATIVO (quem esta falando). Use pra 'meus leads', 'minhas escolas', 'o que estou cuidando'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limite": {"type": "integer", "description": "Max resultados (default 50)"},
+            },
+        },
+    },
+    {
+        "name": "leads_sem_dono",
+        "description": "Lista escolas SEM dono ainda (disponiveis pra trabalhar). Use pra 'leads sem dono', 'escolas livres', 'o que ninguem esta cuidando'. Prioriza qualificadas/enriquecidas.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limite": {"type": "integer", "description": "Max resultados (default 30)"},
+                "uf": {"type": "string", "description": "Filtrar por UF (opcional)"},
+                "cidade": {"type": "string", "description": "Filtrar por cidade (opcional)"},
+            },
+        },
+    },
+    {
+        "name": "reatribuir_lead",
+        "description": "ADMIN: muda o dono de uma escola (correcao/redistribuicao) ou limpa (novo_dono vazio = volta pro pool). So funciona se o usuario ativo for admin. Use pra 'passa a escola X pra Lizianne', 'tira a escola Y do Felipe', 'libera a escola Z'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "escola_nome": {"type": "string", "description": "Nome da escola"},
+                "escola_id": {"type": "string", "description": "UUID da escola"},
+                "inep": {"type": "string", "description": "Codigo INEP"},
+                "novo_dono": {"type": "string", "description": "Username do novo dono (fernando/lizianne/felipe). Vazio/omitido = limpar dono (pool)."},
+            },
+        },
+    },
+    {
         "name": "agregar_estatisticas_escolas",
         "description": "Agrega metricas quantitativas (matriculas, docentes, etc) sobre conjunto filtrado de escolas. SEMPRE retorna cobertura (quantas tem dado real vs estimado) + valor concreto + valor estimado pras sem dado. Use pra responder 'quantos alunos ao todo nas estaduais de POA', 'quantos docentes nas privadas do RS', etc. NUNCA invente numero — esta tool agrega o que existe e estima o resto, explicitando.",
         "input_schema": {
@@ -1818,6 +1865,105 @@ def _handle_buscar_escola_brasil(params: Dict) -> str:
         "mostrando": len(escolas),
         "escolas": escolas,
         "aviso": f"Mostrando {len(escolas)} de {total_na_base} resultados da base MEC." if total_na_base > limite else None,
+    }, ensure_ascii=False, default=str)
+
+
+def _handle_dono_escola(params: Dict) -> str:
+    """Diz quem eh o dono de uma escola."""
+    company, err = _resolve_company_strict(params, select="id,name,owner_username,owner_assigned_at,last_contacted_at")
+    if err:
+        return err
+    if not company:
+        return json.dumps({"erro": "Informe escola_nome, inep ou escola_id."})
+    owner = company.get("owner_username")
+    return json.dumps({
+        "escola": company.get("name"),
+        "dono": owner or None,
+        "sem_dono": owner is None,
+        "dono_desde": (company.get("owner_assigned_at") or "")[:10] or None,
+        "ultimo_contato": (company.get("last_contacted_at") or "")[:10] or None,
+        "dica": ("Lead sem dono — vira de quem fizer o 1o contato." if not owner
+                 else f"Sob gestao de {owner}. Combine antes de contatar pra evitar duplicidade."),
+    }, ensure_ascii=False, default=str)
+
+
+def _handle_meus_leads(params: Dict) -> str:
+    """Lista escolas do usuario ativo (dono)."""
+    try:
+        from utils.sender_profile import get_active_sender_username
+        me = get_active_sender_username()
+    except Exception:
+        me = None
+    if not me:
+        return json.dumps({"erro": "Nao consegui identificar voce. Use pelo seu WhatsApp cadastrado."})
+    limite = min(int(params.get("limite", 50) or 50), 200)
+    try:
+        rows = (db.client.table("companies")
+                .select("name,city,state,status,commercial_stage,last_contacted_at,owner_assigned_at")
+                .eq("owner_username", me).order("owner_assigned_at", desc=True)
+                .limit(limite).execute().data or [])
+    except Exception as e:
+        return json.dumps({"erro": f"Falha ao buscar (migration ownership rodou?): {str(e)[:120]}"})
+    return json.dumps({
+        "dono": me, "total": len(rows),
+        "leads": [{"escola": r.get("name"), "cidade": r.get("city"), "uf": r.get("state"),
+                   "status": r.get("status"), "stage": r.get("commercial_stage"),
+                   "ultimo_contato": (r.get("last_contacted_at") or "")[:10]} for r in rows],
+    }, ensure_ascii=False, default=str)
+
+
+def _handle_leads_sem_dono(params: Dict) -> str:
+    """Lista escolas sem dono (disponiveis)."""
+    limite = min(int(params.get("limite", 30) or 30), 200)
+    try:
+        q = (db.client.table("companies")
+             .select("name,city,state,status,qualification_score")
+             .is_("owner_username", "null"))
+        if params.get("uf"):
+            q = q.eq("state", str(params["uf"]).upper())
+        if params.get("cidade"):
+            q = q.ilike("city", f"%{params['cidade']}%")
+        rows = q.order("qualification_score", desc=True).limit(limite).execute().data or []
+    except Exception as e:
+        return json.dumps({"erro": f"Falha ao buscar (migration ownership rodou?): {str(e)[:120]}"})
+    return json.dumps({
+        "total_sem_dono": len(rows),
+        "leads": [{"escola": r.get("name"), "cidade": r.get("city"), "uf": r.get("state"),
+                   "status": r.get("status"), "score": r.get("qualification_score")} for r in rows],
+        "dica": "Qualquer um pode trabalhar; vira dono ao fazer o 1o contato.",
+    }, ensure_ascii=False, default=str)
+
+
+def _handle_reatribuir_lead(params: Dict) -> str:
+    """ADMIN: muda/limpa o dono de uma escola."""
+    try:
+        from utils.sender_profile import is_admin, get_active_sender_username
+        me = get_active_sender_username()
+    except Exception:
+        me, is_admin = None, (lambda *a, **k: False)
+    if not is_admin(me):
+        return json.dumps({"erro": "So um admin (Fernando/Felipe) pode reatribuir leads."})
+    company, err = _resolve_company_strict(params, select="id,name,owner_username")
+    if err:
+        return err
+    if not company:
+        return json.dumps({"erro": "Informe escola_nome, inep ou escola_id."})
+    novo = (params.get("novo_dono") or "").strip().lower() or None
+    if novo:
+        # validar que o username existe
+        try:
+            from utils.sender_profile import get_profile_by_username
+            if not get_profile_by_username(novo):
+                return json.dumps({"erro": f"Usuario '{novo}' nao existe. Validos: fernando, lizianne, felipe."})
+        except Exception:
+            pass
+    ok = db.set_company_owner(company["id"], novo)
+    if not ok:
+        return json.dumps({"erro": "Falha ao reatribuir. Migration ownership rodou?"})
+    return json.dumps({
+        "sucesso": True, "escola": company.get("name"),
+        "dono_anterior": company.get("owner_username"),
+        "novo_dono": novo or "(sem dono — pool)",
     }, ensure_ascii=False, default=str)
 
 
@@ -5427,13 +5573,13 @@ def _handle_gerar_email(params: Dict) -> str:
                 if ct.data:
                     queue_data["contact_id"] = ct.data[0]["id"]
 
-            result = db.client.table("approval_queue").insert(queue_data).execute()
-            if result.data:
+            _qid = db.insert_approval_queue(queue_data)  # grava created_by (autor)
+            if _qid:
                 return json.dumps({
                     "sucesso": True,
                     "modo": modo,
                     "template_usado": tpl.get("name", "?"),
-                    "queue_id": result.data[0]["id"],
+                    "queue_id": _qid,
                     "assunto": subject,
                     "corpo": body,
                     "escola": escola.get("name"),
@@ -6674,11 +6820,11 @@ def _handle_enviar_whatsapp_escola(params: Dict) -> str:
         }
         if contact_id:
             queue_data["contact_id"] = contact_id
-        result = db.client.table("approval_queue").insert(queue_data).execute()
-        if result.data:
+        _qid = db.insert_approval_queue(queue_data)  # grava created_by (autor)
+        if _qid:
             return json.dumps({
                 "sucesso": True,
-                "queue_id": result.data[0]["id"],
+                "queue_id": _qid,
                 "telefone_destino": phone,
                 "contato": contato_nome,
                 "escola": escola_nome,
@@ -7529,6 +7675,10 @@ TOOL_HANDLERS = {
     # Busca e gestão de escolas
     "consultar_escolas": _handle_consultar_escolas,
     "buscar_escola_brasil": _handle_buscar_escola_brasil,
+    "dono_escola": _handle_dono_escola,
+    "meus_leads": _handle_meus_leads,
+    "leads_sem_dono": _handle_leads_sem_dono,
+    "reatribuir_lead": _handle_reatribuir_lead,
     "agregar_estatisticas_escolas": _handle_agregar_estatisticas_escolas,
     "exportar_escolas_xlsx": _handle_exportar_escolas_xlsx,
     "escolas_proximas": _handle_escolas_proximas,
@@ -7670,6 +7820,20 @@ Quando o usuario pedir "todas" ou "lista completa" ou similar:
 - NAO assuma limit baixo. Use limite=1000 em `consultar_escolas` / `buscar_escola_brasil`
 - Se resultado >200 escolas, ofereca EXPORTAR XLSX em vez de listar tudo em texto
 - Cobertura completa > brevidade
+
+== OWNERSHIP DE LEADS (governanca de time — Fernando, Lizianne, Felipe) ==
+Cada escola pode ter um DONO (quem esta trabalhando o lead). O dono e definido
+AUTOMATICAMENTE pela acao: quem aprova/envia email ou registra contato vira dono
+(se a escola nao tiver dono). Nao existe "pegar lead" manual.
+
+REGRA: antes de GERAR ou ENVIAR email/WhatsApp pra uma escola, considere usar
+`dono_escola` se houver duvida. Se a escola for de OUTRO usuario (diferente do
+ativo), AVISE claramente: "⚠️ Essa escola esta sob gestao de {dono}. Confirma que
+quer contatar mesmo assim?" e ESPERE confirmacao. NAO bloqueie — so alerte (o
+usuario pode ter um motivo). Se for sem dono ou do proprio usuario, siga normal.
+
+Tools de ownership: `dono_escola` (de quem e), `meus_leads` (do usuario ativo),
+`leads_sem_dono` (disponiveis), `reatribuir_lead` (so admin muda/limpa dono).
 
 Voce e o *IAlex*, o especialista #1 em escolas do Brasil e assistente de vendas do Fernando para a plataforma *IAprendo*.
 

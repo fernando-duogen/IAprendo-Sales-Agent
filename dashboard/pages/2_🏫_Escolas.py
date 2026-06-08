@@ -1131,6 +1131,54 @@ if st.session_state.escola_detail_id:
     # === TAB DADOS (edicao) ===
     with tab_dados:
         section_header("Informacoes da Escola", "edit")
+
+        # ----- OWNERSHIP: badge do dono + reatribuicao (admin) -----
+        try:
+            from utils.sender_profile import (
+                get_active_sender_username as _gau, is_admin as _is_admin,
+                list_profiles as _list_profiles,
+            )
+            _owner = company.get("owner_username")
+            _owner_at = (company.get("owner_assigned_at") or "")[:10]
+            _me = _gau()
+            if _owner:
+                _since = f" desde {_owner_at[8:10]}/{_owner_at[5:7]}/{_owner_at[0:4]}" if len(_owner_at) == 10 else ""
+                if _owner == _me:
+                    alert_banner(f"🔒 Este lead e seu (sob sua gestao{_since}).", "success")
+                else:
+                    alert_banner(
+                        f"🔒 <strong>Sob gestao de {_owner}</strong>{_since}. "
+                        f"Voce pode agir, mas combine com {_owner} pra evitar contato duplicado.",
+                        "warning",
+                    )
+            else:
+                alert_banner(
+                    "Sem dono ainda — vira de quem fizer o 1o contato (email/registro de contato).",
+                    "info",
+                )
+            # Admin pode reatribuir/limpar (correcao, nao claim self-service)
+            if _is_admin(_me):
+                with st.expander("Gestao do dono (admin)", icon=":material/manage_accounts:"):
+                    _users = [p.get("username") for p in _list_profiles() if p.get("username")]
+                    _opts = ["(sem dono)"] + _users
+                    _cur_idx = _opts.index(_owner) if _owner in _opts else 0
+                    _ga1, _ga2 = st.columns([3, 1])
+                    with _ga1:
+                        _new_owner = st.selectbox("Reatribuir lead para:", _opts,
+                                                  index=_cur_idx, key=f"reassign_{company_id}")
+                    with _ga2:
+                        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                        if st.button("Aplicar", key=f"reassign_btn_{company_id}",
+                                     use_container_width=True, type="primary"):
+                            _val = None if _new_owner == "(sem dono)" else _new_owner
+                            if db.set_company_owner(company_id, _val):
+                                st.session_state.escola_msg = ("success", f"Dono atualizado: {_new_owner}")
+                            else:
+                                st.session_state.escola_msg = ("error", "Falha ao atualizar dono.")
+                            st.rerun()
+        except Exception as _e_own:
+            pass  # nunca quebra a aba por causa do badge de dono
+
         with st.form("edit_company"):
             c1, c2 = st.columns(2)
             with c1:

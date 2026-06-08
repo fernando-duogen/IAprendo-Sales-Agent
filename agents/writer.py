@@ -501,9 +501,9 @@ class WriterAgent(BaseAgent):
                 queue_data["contact_id"] = contact_id
             if chart_urls:
                 queue_data["chart_urls"] = _json.dumps(chart_urls)
-            result = db.client.table("approval_queue").insert(queue_data).execute()
-            if result.data:
-                queue_id = result.data[0]["id"]
+            # insert_approval_queue grava created_by (autor) + tolera coluna ausente
+            queue_id = db.insert_approval_queue(queue_data)
+            if queue_id:
                 logger.info("Mensagem na approval_queue", extra={"queue_id": queue_id, "company_id": company_id})
                 return queue_id
             return None

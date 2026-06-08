@@ -65,11 +65,21 @@ STATUS_ICON = {
 # Botao "Atualizar dados" abaixo invalida manualmente apos rodar pipeline.
 @st.cache_data(ttl=30, show_spinner=False)
 def _load_all_companies_cached() -> list:
-    rows = db.client.table("companies").select(
+    _cols_base = (
         "id,name,city,state,status,qualification_score,admin_dependency,admin_category,"
         "categoria_privada,school_size,fonte_dados,matriculas_fund_af,matriculas_medio,"
         "nivel_tecnologico,qt_coordenadores,phone,website,latitude,longitude,urgency_score,urgency_tier"
-    ).order("qualification_score", desc=True).execute().data or []
+    )
+    # owner_username so existe apos a migration add_lead_ownership. Tenta com ele;
+    # se a coluna ainda nao existe, cai pro select base (sem quebrar o Pipeline).
+    try:
+        rows = db.client.table("companies").select(
+            _cols_base + ",owner_username,owner_assigned_at"
+        ).order("qualification_score", desc=True).execute().data or []
+    except Exception:
+        rows = db.client.table("companies").select(
+            _cols_base
+        ).order("qualification_score", desc=True).execute().data or []
     from utils.fit_score import calcular_fit_score
     for _c in rows:
         _c["_alvo"] = int((_c.get("matriculas_fund_af") or 0) + (_c.get("matriculas_medio") or 0))
@@ -471,6 +481,9 @@ def render_execucao():
                 "Score": c.get("qualification_score") or 0,
                 "Fit": c.get("_fit") or 0,
                 "Tipo": (c.get("admin_dependency") or "")[:20],
+                # Dono do lead (🔒). Vazio = sem dono. Ajuda a evitar 2 vendedores
+                # na mesma escola.
+                "Dono": (f"🔒 {c.get('owner_username')}" if c.get("owner_username") else ""),
             } for c in tbl_filtered])
             st.session_state["_tbl_df_cached"] = df_tbl
             st.session_state["_tbl_filter_sig"] = filter_signature
@@ -481,7 +494,7 @@ def render_execucao():
             df_tbl = st.session_state["_tbl_df_cached"]
 
         edited_tbl = st.data_editor(
-            df_tbl[["Sel", "Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"]],
+            df_tbl[["Sel", "Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo", "Dono"]],
             use_container_width=True,
             hide_index=True,
             height=400,
@@ -497,7 +510,7 @@ def render_execucao():
                     "Fit", width="small", min_value=0, max_value=100, format="%d",
                 ),
             },
-            disabled=["Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo"],
+            disabled=["Escola", "Cidade", "UF", "Status", "Score", "Fit", "Tipo", "Dono"],
             key="tbl_editor_v3",
         )
 

@@ -552,6 +552,34 @@ class Database:
             raise DatabaseError("Falha ao listar aprovações pendentes") from e
 
 
+    def insert_approval_queue(self, queue_data: Dict[str, Any]) -> Optional[str]:
+        """Insere mensagem na approval_queue gravando created_by (autor).
+
+        Resolve o sender ativo automaticamente se 'created_by' nao vier no dict.
+        Tolerante: se a coluna created_by ainda nao existe (migration nao rodou),
+        reinsere sem ela. Retorna o queue_id ou None.
+        """
+        try:
+            if 'created_by' not in queue_data:
+                _author = self._active_username()
+                if _author:
+                    queue_data['created_by'] = _author
+            try:
+                result = self.client.table('approval_queue').insert(queue_data).execute()
+            except Exception as _e_ins:
+                if 'created_by' in queue_data and (
+                    'created_by' in str(_e_ins) or 'column' in str(_e_ins).lower()
+                ):
+                    queue_data.pop('created_by', None)
+                    result = self.client.table('approval_queue').insert(queue_data).execute()
+                else:
+                    raise
+            return result.data[0]['id'] if result.data else None
+        except Exception as e:
+            logger.error('Erro ao inserir na approval_queue',
+                         extra={'company_id': queue_data.get('company_id'), 'error': str(e)})
+            return None
+
     def approve_message(
         self,
         queue_id: str,
@@ -617,6 +645,15 @@ class Database:
                 if send_as_username:
                     extra['send_as'] = send_as_username
                 logger.info('Mensagem aprovada', extra=extra)
+                # AUTO-CLAIM: aprovar = comprometer-se com o envio -> vira dono
+                # do lead (se sem dono). Dono = quem envia (send_as override ou
+                # usuario ativo). Tolerante a falha.
+                try:
+                    _company_id = (result.data[0] or {}).get('company_id')
+                    if _company_id:
+                        self.claim_company_if_unowned(_company_id, send_as_username or None)
+                except Exception:
+                    pass
             else:
                 logger.warning('Aprovacao ignorada: mensagem nao esta mais pending '
                                '(ja tratada por outro usuario?)', extra={'queue_id': queue_id})
@@ -797,12 +834,21 @@ class Database:
                 extra={"company_id": company_id, "error": str(e)},
             )
 
+        # AUTO-CLAIM: registrar contato manual = trabalhar o lead -> vira dono
+        # (se ainda nao tiver). Tolerante a falha (nunca quebra o registro).
+        owner = None
+        try:
+            owner = self.claim_company_if_unowned(company_id)
+        except Exception:
+            pass
+
         return {
             "interaction_id": interaction_id,
             "type": interaction_type,
             "status_changed": status_changed,
             "commercial_stage_changed": commercial_stage_changed,
             "when": when,
+            "owner": owner,
         }
 
     def insert_interaction(self, interaction_data: Dict[str, Any]) -> Optional[str]:
@@ -835,10 +881,31 @@ class Database:
         if not all(field in interaction_data for field in required):
             raise ValueError(f"Campos obrigatórios: {', '.join(required)}")
 
+        # Autoria: grava QUEM registrou (se nao informado, resolve sender ativo).
+        # Tolerante: se a coluna created_by ainda nao existe (migration nao rodou),
+        # o insert ignora chaves extras? Nao — Postgrest rejeita. Por isso so
+        # adicionamos se houver valor, e o except abaixo ja captura falhas.
+        if 'created_by' not in interaction_data:
+            _author = self._active_username()
+            if _author:
+                interaction_data['created_by'] = _author
+
         try:
-            result = self.client.table('interactions')\
-                .insert(interaction_data)\
-                .execute()
+            try:
+                result = self.client.table('interactions')\
+                    .insert(interaction_data)\
+                    .execute()
+            except Exception as _e_ins:
+                # Guard: se a coluna created_by ainda nao existe (migration
+                # add_lead_ownership nao rodou), reinsere sem ela.
+                if 'created_by' in interaction_data and (
+                    'created_by' in str(_e_ins) or 'column' in str(_e_ins).lower()
+                ):
+                    interaction_data.pop('created_by', None)
+                    result = self.client.table('interactions')\
+                        .insert(interaction_data).execute()
+                else:
+                    raise
 
             if result.data:
                 interaction_id = result.data[0]['id']
@@ -1088,6 +1155,94 @@ class Database:
     def reset_company_status(self, company_id: str, new_status: str) -> bool:
         """Reseta status da empresa."""
         return self.update_company(company_id, {"status": new_status}) is not None
+
+    # ========================================================================
+    # LEAD OWNERSHIP + AUTORIA (Fase 2 da auditoria)
+    # ========================================================================
+
+    @staticmethod
+    def _active_username() -> Optional[str]:
+        """Resolve o username ativo (dashboard logado OU IAlex thread-local).
+        None se nao houver (ex: cron). Import lazy evita ciclo de import."""
+        try:
+            from utils.sender_profile import get_active_sender_username
+            return get_active_sender_username()
+        except Exception:
+            return None
+
+    def claim_company_if_unowned(
+        self, company_id: str, username: Optional[str] = None
+    ) -> Optional[str]:
+        """Auto-claim: se a escola NAO tem dono, define `username` como dono.
+
+        Atomico (UPDATE ... WHERE owner_username IS NULL) — 2 users agindo ao
+        mesmo tempo nao geram donos conflitantes; o primeiro vence. Idempotente:
+        se ja tem dono, nao muda nada.
+
+        Args:
+            company_id: UUID da escola.
+            username: quem reivindica. Se None, resolve o sender ativo.
+
+        Returns:
+            O username do dono atual (existente ou recem-atribuido), ou None.
+        """
+        if not company_id:
+            return None
+        user = username or self._active_username()
+        if not user:
+            return self.get_company_owner(company_id)  # sem user pra reivindicar
+        try:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
+            # CAS: so define dono se ainda nao houver
+            self.client.table("companies").update(
+                {"owner_username": user, "owner_assigned_at": now}
+            ).eq("id", company_id).is_("owner_username", "null").execute()
+            # Ler de volta o dono efetivo (pode ser outro se houve corrida)
+            owner = self.get_company_owner(company_id)
+            if owner == user:
+                logger.info("Lead auto-atribuido", extra={"company_id": company_id, "owner": user})
+            return owner
+        except Exception as e:
+            logger.warning("Falha no auto-claim de lead", extra={"company_id": company_id, "error": str(e)})
+            return None
+
+    def get_company_owner(self, company_id: str) -> Optional[str]:
+        """Retorna o owner_username da escola (ou None se sem dono)."""
+        if not company_id:
+            return None
+        try:
+            r = (self.client.table("companies").select("owner_username")
+                 .eq("id", company_id).single().execute())
+            return (r.data or {}).get("owner_username")
+        except Exception:
+            return None
+
+    def set_company_owner(self, company_id: str, username: Optional[str]) -> bool:
+        """Define/reatribui/limpa o dono (uso ADMIN — correcao, nao claim).
+
+        username=None limpa o dono (volta pro pool). Caso contrario reatribui.
+        """
+        if not company_id:
+            return False
+        try:
+            from datetime import datetime, timezone
+            if username:
+                update = {
+                    "owner_username": username,
+                    "owner_assigned_at": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                update = {"owner_username": None, "owner_assigned_at": None}
+            result = self.client.table("companies").update(update).eq("id", company_id).execute()
+            ok = bool(result.data)
+            if ok:
+                logger.info("Owner do lead alterado (admin)",
+                            extra={"company_id": company_id, "owner": username})
+            return ok
+        except Exception as e:
+            logger.error("Erro ao definir owner", extra={"company_id": company_id, "error": str(e)})
+            return False
 
     def delete_contact(self, contact_id: str) -> bool:
         """Exclui um contato individual."""
