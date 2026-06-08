@@ -14,6 +14,7 @@ Usage:
 import json
 import math
 import os
+import threading
 import unicodedata
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -42,53 +43,67 @@ except Exception as _enem_err:
 
 # Cache do CSV para fallback (carregado na primeira busca)
 _csv_df: Optional[pd.DataFrame] = None
+_csv_lock = threading.Lock()  # evita 2 threads (users) carregando o CSV ao mesmo tempo
 
 
 def _get_csv_df() -> Optional[pd.DataFrame]:
-    """Carrega e cacheia o CSV do MEC com colunas pre-computadas."""
+    """Carrega e cacheia o CSV do MEC com colunas pre-computadas.
+
+    Thread-safe (double-checked locking): o DataFrame eh construido numa
+    variavel LOCAL e so publicado no global _csv_df no FINAL (atomico) — assim
+    nenhum reader ve um df meio-construido, e 2 users nao disparam load duplo.
+    """
     global _csv_df
     if _csv_df is not None:
         return _csv_df
-    csv_path = Path(settings.CSV_PATH)
-    if not csv_path.exists():
-        return None
-    try:
-        _csv_df = pd.read_csv(csv_path, encoding=settings.CSV_ENCODING, low_memory=False)
-        col_map = settings.get_csv_column_mapping()
 
-        # Pre-computar coordenadas limpas (float, sem espaços)
-        for coord_key in ['latitude', 'longitude']:
-            col_name = col_map.get(coord_key)
-            if col_name and col_name in _csv_df.columns:
-                _csv_df[f"_clean_{coord_key}"] = pd.to_numeric(
-                    _csv_df[col_name].astype(str).str.strip(), errors='coerce'
-                )
+    with _csv_lock:
+        # Double-check: outra thread pode ter carregado enquanto esperavamos o lock
+        if _csv_df is not None:
+            return _csv_df
 
-        # Pre-computar colunas normalizadas (sem acentos, lowercase) para busca
-        name_col = col_map.get('name')
-        if name_col and name_col in _csv_df.columns:
-            _csv_df["_name_lower"] = _csv_df[name_col].astype(str).str.lower()
-            _csv_df["_name_norm"] = _csv_df[name_col].astype(str).apply(_normalize)
+        csv_path = Path(settings.CSV_PATH)
+        if not csv_path.exists():
+            return None
+        try:
+            df = pd.read_csv(csv_path, encoding=settings.CSV_ENCODING, low_memory=False)
+            col_map = settings.get_csv_column_mapping()
 
-        # Normalizar colunas de texto usadas em filtros
-        for key, col_name in [
-            ('education_levels', col_map.get('education_levels')),
-            ('admin_category', col_map.get('admin_category')),
-            ('admin_dependency', col_map.get('admin_dependency')),
-            ('city', col_map.get('city')),
-            ('size', col_map.get('size')),
-        ]:
-            if col_name and col_name in _csv_df.columns:
-                _csv_df[f"_norm_{key}"] = _csv_df[col_name].astype(str).apply(_normalize)
+            # Pre-computar coordenadas limpas (float, sem espaços)
+            for coord_key in ['latitude', 'longitude']:
+                col_name = col_map.get(coord_key)
+                if col_name and col_name in df.columns:
+                    df[f"_clean_{coord_key}"] = pd.to_numeric(
+                        df[col_name].astype(str).str.strip(), errors='coerce'
+                    )
 
-        # Normalizar localização se existir
-        if "Localização" in _csv_df.columns:
-            _csv_df["_norm_localizacao"] = _csv_df["Localização"].astype(str).apply(_normalize)
+            # Pre-computar colunas normalizadas (sem acentos, lowercase) para busca
+            name_col = col_map.get('name')
+            if name_col and name_col in df.columns:
+                df["_name_lower"] = df[name_col].astype(str).str.lower()
+                df["_name_norm"] = df[name_col].astype(str).apply(_normalize)
 
-        logger.info("CSV MEC carregado em cache", extra={"rows": len(_csv_df)})
-    except Exception as e:
-        logger.error(f"Falha ao carregar CSV: {e}")
-        return None
+            # Normalizar colunas de texto usadas em filtros
+            for key, col_name in [
+                ('education_levels', col_map.get('education_levels')),
+                ('admin_category', col_map.get('admin_category')),
+                ('admin_dependency', col_map.get('admin_dependency')),
+                ('city', col_map.get('city')),
+                ('size', col_map.get('size')),
+            ]:
+                if col_name and col_name in df.columns:
+                    df[f"_norm_{key}"] = df[col_name].astype(str).apply(_normalize)
+
+            # Normalizar localização se existir
+            if "Localização" in df.columns:
+                df["_norm_localizacao"] = df["Localização"].astype(str).apply(_normalize)
+
+            # Publicar atomico (so agora outros threads veem o df pronto)
+            _csv_df = df
+            logger.info("CSV MEC carregado em cache", extra={"rows": len(_csv_df)})
+        except Exception as e:
+            logger.error(f"Falha ao carregar CSV: {e}")
+            return None
     return _csv_df
 
 
@@ -8852,7 +8867,9 @@ class Brain:
 
     def __init__(self) -> None:
         api_key = os.getenv("OPENAI_API_KEY", "")
-        self.client: OpenAI = OpenAI(api_key=api_key)
+        # timeout=30s evita o dashboard/IAlex congelar se a OpenAI travar;
+        # max_retries=2 cobre falhas transitorias (rede/429) automaticamente.
+        self.client: OpenAI = OpenAI(api_key=api_key, timeout=30.0, max_retries=2)
         self.model: str = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
         self.conversation_history: List[Dict[str, Any]] = []
         logger.info("Brain inicializado", extra={"model": self.model})

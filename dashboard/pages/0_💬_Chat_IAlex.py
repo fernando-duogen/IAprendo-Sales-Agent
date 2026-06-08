@@ -60,20 +60,20 @@ if _history_key not in st.session_state:
 
 
 # ========================================================================
-# LAZY LOAD DO BRAIN (cacheado, carrega 1x por sessao Streamlit) — ANTES dos controles
+# BRAIN POR SESSAO — uma instancia POR USUARIO (nao compartilhada)
 # ========================================================================
-@st.cache_resource(show_spinner="🧠 Carregando IAlex (primeira vez demora ~10s)...")
+# IMPORTANTE: NAO usar @st.cache_resource aqui. cache_resource cria 1
+# instancia GLOBAL pro processo Streamlit inteiro, compartilhada por TODAS
+# as sessoes/usuarios. Como Brain.conversation_history e mutavel, 2 usuarios
+# no chat ao mesmo tempo misturariam historico (race no snapshot/restore).
+# Instanciando por sessao (st.session_state), cada usuario tem o SEU Brain.
+# Brain() eh barato (tools ja carregadas no import do modulo).
 def _get_brain():
-    """Importa a classe Brain e cria 1 instancia cacheada (1 por processo Streamlit).
-
-    NOTA: brain.py nao exporta singleton — webhook_server.py faz
-    `from agent.brain import Brain` e instancia. Aqui fazemos o mesmo,
-    mas via @st.cache_resource pra reutilizar a instancia entre reruns.
-    Multi-user simultaneo: cuidado tratado via snapshot/restore do
-    conversation_history (ver bloco do _user_msg abaixo).
-    """
-    from agent.brain import Brain
-    return Brain()
+    """Retorna o Brain DESTA sessao (cria 1x por sessao, guardado em session_state)."""
+    if "_brain_instance" not in st.session_state:
+        from agent.brain import Brain
+        st.session_state["_brain_instance"] = Brain()
+    return st.session_state["_brain_instance"]
 
 
 try:

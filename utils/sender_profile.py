@@ -41,6 +41,7 @@ from utils.logger import logger
 # Cache de perfis (carregado do YAML)
 # ---------------------------------------------------------------------------
 _PROFILES: Optional[Dict[str, Dict[str, Any]]] = None
+_PROFILES_MTIME: Optional[float] = None  # mtime do users.yaml quando cacheado
 _USERS_YAML_PATH = Path(__file__).parent.parent / "config" / "users.yaml"
 
 # Thread-local para o IAlex setar o sender ativo durante o processamento
@@ -51,12 +52,20 @@ _THREAD_LOCAL = threading.local()
 def _load_profiles() -> Dict[str, Dict[str, Any]]:
     """Carrega config/users.yaml e retorna mapa username -> perfil.
 
-    Cache em memoria — recarregado apenas se o arquivo for tocado entre
-    chamadas (mtime). Em caso de falha (arquivo ausente ou invalido)
-    retorna mapa vazio e loga warning.
+    Cache em memoria com invalidacao por MTIME: se o users.yaml foi editado
+    (ex: adicionar/editar usuario) desde o ultimo load, recarrega automatico —
+    sem precisar reiniciar o app. Em caso de falha retorna mapa vazio + warning.
     """
-    global _PROFILES
-    if _PROFILES is not None:
+    global _PROFILES, _PROFILES_MTIME
+
+    # Mtime atual do arquivo (None se nao existe)
+    try:
+        _cur_mtime = _USERS_YAML_PATH.stat().st_mtime if _USERS_YAML_PATH.exists() else None
+    except Exception:
+        _cur_mtime = None
+
+    # Cache valido SE ja carregado E o arquivo nao mudou desde entao
+    if _PROFILES is not None and _cur_mtime == _PROFILES_MTIME:
         return _PROFILES
 
     try:
@@ -66,6 +75,7 @@ def _load_profiles() -> Dict[str, Dict[str, Any]]:
                 extra={"path": str(_USERS_YAML_PATH)},
             )
             _PROFILES = {}
+            _PROFILES_MTIME = _cur_mtime
             return _PROFILES
 
         with _USERS_YAML_PATH.open("r", encoding="utf-8") as f:
@@ -91,6 +101,7 @@ def _load_profiles() -> Dict[str, Dict[str, Any]]:
                 ],
             }
         _PROFILES = profiles
+        _PROFILES_MTIME = _cur_mtime
         logger.info(f"Sender profiles carregados: {list(profiles.keys())}")
         return _PROFILES
     except Exception as e:
@@ -101,8 +112,9 @@ def _load_profiles() -> Dict[str, Dict[str, Any]]:
 
 def reload_profiles() -> None:
     """Forca reload do users.yaml (apos edicao manual)."""
-    global _PROFILES
+    global _PROFILES, _PROFILES_MTIME
     _PROFILES = None
+    _PROFILES_MTIME = None
     _load_profiles()
 
 

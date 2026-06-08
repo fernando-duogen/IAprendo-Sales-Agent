@@ -603,7 +603,12 @@ class Database:
                     # Aceita lista vazia (override pra "sem anexos")
                     cur_meta['attachment_urls'] = list(attachment_urls)
                 update['metadata'] = cur_meta
-            result = self.client.table('approval_queue').update(update).eq('id', queue_id).execute()
+            # GUARD DE CONCORRENCIA (compare-and-swap atomico): so atualiza se
+            # ainda estiver 'pending'. Se outro user ja aprovou/rejeitou, o
+            # WHERE nao casa, result.data vem vazio e retornamos False — evita
+            # 2 usuarios aprovarem a mesma mensagem.
+            result = (self.client.table('approval_queue').update(update)
+                      .eq('id', queue_id).eq('status', 'pending').execute())
             success = bool(result.data)
             if success:
                 extra = {'queue_id': queue_id}
@@ -612,19 +617,27 @@ class Database:
                 if send_as_username:
                     extra['send_as'] = send_as_username
                 logger.info('Mensagem aprovada', extra=extra)
+            else:
+                logger.warning('Aprovacao ignorada: mensagem nao esta mais pending '
+                               '(ja tratada por outro usuario?)', extra={'queue_id': queue_id})
             return success
         except Exception as e:
             logger.error('Erro ao aprovar mensagem', extra={'queue_id': queue_id, 'error': str(e)})
             return False
 
     def reject_message(self, queue_id: str, reason: str = '') -> bool:
-        """Rejeita mensagem."""
+        """Rejeita mensagem (so se ainda estiver pending — guard de concorrencia)."""
         try:
             update = {'status': 'rejected', 'rejection_reason': reason}
-            result = self.client.table('approval_queue').update(update).eq('id', queue_id).execute()
+            # CAS atomico: so rejeita se ainda pending (ver approve_message)
+            result = (self.client.table('approval_queue').update(update)
+                      .eq('id', queue_id).eq('status', 'pending').execute())
             success = bool(result.data)
             if success:
                 logger.info('Mensagem rejeitada', extra={'queue_id': queue_id, 'reason': reason})
+            else:
+                logger.warning('Rejeicao ignorada: mensagem nao esta mais pending '
+                               '(ja tratada por outro usuario?)', extra={'queue_id': queue_id})
             return success
         except Exception as e:
             logger.error('Erro ao rejeitar mensagem', extra={'queue_id': queue_id, 'error': str(e)})
