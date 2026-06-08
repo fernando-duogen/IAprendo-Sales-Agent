@@ -1005,3 +1005,69 @@ try:
 
 except Exception as _e:
     st.caption(f"OPR tracking indisponivel: {_e}")
+
+
+# =============================================================================
+# DESEMPENHO POR VENDEDOR (Fase 3 — governanca de time)
+# =============================================================================
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+section_header("Desempenho por vendedor", "groups")
+try:
+    _by_owner = db.count_companies_by_owner()  # {username: n, '(sem dono)': n}
+    if not _by_owner:
+        st.info("Sem dados de ownership ainda. Rode a migration add_lead_ownership "
+                "e comece a contatar escolas (cada acao define o dono).")
+    else:
+        # Carregar escolas com dono pra cruzar status/stage por vendedor
+        try:
+            _rows = (db.client.table("companies")
+                     .select("owner_username,status,commercial_stage,last_contacted_at")
+                     .not_.is_("owner_username", "null").execute().data or [])
+        except Exception:
+            _rows = []
+
+        # Montar tabela por vendedor: total, contatadas, respondidas, clientes
+        _agg = {}
+        for _r in _rows:
+            _u = _r.get("owner_username") or "?"
+            _a = _agg.setdefault(_u, {"Leads": 0, "Contatadas": 0, "Responderam": 0, "Clientes": 0})
+            _a["Leads"] += 1
+            _stt = (_r.get("status") or "").lower()
+            _stg = (_r.get("commercial_stage") or "").lower()
+            if _stt in ("contacted", "responded", "converted") or _stg in (
+                "contatado", "respondeu", "reuniao", "proposta", "negociacao", "cliente"):
+                _a["Contatadas"] += 1
+            if _stt in ("responded", "converted") or _stg in (
+                "respondeu", "reuniao", "proposta", "negociacao", "cliente"):
+                _a["Responderam"] += 1
+            if _stt == "converted" or _stg == "cliente":
+                _a["Clientes"] += 1
+
+        import pandas as _pd
+        _df_owner = _pd.DataFrame([
+            {"Vendedor": u, **vals} for u, vals in sorted(_agg.items(), key=lambda kv: -kv[1]["Leads"])
+        ])
+        if not _df_owner.empty:
+            st.dataframe(_df_owner, use_container_width=True, hide_index=True)
+            st.bar_chart(_df_owner.set_index("Vendedor")["Leads"], height=240)
+
+        _sem = _by_owner.get("(sem dono)", 0)
+        st.caption(f"Escolas sem dono (pool): **{_sem}**. Total com dono: "
+                   f"**{sum(v for k, v in _by_owner.items() if k != '(sem dono)')}**.")
+
+    # SLA: leads parados (com dono, sem contato ha 7+ dias, nao convertidos)
+    st.markdown("#### ⏰ Leads parados (SLA)")
+    _stale = db.get_stale_owned_leads(days=7, limit=30)
+    if _stale:
+        st.warning(f"{len(_stale)} lead(s) sob gestao parados ha 7+ dias sem contato:")
+        import pandas as _pd2
+        _df_stale = _pd2.DataFrame([{
+            "Escola": s.get("name"), "Cidade": s.get("city"), "Dono": s.get("owner_username"),
+            "Ultimo contato": (s.get("last_contacted_at") or "nunca")[:10],
+            "Status": s.get("status"),
+        } for s in _stale])
+        st.dataframe(_df_stale, use_container_width=True, hide_index=True)
+    else:
+        st.success("Nenhum lead parado ha mais de 7 dias. Pipeline saudavel.")
+except Exception as _e_owner:
+    st.caption(f"Desempenho por vendedor indisponivel (migration ownership rodou?): {_e_owner}")

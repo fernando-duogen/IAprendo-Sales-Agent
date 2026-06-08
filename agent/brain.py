@@ -615,6 +615,17 @@ TOOLS = [
         },
     },
     {
+        "name": "leads_parados",
+        "description": "Lista leads COM dono que estao parados (sem contato ha X dias) e nao convertidos/perdidos — alerta de SLA. Use pra 'tem lead parado?', 'o que esta esquecido', 'leads sem mexer ha uma semana'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dias": {"type": "integer", "description": "Dias sem contato pra considerar parado (default 7)"},
+                "dono": {"type": "string", "description": "Filtrar por um vendedor especifico (opcional)"},
+            },
+        },
+    },
+    {
         "name": "agregar_estatisticas_escolas",
         "description": "Agrega metricas quantitativas (matriculas, docentes, etc) sobre conjunto filtrado de escolas. SEMPRE retorna cobertura (quantas tem dado real vs estimado) + valor concreto + valor estimado pras sem dado. Use pra responder 'quantos alunos ao todo nas estaduais de POA', 'quantos docentes nas privadas do RS', etc. NUNCA invente numero — esta tool agrega o que existe e estima o resto, explicitando.",
         "input_schema": {
@@ -1964,6 +1975,25 @@ def _handle_reatribuir_lead(params: Dict) -> str:
         "sucesso": True, "escola": company.get("name"),
         "dono_anterior": company.get("owner_username"),
         "novo_dono": novo or "(sem dono — pool)",
+    }, ensure_ascii=False, default=str)
+
+
+def _handle_leads_parados(params: Dict) -> str:
+    """Lista leads parados (SLA): com dono, sem contato ha N dias, nao fechados."""
+    dias = int(params.get("dias", 7) or 7)
+    dono_filtro = (params.get("dono") or "").strip().lower() or None
+    stale = db.get_stale_owned_leads(days=dias, limit=100)
+    if dono_filtro:
+        stale = [s for s in stale if (s.get("owner_username") or "").lower() == dono_filtro]
+    return json.dumps({
+        "dias_sem_contato": dias,
+        "total_parados": len(stale),
+        "leads": [{"escola": s.get("name"), "cidade": s.get("city"), "uf": s.get("state"),
+                   "dono": s.get("owner_username"),
+                   "ultimo_contato": (s.get("last_contacted_at") or "nunca")[:10],
+                   "status": s.get("status")} for s in stale[:30]],
+        "dica": ("Tudo em dia!" if not stale else
+                 "Priorize retomar contato com esses leads ou reatribua se o dono nao puder."),
     }, ensure_ascii=False, default=str)
 
 
@@ -7679,6 +7709,7 @@ TOOL_HANDLERS = {
     "meus_leads": _handle_meus_leads,
     "leads_sem_dono": _handle_leads_sem_dono,
     "reatribuir_lead": _handle_reatribuir_lead,
+    "leads_parados": _handle_leads_parados,
     "agregar_estatisticas_escolas": _handle_agregar_estatisticas_escolas,
     "exportar_escolas_xlsx": _handle_exportar_escolas_xlsx,
     "escolas_proximas": _handle_escolas_proximas,

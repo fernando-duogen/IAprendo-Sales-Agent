@@ -434,6 +434,40 @@ class Database:
         if 'company_id' not in contact_data or 'full_name' not in contact_data:
             raise ValueError("Campos obrigatórios: company_id, full_name")
 
+        # DEDUP (app-level): evita criar contato duplicado na MESMA escola.
+        # Chave: email (se houver) OU nome normalizado. Se ja existe, atualiza
+        # campos vazios e retorna o id existente (em vez de duplicar).
+        try:
+            _cid = contact_data['company_id']
+            _email = (contact_data.get('email') or '').strip().lower()
+            _name = (contact_data.get('full_name') or '').strip().lower()
+            _existing = self.client.table('contacts').select(
+                'id,full_name,email,phone,phone_whatsapp,linkedin_url'
+            ).eq('company_id', _cid).execute().data or []
+            _match = None
+            for _c in _existing:
+                _ce = (_c.get('email') or '').strip().lower()
+                _cn = (_c.get('full_name') or '').strip().lower()
+                if (_email and _ce == _email) or (not _email and _cn and _cn == _name):
+                    _match = _c
+                    break
+            if _match:
+                # Preencher campos vazios do existente com os novos (merge leve)
+                _fill = {}
+                for _f in ('email', 'phone', 'phone_whatsapp', 'linkedin_url', 'role'):
+                    if contact_data.get(_f) and not _match.get(_f):
+                        _fill[_f] = contact_data[_f]
+                if _fill:
+                    try:
+                        self.client.table('contacts').update(_fill).eq('id', _match['id']).execute()
+                    except Exception:
+                        pass
+                logger.info("Contato duplicado evitado (merge no existente)",
+                            extra={'company_id': _cid, 'contact_id': _match['id']})
+                return _match['id']
+        except Exception as _e_dedup:
+            logger.debug(f"dedup contato skip: {_e_dedup}")
+
         try:
             result = self.client.table('contacts')\
                 .insert(contact_data)\
@@ -1243,6 +1277,67 @@ class Database:
         except Exception as e:
             logger.error("Erro ao definir owner", extra={"company_id": company_id, "error": str(e)})
             return False
+
+    def find_similar_company(
+        self, name: str, city: str = "", state: str = ""
+    ) -> List[Dict[str, Any]]:
+        """Busca escolas com nome parecido na mesma cidade/UF (dedup de cadastro manual).
+
+        Usado pra AVISAR antes de criar uma escola manualmente que pode ja existir.
+        Match por nome (contains, case-insensitive) + cidade/UF se informados.
+        """
+        if not name or len(name.strip()) < 4:
+            return []
+        try:
+            q = self.client.table("companies").select(
+                "id,name,city,state,inep_code,status,owner_username"
+            ).ilike("name", f"%{name.strip()}%")
+            if city:
+                q = q.ilike("city", f"%{city.strip()}%")
+            if state:
+                q = q.eq("state", state.strip().upper())
+            return q.limit(10).execute().data or []
+        except Exception as e:
+            logger.debug(f"find_similar_company falhou: {e}")
+            return []
+
+    def count_companies_by_owner(self) -> Dict[str, int]:
+        """Conta escolas por dono (owner_username). Chave '(sem dono)' agrega os nulos.
+        Usado nas metricas por vendedor (Analytics)."""
+        try:
+            rows = self.client.table("companies").select("owner_username").execute().data or []
+        except Exception as e:
+            logger.debug(f"count_companies_by_owner falhou: {e}")
+            return {}
+        counts: Dict[str, int] = {}
+        for r in rows:
+            k = r.get("owner_username") or "(sem dono)"
+            counts[k] = counts.get(k, 0) + 1
+        return counts
+
+    def get_stale_owned_leads(self, days: int = 7, limit: int = 50) -> List[Dict[str, Any]]:
+        """Leads COM dono parados ha >= `days` dias (last_contacted_at antigo ou nulo)
+        e ainda nao convertidos/perdidos. Para alertas de SLA."""
+        try:
+            from datetime import datetime, timezone, timedelta
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            rows = (self.client.table("companies")
+                    .select("id,name,city,state,owner_username,last_contacted_at,status,commercial_stage")
+                    .not_.is_("owner_username", "null")
+                    .execute().data or [])
+            stale = []
+            for r in rows:
+                stage = (r.get("commercial_stage") or "").lower()
+                if stage in ("cliente", "perdido"):
+                    continue
+                lc = r.get("last_contacted_at")
+                if (lc is None) or (str(lc) < cutoff):
+                    stale.append(r)
+            stale.sort(key=lambda x: (x.get("last_contacted_at") or ""))
+            return stale[:limit]
+        except Exception as e:
+            logger.debug(f"get_stale_owned_leads falhou: {e}")
+            return []
 
     def delete_contact(self, contact_id: str) -> bool:
         """Exclui um contato individual."""
