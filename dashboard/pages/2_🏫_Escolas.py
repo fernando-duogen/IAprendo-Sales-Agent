@@ -1940,6 +1940,7 @@ else:
         df["Porte"] = df["school_size"].fillna("").map(lambda x: PORTE_SHORT.get(x.strip(), x[:15] if x else ""))
         df["Tipo"] = df["admin_dependency"].fillna("")
         df["UF"] = df["state"].fillna("")
+        df["Cidade"] = df["city"].fillna("")  # filtro de cidade le df["Cidade"] (nao "city")
         df["Bairro"] = df["bairro"].fillna("")
         df["Fund AF"] = df["matriculas_fund_af"].fillna(0).astype(int)
         df["Medio"] = df["matriculas_medio"].fillna(0).astype(int)
