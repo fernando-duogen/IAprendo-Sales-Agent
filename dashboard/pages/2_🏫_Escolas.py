@@ -85,13 +85,15 @@ def _fetch_analytics_by_inep_list(inep_list: tuple) -> dict:
     if not inep_list:
         return {}
     try:
-        r = db.client.table("school_analytics").select(
+        rows = db.fetch_in_chunks(
+            "school_analytics",
             "inep_code,enem_amostra_confiavel,enem_potencial_melhoria,"
             "peer_trajetoria_5y,enem_gap_vs_peer_2024,enem_dependencia,"
             "enem_media_geral,enem_media_geral_sem_redacao,enem_area_mais_fraca,"
-            "enem_presentes,peer_delta_media_geral_2022_2024"
-        ).in_("inep_code", list(inep_list)).execute()
-        return {str(row["inep_code"]): row for row in (r.data or [])}
+            "enem_presentes,peer_delta_media_geral_2022_2024",
+            "inep_code", list(inep_list),
+        )
+        return {str(row["inep_code"]): row for row in rows}
     except Exception as e:
         return {}
 

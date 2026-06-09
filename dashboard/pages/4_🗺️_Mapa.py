@@ -249,12 +249,14 @@ if not is_csv_mode:
         if not inep_tuple:
             return {}
         try:
-            r = db.client.table("school_analytics").select(
+            rows = db.fetch_in_chunks(
+                "school_analytics",
                 "inep_code,enem_amostra_confiavel,enem_potencial_melhoria,"
                 "peer_trajetoria_5y,enem_gap_vs_peer_2024,enem_dependencia,"
-                "enem_presentes,peer_delta_media_geral_2022_2024"
-            ).in_("inep_code", list(inep_tuple)).execute()
-            return {str(row["inep_code"]): row for row in (r.data or [])}
+                "enem_presentes,peer_delta_media_geral_2022_2024",
+                "inep_code", list(inep_tuple),
+            )
+            return {str(row["inep_code"]): row for row in rows}
         except Exception:
             return {}
 

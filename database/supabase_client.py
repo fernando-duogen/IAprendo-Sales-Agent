@@ -536,6 +536,34 @@ class Database:
             logger.error("import_mec_filtered falhou", extra={"error": str(e)})
             return {"inseridas": 0, "duplicatas": 0, "ok": False, "error": str(e)[:200]}
 
+    def fetch_in_chunks(self, table: str, columns: str, column: str,
+                        values: List[Any], *, chunk: int = 150,
+                        order_by: Optional[str] = None,
+                        order_desc: bool = False) -> List[Dict[str, Any]]:
+        """SELECT `columns` FROM `table` WHERE `column` IN (`values`), com a lista
+        quebrada em lotes de `chunk`.
+
+        Por que: uma lista grande de INEPs num unico .in_() estoura o tamanho da
+        URL do PostgREST (erro 400 do Cloudflare) quando a base de leads cresce
+        (centenas/milhares). Cada item cai em EXATAMENTE um lote, entao um
+        `order_by` por-lote preserva a ordenacao por-item (ex.: pegar o registro
+        mais recente por INEP). Retorna a concatenacao dos r.data — mesma forma
+        de um `.execute().data` unico. Falha de um lote nao derruba os demais.
+        """
+        out: List[Dict[str, Any]] = []
+        vals = [v for v in (values or []) if v not in (None, "")]
+        for i in range(0, len(vals), max(1, chunk)):
+            part = vals[i:i + chunk]
+            try:
+                q = self.client.table(table).select(columns).in_(column, part)
+                if order_by:
+                    q = q.order(order_by, desc=bool(order_desc))
+                out.extend(q.execute().data or [])
+            except Exception as e:
+                logger.warning("fetch_in_chunks: lote falhou",
+                               extra={"table": table, "error": str(e)[:150]})
+        return out
+
     def update_company(
         self,
         company_id: str,

@@ -941,10 +941,11 @@ try:
         # Mostra "INEP {x}" so se nenhuma das duas tem o INEP.
         inep_ids = [str(i) for i in by_inep.keys()]
         try:
-            r = db.client.table("companies").select("id, inep_code, name, city, state").in_(
-                "inep_code", inep_ids
-            ).execute()
-            inep_to_company = {str(c["inep_code"]): c for c in (r.data or [])}
+            rows = db.fetch_in_chunks(
+                "companies", "id, inep_code, name, city, state",
+                "inep_code", inep_ids,
+            )
+            inep_to_company = {str(c["inep_code"]): c for c in rows}
         except Exception:
             inep_to_company = {}
 
@@ -952,15 +953,16 @@ try:
         missing_ineps = [i for i in inep_ids if i not in inep_to_company]
         if missing_ineps:
             try:
-                r2 = (
-                    db.client.table("school_censo_yearly")
-                    .select("inep_code, name, city, state, vintage_censo")
-                    .in_("inep_code", missing_ineps)
-                    .order("vintage_censo", desc=True)
-                    .execute()
+                # order por-lote preserva o "mais recente por INEP" (cada INEP cai
+                # em um unico lote).
+                rows2 = db.fetch_in_chunks(
+                    "school_censo_yearly",
+                    "inep_code, name, city, state, vintage_censo",
+                    "inep_code", missing_ineps,
+                    order_by="vintage_censo", order_desc=True,
                 )
                 # Pega o mais recente por INEP (a query ja vem ordenada desc)
-                for row in (r2.data or []):
+                for row in rows2:
                     key = str(row.get("inep_code", ""))
                     if key and key not in inep_to_company:
                         inep_to_company[key] = row
