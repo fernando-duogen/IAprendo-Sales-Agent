@@ -59,6 +59,36 @@ CATEGORIA_MULT = {
 }
 
 
+def _num(v, default: int = 0) -> int:
+    """int seguro: None / NaN / '' / nao-numerico -> default.
+
+    CRITICO: `valor or 0` NAO funciona com NaN (NaN e truthy) e `int(NaN)`
+    levanta ValueError. Linhas do pandas (row.to_dict()) trazem NaN em campos
+    vazios, entao toda extracao numerica precisa passar por aqui.
+    """
+    try:
+        if v is None:
+            return default
+        if isinstance(v, float) and v != v:  # NaN
+            return default
+        s = str(v).strip()
+        if not s or s.lower() == "nan":
+            return default
+        return int(float(s))
+    except (ValueError, TypeError):
+        return default
+
+
+def _txt(v, default: str = "") -> str:
+    """str segura: None / NaN -> default (evita AttributeError no .lower())."""
+    if v is None:
+        return default
+    if isinstance(v, float) and v != v:  # NaN
+        return default
+    s = str(v).strip()
+    return default if s.lower() == "nan" else s
+
+
 def calcular_fit_score(company: Dict[str, Any]) -> Dict[str, Any]:
     """Calcula o Fit Score IAprendo para uma escola.
 
@@ -74,10 +104,8 @@ def calcular_fit_score(company: Dict[str, Any]) -> Dict[str, Any]:
             motivo: str explicacao curta
             componentes: dict com os multiplicadores usados (debug)
     """
-    # Alunos alvo
-    fund_af = company.get("matriculas_fund_af") or 0
-    medio = company.get("matriculas_medio") or 0
-    alvo = int(fund_af) + int(medio)
+    # Alunos alvo (coercao segura: None/NaN -> 0)
+    alvo = _num(company.get("matriculas_fund_af")) + _num(company.get("matriculas_medio"))
 
     # Se fonte_dados = catalogo_inep, nao temos os dados — retorna 'sem_dados'
     fonte = company.get("fonte_dados") or ""
@@ -93,22 +121,22 @@ def calcular_fit_score(company: Dict[str, Any]) -> Dict[str, Any]:
     base = alvo / 20.0
 
     # Multiplicador de nivel tecnologico
-    nivel_tech = company.get("nivel_tecnologico") or "Sem dado"
+    nivel_tech = _txt(company.get("nivel_tecnologico")) or "Sem dado"
     tech_mult = TECH_MULT.get(nivel_tech, 0.9)
 
     # Multiplicador de coordenador pedagogico
-    qt_coord = company.get("qt_coordenadores") or 0
-    coord_mult = 1.3 if int(qt_coord) > 0 else 1.0
+    qt_coord = _num(company.get("qt_coordenadores"))
+    coord_mult = 1.3 if qt_coord > 0 else 1.0
 
-    # Multiplicador de categoria privada
-    categoria = company.get("categoria_privada") or ""
+    # Multiplicador de categoria privada (coercao segura contra None/NaN)
+    categoria = _txt(company.get("categoria_privada"))
     # Match ignorando acentos / parcial
     categoria_mult = 1.0
     for key, mult in CATEGORIA_MULT.items():
         if key.lower() in categoria.lower():
             categoria_mult = mult
             break
-    if not categoria and company.get("admin_dependency", "").lower() == "privada":
+    if not categoria and _txt(company.get("admin_dependency")).lower() == "privada":
         categoria_mult = 1.1  # Privada sem categoria especifica
 
     # Calcular
@@ -128,7 +156,7 @@ def calcular_fit_score(company: Dict[str, Any]) -> Dict[str, Any]:
     razoes.append(f"{alvo} alunos alvo")
     if nivel_tech != "Sem dado":
         razoes.append(f"tech {nivel_tech}")
-    if int(qt_coord) > 0:
+    if qt_coord > 0:
         razoes.append(f"com coordenador")
     if categoria:
         razoes.append(categoria.lower())

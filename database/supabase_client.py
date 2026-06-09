@@ -341,6 +341,7 @@ class Database:
             'latitude': row.get('latitude'), 'longitude': row.get('longitude'),
             'admin_category': row.get('admin_category'),
             'admin_dependency': row.get('admin_dependency'),
+            'categoria_privada': row.get('categoria_privada'),
             'education_levels': row.get('education_levels'),
             'school_size': row.get('school_size'),
             'fonte_dados': row.get('fonte_dados'),

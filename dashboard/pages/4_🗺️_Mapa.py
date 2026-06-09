@@ -822,20 +822,20 @@ if selected_rows:
                         existing_contacts = db.client.table("contacts").select(
                             "full_name,email"
                         ).eq("company_id", cid).execute().data or []
-                        existing_names = {c.get("full_name", "").lower() for c in existing_contacts}
+                        existing_names = {(c.get("full_name") or "").lower() for c in existing_contacts}
                         existing_emails = {c.get("email", "").lower() for c in existing_contacts if c.get("email")}
 
                         saved = 0
                         skipped = 0
                         errors = 0
                         for ct in found_contacts:
-                            if ct.get("full_name", "").lower() in existing_names:
+                            if (ct.get("full_name") or "").lower() in existing_names:
                                 skipped += 1
                                 continue
                             if ct.get("email") and ct["email"].lower() in existing_emails:
                                 skipped += 1
                                 continue
-                            dm_type, priority = classify_role(ct.get("role", ""))
+                            dm_type, priority = classify_role(ct.get("role") or "")
                             ct_data = {
                                 "company_id": cid,
                                 "full_name": ct["full_name"],
@@ -861,7 +861,7 @@ if selected_rows:
                             try:
                                 if db.insert_contact(ct_data):
                                     saved += 1
-                                    existing_names.add(ct["full_name"].lower())
+                                    existing_names.add((ct.get("full_name") or "").lower())
                             except Exception:
                                 errors += 1
                         with_email = sum(1 for ct in found_contacts
