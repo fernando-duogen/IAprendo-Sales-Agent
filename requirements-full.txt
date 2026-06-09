@@ -34,6 +34,7 @@ hubspot-api-client>=9.0.0           # HubSpot integration
 pandas>=2.2.0                        # CSV processing
 numpy>=1.26.0                        # Numerical operations
 openpyxl>=3.1.2                     # Excel support (export)
+reportlab>=4.0.0                    # PDF generation (scripts/generate_onboarding_pdf.py)
 
 # Web Scraping
 beautifulsoup4>=4.12.0              # HTML parsing
