@@ -58,15 +58,15 @@ def _global_kpis() -> dict:
     """Conta P1/P2/P3 no banco inteiro (usado nos cards de topo)."""
     try:
         total = db.client.table("school_analytics").select(
-            "id", count="exact"
+            "id", count="estimated"
         ).limit(1).execute().count or 0
 
         confiavel = db.client.table("school_analytics").select(
-            "id", count="exact"
+            "id", count="estimated"
         ).eq("enem_amostra_confiavel", True).limit(1).execute().count or 0
 
         linked = db.client.table("school_analytics").select(
-            "id", count="exact"
+            "id", count="estimated"
         ).not_.is_("company_id", "null").limit(1).execute().count or 0
 
         return {

@@ -250,10 +250,15 @@ class Database:
     # CATALOGO MEC ONLINE (tabela leve mec_catalog) — busca/import sem CSV
     # ------------------------------------------------------------------
     def catalog_available(self) -> bool:
-        """True se a tabela mec_catalog existe E tem linhas (base carregada)."""
+        """True se a tabela mec_catalog existe E tem linhas (base carregada).
+
+        Usa checagem de EXISTENCIA (1 linha), NAO count exato: contar 185k linhas
+        estoura o statement_timeout no Cloud, o que fazia retornar False mesmo com
+        a base carregada (sintoma "catalogo nao carregado" no Importar online).
+        """
         try:
-            r = self.client.table('mec_catalog').select('inep_code', count='exact').limit(1).execute()
-            return bool(getattr(r, 'count', 0))
+            r = self.client.table('mec_catalog').select('inep_code').limit(1).execute()
+            return bool(r.data)
         except Exception:
             return False
 
@@ -284,7 +289,10 @@ class Database:
 
         limit = max(1, min(int(limit or 200), 1000))
         try:
-            q = self.client.table('mec_catalog').select('*', count='exact')
+            # count='estimated' (nao 'exact'): em buscas amplas (ex: so UF) o filtro
+            # pode bater dezenas de milhares de linhas e o COUNT exato estoura o
+            # statement_timeout no Cloud. O total e so informativo ("~N resultados").
+            q = self.client.table('mec_catalog').select('*', count='estimated')
             if filters.get('nome'):
                 for w in [p for p in _norm(filters['nome']).split() if len(p) >= 2]:
                     q = q.ilike('name_norm', f'%{w}%')

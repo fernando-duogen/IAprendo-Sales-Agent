@@ -205,9 +205,12 @@ try:
     from database.supabase_client import db
     from approval_queue import queue_manager
 
+    # .limit() defensivo: este select carrega todas as companies so pra contar por
+    # status (linhas abaixo). companies cresce devagar (leads importados), mas o
+    # limite evita uma resposta gigante / 400 do Cloudflare se um dia escalar muito.
     all_companies = db.client.table("companies").select(
         "id,status,qualification_score"
-    ).execute().data or []
+    ).limit(20000).execute().data or []
     stats = queue_manager.get_stats()
 
     total = len(all_companies)
@@ -220,7 +223,7 @@ try:
 
     sent_items = db.client.table("approval_queue").select(
         "id,sent_at,opened_at,clicked_at,replied_at,bounced_at,follow_up_number"
-    ).eq("status", "sent").execute().data or []
+    ).eq("status", "sent").limit(5000).execute().data or []
 
     opened = len([s for s in sent_items if s.get("opened_at")])
     clicked = len([s for s in sent_items if s.get("clicked_at")])

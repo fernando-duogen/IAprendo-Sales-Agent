@@ -166,6 +166,22 @@ def main():
         except Exception as e:
             line(FAIL, f"{table}: FALTA coluna -> {str(e)[:120]}")
 
+    # ----------------------------------------------------- 6) CLOUD SECRETS
+    section("6) Secrets do Cloud (lembrete - este script le so o .env LOCAL)")
+    print("  No Streamlit Cloud o app usa st.secrets, NAO o .env. Toda chave setada")
+    print("  local precisa estar IGUAL nos Secrets do Cloud (Settings -> Secrets),")
+    print("  senao funciona local e quebra no Cloud. Chaves a espelhar (setadas aqui):")
+    _mirror = ["SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+               "BREVO_API_KEY", "BREVO_SENDER_EMAIL", "BREVO_SENDER_NAME", "EMAIL_PROVIDER",
+               "YOUR_NAME", "YOUR_EMAIL", "YOUR_PHONE", "HUBSPOT_API_KEY",
+               "HUBSPOT_MEETING_LINK", "GOOGLE_MAPS_API_KEY", "IALEX_MODEL"]
+    for k in _mirror:
+        v = os.getenv(k) or getattr(settings, k, "")
+        if v:
+            print(f"       - {k} = {mask(v)}")
+    line(WARN, "SUPABASE_KEY no Cloud deve ser a MESMA service_role do local (nao anon)")
+    line(WARN, "OPENAI_API_KEY precisa estar no Cloud (senao o Chat IAlex quebra)")
+
     # ---------------------------------------------------------------- RESUMO
     print("\n" + "=" * 64)
     print(f"  RESUMO: {_results['ok']} OK | {_results['warn']} avisos | {_results['fail']} falhas")
