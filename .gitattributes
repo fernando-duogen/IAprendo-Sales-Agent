@@ -1,0 +1,2 @@
+# Shell scripts SEMPRE com LF (rodam em Linux: VM Oracle, CI). CRLF quebraria o bash.
+*.sh text eol=lf
