@@ -528,31 +528,77 @@ O **Mapa** mostra todas as escolas do CRM posicionadas geograficamente.
     st.divider()
 
     # --- Importar ---
-    st.markdown("## 4. Importar (CSV do MEC)")
+    st.markdown("## 4. Importar (Base MEC — modo local OU modo online)")
     st.markdown("""
-A pagina **Importar** permite adicionar escolas ao CRM a partir do CSV oficial do MEC.
+A pagina **Importar** adiciona escolas ao CRM a partir da base oficial do MEC
+(~185 mil escolas ativas, Censo 2025 + Catalogo INEP). Ela funciona em **2 modos**,
+escolhidos automaticamente conforme onde o sistema esta rodando.
+""")
 
-### Filtros de Importacao
+    st.markdown("### Modo LOCAL (no PC, com o CSV)")
+    st.markdown("""
+Quando o CSV da base esta presente (uso no computador), a pagina mostra os
+**filtros visuais** sobre as 185k escolas e importa em lote:
 
 | Filtro | Descricao | Valor Padrao |
 |---|---|---|
-| **Restricao** | Apenas escolas em funcionamento sem restricao | Fixo |
 | **Municipio** | Cidade das escolas | Porto Alegre |
 | **UF** | Estado | RS |
 | **Nivel de Ensino** | Fundamental AF e/ou Medio | Ambos |
-| **Dependencia** | Publica, Privada, Municipal, Estadual, Federal | Configuravel |
+| **Dependencia / Tipo** | Publica, Privada, Municipal, Estadual, Federal | Configuravel |
+| **Porte** | Faixa de matriculas | Configuravel |
 
-### Processo
-1. Selecione os filtros desejados
-2. Clique em **Importar**
-3. O sistema le o CSV, aplica filtros, e insere no Supabase
-4. Escolas ja existentes (mesmo INEP) sao atualizadas, nao duplicadas
-5. Resultado: escolas aparecem em Escolas com status "Novo"
+**Processo**: selecione os filtros -> Preview (15 primeiras) -> defina um limite
+(0 = sem limite) -> **Confirmar e Importar**. Escolas ja existentes (mesmo INEP)
+sao ignoradas, nao duplicadas.
+""")
 
-### Cuidados
-- O CSV completo tem **210 mil linhas** — sempre use filtros
-- Para testes, use `--sample 100` no script de importacao
-- O codigo INEP e a chave unica (evita duplicatas)
+    st.markdown("### Modo ONLINE (no Cloud, sem o CSV) — Busca Online")
+    st.markdown("""
+Na versao online (Streamlit Cloud) o CSV de 80MB **nao existe** no servidor. Em vez
+de travar, a pagina vira o modo **Busca Online**, que pesquisa a base completa via
+um **catalogo leve no Supabase** (tabela `mec_catalog`) — por SQL, sem carregar tudo
+na memoria. Assim da pra **descobrir e importar QUALQUER escola do Brasil** direto
+pelo navegador:
+
+1. Preencha os filtros: **nome** (parcial), **UF**, **cidade**, **tipo/dependencia**,
+   **nivel de ensino** e um **limite** de resultados
+2. Clique **Buscar na base MEC** — aparece a tabela de resultados
+3. Marque as escolas desejadas em **Selecione as escolas para importar**
+4. Clique **Importar selecionadas** — elas entram no CRM com status "Novo"
+   (as que ja existem sao ignoradas pelo INEP)
+
+> O **IAlex** (chat e WhatsApp) usa a mesma base online: *"tem escola X em Caxias?"*,
+> *"busca escolas privadas de ensino medio em Porto Alegre"*, *"importa o Colegio Y
+> pro CRM"* — tudo funciona no Cloud (catalogo primeiro, CSV local como fallback).
+""")
+
+    with st.expander("Ativacao do modo online (1x, so o admin) + atualizacao anual"):
+        st.markdown("""
+O modo Busca Online so funciona depois que o catalogo e carregado no Supabase
+(1 vez). Enquanto nao for, a pagina mostra um aviso amigavel "catalogo nao
+carregado" (nao quebra nada).
+
+**Passo 1 — criar a tabela (Supabase, ~10s)**
+- Supabase -> SQL Editor -> New query -> cole o conteudo de
+  `database/migrations/add_mec_catalog.sql` -> Run.
+- Cria a tabela `mec_catalog` (leve, ~28 colunas + indices) e liga o RLS. Nao
+  precisa criar policy: o backend usa a chave `service_role`, que ignora RLS.
+
+**Passo 2 — carregar as 185k escolas (no PC, poucos minutos)**
+- No terminal do projeto:
+  `venv\\Scripts\\python.exe scripts\\load_mec_catalog.py`
+- Le o CSV em lotes e sobe pro Supabase. **Idempotente** (chave INEP): rodar de
+  novo nao duplica.
+
+**Atualizacao anual**: quando a base MEC for atualizada, atualize o CSV local e
+rode de novo so o Passo 2 — o upsert sincroniza tudo.
+""")
+
+    st.markdown("""
+**Cuidados gerais**
+- A base tem **~185 mil escolas** — no modo local sempre use filtros/limite
+- O codigo **INEP** e a chave unica (importar a mesma escola 2x nao duplica)
 """)
 
     if st.button("Ir para Importar", key="crm_importar"):
@@ -1047,6 +1093,8 @@ Roda no PC do Fernando (precisa estar ligado). Detecta automaticamente quem
 mandou a mensagem (Fernando / Lizianne / Felipe) e usa o perfil/assinatura certo.
 
 > **Novidades recentes (Mai/Jun 2026)**:
+> - 🌐 **Base MEC completa online**: descobrir/importar qualquer escola do Brasil
+>   no Cloud via catalogo Supabase (Dashboard > Importar > Busca Online e no IAlex)
 > - 💬 **Chat IAlex no navegador**: 1a pagina do dashboard, mesmas tools do WhatsApp
 > - 📊 **Agregacao inteligente**: "quantos alunos/docentes" com cobertura +
 >   estimativa transparente (concreto vs estimado)
@@ -1087,13 +1135,13 @@ mandou a mensagem (Fernando / Lizianne / Felipe) e usa o perfil/assinatura certo
 | Ferramenta | Descricao | Exemplo de uso |
 |---|---|---|
 | **Buscar no CRM** | Pesquisa escolas ja importadas | "Busque escolas privadas de Porto Alegre" |
-| **Buscar no MEC** | Pesquisa na base completa de 210k | "Procure escolas no MEC em Canoas" |
+| **Buscar no MEC** | Pesquisa a base completa (~185k) — online via catalogo no Cloud | "Procure escolas no MEC em Canoas" |
 | **Agregar estatisticas** | Soma matriculas/docentes com cobertura+estimativa | "Quantos alunos nas estaduais de POA?" |
 | **Exportar XLSX** | Gera planilha de escolas+contatos com link | "Gera um excel das escolas de POA" |
 | **Buscar Proximidade** | Encontra escolas perto de um endereco | "Escolas num raio de 2km da Av. Ipiranga" |
 | **Discovery** | Busca com criterios avancados | "Escolas privadas, medio, porte grande, RS" |
 | **Buscar Sinais** | Identifica sinais de compra | "Que sinais a escola X tem?" |
-| **Importar Escola** | Importa uma escola especifica | "Importa INEP 43001234 para o CRM" |
+| **Importar Escola** | Importa uma escola especifica (online via catalogo no Cloud) | "Importa INEP 43001234 para o CRM" |
 """)
 
     st.markdown("### 2. Inteligencia ENEM (5 ferramentas)")

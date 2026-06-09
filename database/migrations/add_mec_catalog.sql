@@ -47,5 +47,15 @@ CREATE INDEX IF NOT EXISTS idx_mec_catalog_city_norm ON mec_catalog(city_norm);
 CREATE INDEX IF NOT EXISTS idx_mec_catalog_name_norm ON mec_catalog(name_norm);
 
 -- =====================================================================
+-- RLS (Row Level Security)
+-- =====================================================================
+-- Ligamos o RLS por boa pratica. NAO precisa criar policy nenhuma:
+-- o backend (loader + busca online) usa a chave service_role, que IGNORA
+-- o RLS (BYPASSRLS) -> continua lendo/escrevendo normal. Com RLS ligado e
+-- sem policy, a chave anon (publica, do Cloudflare Worker) fica bloqueada
+-- de tocar nesta tabela. Resultado: mesmo funcionamento + mais seguro.
+ALTER TABLE mec_catalog ENABLE ROW LEVEL SECURITY;
+
+-- =====================================================================
 -- "Success. No rows returned" = tabela criada. Agora rode o load no PC.
 -- =====================================================================
