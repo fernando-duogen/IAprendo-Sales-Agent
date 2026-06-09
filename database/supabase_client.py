@@ -1010,6 +1010,67 @@ class Database:
             "owner": owner,
         }
 
+    def set_commercial_stage(
+        self,
+        company_id: str,
+        stage: str,
+        extra: Optional[Dict[str, Any]] = None,
+        advance_status: bool = True,
+    ) -> Dict[str, Any]:
+        """Seta companies.commercial_stage E avanca o status tecnico junto
+        (advance-only) numa unica escrita — mantendo os 2 modelos coerentes.
+
+        Usado pelas tools comerciais do IAlex (proposta/cliente/perdido) e por
+        qualquer fluxo que mova o estagio comercial. Sem isto, gravar so o
+        commercial_stage deixa o status defasado (ex: cliente aparecendo como
+        'contacted' em Escolas/Analytics/HubSpot).
+
+        Args:
+            company_id: UUID da escola.
+            stage: novo commercial_stage (prospectado..cliente/perdido).
+            extra: campos adicionais a gravar junto (ex: valor_mensal_fechado,
+                data_fechamento, motivo_perda_texto).
+            advance_status: se True (padrao), avanca companies.status pro minimo
+                coerente com o stage (nunca regride).
+
+        Returns:
+            Dict com os campos efetivamente atualizados (inclui 'status' se mudou).
+        """
+        from utils.stage_sync import coherent_status_for_stage
+
+        updates: Dict[str, Any] = dict(extra or {})
+        updates["commercial_stage"] = stage
+
+        if advance_status:
+            try:
+                cur = (
+                    self.client.table("companies")
+                    .select("status")
+                    .eq("id", company_id)
+                    .single()
+                    .execute()
+                )
+                cur_status = (cur.data or {}).get("status")
+                new_status = coherent_status_for_stage(cur_status, stage)
+                if new_status:
+                    updates["status"] = new_status
+            except Exception as e:
+                logger.warning(
+                    "set_commercial_stage: falha ao resolver status coerente",
+                    extra={"company_id": company_id, "error": str(e)},
+                )
+
+        self.update_company(company_id, updates)
+        logger.info(
+            "commercial_stage atualizado",
+            extra={
+                "company_id": company_id,
+                "stage": stage,
+                "status_sincronizado": updates.get("status"),
+            },
+        )
+        return updates
+
     def insert_interaction(self, interaction_data: Dict[str, Any]) -> Optional[str]:
         """
         Registra interação com lead.

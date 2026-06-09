@@ -1957,11 +1957,13 @@ with tab_glossario:
          "e fato vs aproximacao."),
 
         ("Commercial Stage",
-         "Pipeline Kanban da escola, separado do `status`. Valores: prospectado, "
-         "contatado, respondeu, reuniao, proposta, cliente, perdido. O `status` "
-         "(raw/qualified/contacted/...) reflete o estado tecnico no funil; o "
-         "`commercial_stage` reflete o estado COMERCIAL no Kanban. Podem avancar "
-         "juntos via `register_manual_interaction(advance_commercial_stage=True)`."),
+         "Estagio do funil COMERCIAL (Kanban): prospectado, contatado, respondeu, "
+         "reuniao, proposta, cliente, perdido. O `status` (raw/qualified/contacted/"
+         "...) reflete o estado TECNICO do pipeline. Os dois ficam SINCRONIZADOS: "
+         "ao avancar o commercial_stage (IAlex marcando proposta/cliente/perdido, "
+         "ou o Kanban), o `status` avanca junto automaticamente (so pra frente, "
+         "nunca regride) — ex: fechar cliente => `status` vira 'converted'. A logica "
+         "central fica em utils/stage_sync.py (fonte unica de verdade)."),
 
         ("BNCC",
          "Base Nacional Comum Curricular. Documento normativo do MEC que define "

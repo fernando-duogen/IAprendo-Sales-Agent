@@ -3726,8 +3726,7 @@ def _handle_registrar_proposta_enviada(params: Dict) -> str:
     observacoes = (params.get("observacoes") or "").strip()
 
     try:
-        db.update_company(company_id, {
-            "commercial_stage": "proposta",
+        db.set_commercial_stage(company_id, "proposta", extra={
             "valor_mensal_proposto": float(valor_mensal),
             "data_proposta": f"{data_str}T12:00:00",
         })
@@ -3795,8 +3794,7 @@ def _handle_marcar_cliente_ganho(params: Dict) -> str:
     data_str = params.get("data") or datetime.now().strftime("%Y-%m-%d")
 
     try:
-        db.update_company(company_id, {
-            "commercial_stage": "cliente",
+        db.set_commercial_stage(company_id, "cliente", extra={
             "valor_mensal_fechado": float(valor_fechado),
             "data_fechamento": f"{data_str}T12:00:00",
         })
@@ -3867,8 +3865,7 @@ def _handle_marcar_perdido(params: Dict) -> str:
         categoria = "outro"
 
     try:
-        db.update_company(company_id, {
-            "commercial_stage": "perdido",
+        db.set_commercial_stage(company_id, "perdido", extra={
             "motivo_perda_texto": motivo,
             "motivo_perda_categoria": categoria,
             "data_fechamento": f"{data_str}T12:00:00",

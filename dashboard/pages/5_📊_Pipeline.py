@@ -1311,36 +1311,19 @@ def render_kanban_comercial():
             if _e.get("replied_at"):
                 entry["replied"] = True
 
-        # Mapa do status tecnico (companies.status) -> stage do Kanban comercial.
-        # Sem isto, mudar status para 'responded'/'contacted'/'converted' fazia a
-        # escola SUMIR do Kanban (caia em return None).
-        STATUS_TO_STAGE = {
-            "responded": "respondeu",
-            "contacted": "contatado",
-            "converted": "cliente",
-            "rejected": "perdido",
-            "descartado": "perdido",
-        }
+        # Inferencia do estagio do Kanban centralizada em utils/stage_sync
+        # (mesma logica/mapas usados pelo setter coerente do backend, evitando
+        # divergencia entre status tecnico e commercial_stage).
+        from utils.stage_sync import infer_stage as _shared_infer_stage
 
         def _infer_stage(comp):
-            """Prioridade: commercial_stage manual > status tecnico mapeado >
-            inferencia (meeting/email) > prospectado (status inicial)."""
-            manual = comp.get("commercial_stage")
-            if manual:
-                return manual
-            st_tech = (comp.get("status") or "").lower()
-            if st_tech in STATUS_TO_STAGE:
-                return STATUS_TO_STAGE[st_tech]
             cid = comp["id"]
-            if cid in _meeting_set:
-                return "reuniao"
-            if _email_map.get(cid, {}).get("replied"):
-                return "respondeu"
-            if cid in _email_map:
-                return "contatado"
-            if st_tech in ("raw", "qualified", "enriched", "filtered"):
-                return "prospectado"
-            return None
+            return _shared_infer_stage(
+                comp,
+                has_email=cid in _email_map,
+                has_reply=bool(_email_map.get(cid, {}).get("replied")),
+                has_meeting=cid in _meeting_set,
+            )
 
         stage_buckets = {s["key"]: [] for s in COMMERCIAL_STAGES}
         perdidos = []
