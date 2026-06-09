@@ -77,6 +77,62 @@ def coherent_status_for_stage(
     return None
 
 
+def commercial_stage_rank(stage: Optional[str]) -> int:
+    """Posicao do estagio comercial no funil linear (advance-only).
+
+    'perdido' fica fora do fluxo linear e qualquer valor desconhecido/None
+    retornam -1 (tratados a parte por should_advance_commercial_stage).
+    """
+    try:
+        return COMMERCIAL_STAGE_ORDER.index((stage or "").lower())
+    except ValueError:
+        return -1
+
+
+def should_advance_commercial_stage(
+    current: Optional[str],
+    incoming: Optional[str],
+) -> bool:
+    """Decide se `incoming` deve sobrescrever `current` numa sincronizacao
+    EXTERNA do estagio comercial (ex.: pull do HubSpot -> Supabase).
+
+    Espelha a filosofia advance-only de coherent_status_for_stage, mas para o
+    proprio commercial_stage: nunca regride um lead que ja esta mais avancado
+    no Supabase, e protege os estados terminais.
+
+    Regras (nesta ordem):
+      - sem `incoming` valido               -> False
+      - Supabase sem stage (lacuna)         -> True  (HubSpot preenche)
+      - igual ao atual                      -> False
+      - atual 'cliente' (ganho)             -> False (nunca regride via pull)
+      - atual 'perdido'                     -> True so se incoming == 'cliente'
+      - incoming 'perdido'                  -> True  (HubSpot marcou perdido)
+      - caso geral (funil linear)           -> rank(incoming) > rank(current)
+
+    Exemplos:
+        should_advance_commercial_stage(None, "contatado")        -> True
+        should_advance_commercial_stage("proposta", "contatado")  -> False (regrediria)
+        should_advance_commercial_stage("contatado", "proposta")  -> True
+        should_advance_commercial_stage("cliente", "perdido")     -> False (deal ganho)
+        should_advance_commercial_stage("reuniao", "perdido")     -> True
+    """
+    inc = (incoming or "").lower()
+    cur = (current or "").lower()
+    if not inc:
+        return False
+    if not cur:
+        return True
+    if inc == cur:
+        return False
+    if cur == "cliente":
+        return False
+    if cur == "perdido":
+        return inc == "cliente"
+    if inc == "perdido":
+        return True
+    return commercial_stage_rank(inc) > commercial_stage_rank(cur)
+
+
 def infer_stage(
     company: Dict[str, Any],
     *,
