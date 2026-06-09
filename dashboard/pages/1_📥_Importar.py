@@ -1,9 +1,13 @@
-"""Pagina 9 - Importar Escolas: filtros visuais sobre o CSV do MEC e importacao seletiva.
-Redesigned com Material Design theme — filtros inline, metric cards, progress visual."""
+"""Pagina Importar Escolas — filtros visuais sobre a base MEC + importacao seletiva.
+
+UI UNICA (mesma local e online). A fonte de dados (CSV local ou catalogo Supabase)
+e abstraida em dashboard/_mec_source.py -> paridade total de interface; so o
+backend difere (pandas no CSV local vs SQL/RPC no mec_catalog online).
+"""
 import streamlit as st
-import pandas as pd
-import sys, os, subprocess
+import sys
 from pathlib import Path
+
 ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -12,20 +16,18 @@ from dashboard.theme import (
     apply_theme_no_config, metric_card, section_header,
     alert_banner, breadcrumb, COLORS,
 )
-from config.settings import settings
 
 apply_theme_no_config()
 
 from dashboard._auth_gate import require_auth
 require_auth()
 
+from dashboard._mec_source import get_mec_source
+
 # --- Header ---
 breadcrumb(["IAprendo", "Importar Escolas"])
 st.markdown("# Importar Escolas")
 st.caption("Base mesclada Censo 2025 + Catalogo INEP — 185k escolas ativas com dados ricos.")
-
-# --- Configuracoes ---
-CSV_PATH = ROOT / settings.CSV_PATH
 
 PORTE_PT = {
     "Ate 50 matriculas": "Ate 50 alunos",
@@ -33,7 +35,6 @@ PORTE_PT = {
     "201 a 500 matriculas": "201 a 500 alunos",
     "501 a 1000 matriculas": "501 a 1000 alunos",
     "Mais de 1000 matriculas": "Mais de 1000 alunos",
-    # Fallbacks para formato antigo do catalogo
     "Ate 50 matriculas de escolarizacao": "Ate 50 alunos",
     "Entre 51 e 200 matriculas de escolarizacao": "51 a 200 alunos",
     "Entre 201 e 500 matriculas de escolarizacao": "201 a 500 alunos",
@@ -41,172 +42,21 @@ PORTE_PT = {
     "Mais de 1000 matriculas de escolarizacao": "Mais de 1000 alunos",
 }
 
-
-@st.cache_data(show_spinner="Carregando base mesclada (185k escolas)...")
-def load_csv():
-    if not CSV_PATH.exists():
-        return None
-    df = pd.read_csv(str(CSV_PATH), encoding=settings.CSV_ENCODING, low_memory=False)
-    df.columns = [c.strip() for c in df.columns]
-    # Mapear colunas da base mesclada (Censo 2025 + Catalogo) para nomes internos
-    rename_map = {
-        "NOME_ESCOLA": "escola",
-        "UF": "uf",
-        "MUNICIPIO": "municipio",
-        "DEPENDENCIA": "dep_adm",
-        "PORTE_ESCOLA": "porte",
-        "PERFIL_ENSINO": "niveis",
-        "FONTE_DADOS": "fonte_dados",
-    }
-    df = df.rename(columns=rename_map)
-    # Garantir colunas obrigatorias
-    for col in ["escola", "uf", "municipio", "dep_adm", "porte", "niveis", "fonte_dados"]:
-        if col not in df.columns:
-            df[col] = ""
-    return df
-
-
-UF_LIST = [
-    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS",
-    "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC",
-    "SP", "SE", "TO",
-]
-
-
-def render_online_catalog_mode():
-    """Modo ONLINE (sem CSV local, ex: Streamlit Cloud): busca e importa
-    QUALQUER escola do Brasil direto do catalogo MEC no Supabase."""
-    from database.supabase_client import db
-
-    section_header("Busca Online — Base MEC completa (185k escolas)", "travel_explore")
-    st.caption(
-        "Voce esta na versao online (sem o CSV local). A base completa do MEC esta "
-        "disponivel via catalogo no banco — busque e importe qualquer escola do Brasil."
+# --- Fonte de dados (CSV local OU catalogo Supabase) ---
+source = get_mec_source()
+if source is None:
+    alert_banner(
+        "Base MEC indisponivel. Localmente: confirme o CSV em data/raw. No Cloud: "
+        "rode database/migrations/add_mec_catalog.sql + scripts/load_mec_catalog.py "
+        "(e add_mec_facet_rpcs.sql para a cascata de cidades).",
+        "warning",
     )
-
-    if not db.catalog_available():
-        alert_banner(
-            "O catalogo MEC ainda nao foi carregado neste banco. Para habilitar a "
-            "busca online: 1) rode database/migrations/add_mec_catalog.sql no Supabase; "
-            "2) no PC local rode: venv\\Scripts\\python.exe scripts\\load_mec_catalog.py",
-            "warning",
-        )
-        st.stop()
-
-    # --- Formulario de busca ---
-    st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
-    bc1, bc2, bc3 = st.columns([2, 1, 2])
-    with bc1:
-        f_nome = st.text_input("Nome da escola (parcial):", key="cat_nome")
-    with bc2:
-        f_uf = st.selectbox("UF:", [""] + UF_LIST, key="cat_uf")
-    with bc3:
-        f_cidade = st.text_input("Cidade:", key="cat_cidade")
-    bc4, bc5, bc6 = st.columns([2, 2, 1])
-    with bc4:
-        f_dep = st.text_input("Tipo/Dependencia (ex: Privada, Estadual):", key="cat_dep")
-    with bc5:
-        f_niveis = st.text_input("Nivel de ensino (ex: Medio, Fundamental):", key="cat_niveis")
-    with bc6:
-        f_limite = st.number_input("Limite:", min_value=10, max_value=1000, value=200, step=50, key="cat_lim")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    if st.button("🔎 Buscar na base MEC", type="primary", key="cat_search_btn"):
-        filtros = {
-            "nome": f_nome.strip() or None,
-            "uf": f_uf or None,
-            "cidade": f_cidade.strip() or None,
-            "dependencia": f_dep.strip() or None,
-            "niveis_ensino": f_niveis.strip() or None,
-        }
-        filtros = {k: v for k, v in filtros.items() if v}
-        if not filtros:
-            alert_banner("Informe ao menos um filtro (nome, UF, cidade...).", "warning")
-        else:
-            with st.spinner("Buscando na base MEC..."):
-                res = db.search_mec_catalog(filtros, limit=int(f_limite))
-            st.session_state["cat_results"] = res
-
-    res = st.session_state.get("cat_results")
-    if not res:
-        alert_banner("Defina filtros e clique em Buscar para encontrar escolas.", "info")
-        return
-
-    rows = res.get("rows", [])
-    total = res.get("total", len(rows))
-    if not rows:
-        alert_banner("Nenhuma escola encontrada com esses filtros.", "warning")
-        return
-
-    if total > len(rows):
-        alert_banner(
-            f"{total:,} escolas encontradas — mostrando as primeiras {len(rows)}. "
-            "Refine os filtros para ver outras.".replace(",", "."),
-            "info",
-        )
-    else:
-        alert_banner(f"{len(rows)} escola(s) encontrada(s).", "success")
-
-    # --- Tabela de resultados ---
-    import pandas as _pd
-    df_res = _pd.DataFrame([{
-        "Escola": r.get("name"), "Cidade": r.get("city"), "UF": r.get("state"),
-        "Tipo": r.get("admin_dependency"), "Porte": r.get("school_size"),
-        "Matriculas": r.get("total_matriculas"), "INEP": r.get("inep_code"),
-    } for r in rows])
-    st.dataframe(df_res, use_container_width=True, hide_index=True)
-
-    # --- Selecao + import ---
-    section_header("Importar para o CRM", "cloud_upload")
-    opt_map = {
-        f"{r.get('name')} — {r.get('city')}/{r.get('state')} (INEP {r.get('inep_code')})": r.get("inep_code")
-        for r in rows
-    }
-    sel = st.multiselect("Selecione as escolas para importar:", list(opt_map.keys()), key="cat_sel")
-    cimp1, cimp2 = st.columns([1, 3])
-    with cimp1:
-        do_import = st.button("Importar selecionadas", type="primary",
-                              disabled=not sel, key="cat_import_btn")
-    with cimp2:
-        st.caption(
-            "Importa direto pro banco (status 'raw'). Escolas ja existentes sao "
-            "ignoradas (chave INEP unica). Depois qualifique/enriqueca normalmente."
-        )
-
-    if do_import and sel:
-        novas, jaexist, falhas = 0, 0, 0
-        prog = st.progress(0.0)
-        for i, label in enumerate(sel):
-            inep = opt_map.get(label)
-            r = db.import_company_from_catalog(inep, source="dashboard_online")
-            if r.get("already"):
-                jaexist += 1
-            elif r.get("ok"):
-                novas += 1
-            else:
-                falhas += 1
-            prog.progress((i + 1) / len(sel))
-        msg = f"✅ {novas} nova(s) importada(s)."
-        if jaexist:
-            msg += f" {jaexist} ja existia(m)."
-        if falhas:
-            msg += f" {falhas} falhou(falharam)."
-        st.success(msg + " Va pra aba Escolas para trabalhar os leads.")
-
-
-# --- Carrega CSV (modo local) ou cai pro modo online (catalogo) ---
-df_raw = load_csv()
-if df_raw is None:
-    render_online_catalog_mode()
     st.stop()
 
-# --- Base mesclada ja vem so com escolas ativas (Censo 2025 so tem ativas,
-#     Catalogo so incluimos as ativas no merge). Nao precisa filtro extra. ---
-df_ativo = df_raw.copy()
-total_ativos = len(df_ativo)
+total_base = source.total()
 
 # =============================================================================
-# FILTROS — inline (NOT sidebar), inside a filter-bar card
+# FILTROS
 # =============================================================================
 section_header("Filtros", "filter_list")
 
@@ -214,28 +64,23 @@ st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
 fc1, fc2, fc3 = st.columns(3)
 
 with fc1:
-    all_ufs = sorted(df_ativo["uf"].dropna().unique().tolist())
-    sel_ufs = st.multiselect("Estado(s) (UF):", all_ufs, default=[])
+    sel_ufs = st.multiselect("Estado(s) (UF):", source.ufs(), default=[])
 
 with fc2:
-    if sel_ufs:
-        df_for_city = df_ativo[df_ativo["uf"].isin(sel_ufs)]
-    else:
-        df_for_city = df_ativo
-    all_cities = sorted(df_for_city["municipio"].dropna().unique().tolist())
-    sel_cities = st.multiselect("Cidade(s):", all_cities, default=[])
+    city_opts = source.cities(sel_ufs)
+    _city_help = None
+    if sel_ufs and not city_opts:
+        _city_help = ("Cascata de cidades requer a RPC mec_catalog_cities "
+                      "(rode add_mec_facet_rpcs.sql no Supabase).")
+    sel_cities = st.multiselect("Cidade(s):", city_opts, default=[], help=_city_help)
 
 with fc3:
-    all_dep = sorted(df_ativo["dep_adm"].dropna().unique().tolist())
-    sel_dep = st.multiselect("Tipo de escola:", all_dep, default=[])
+    sel_dep = st.multiselect("Tipo de escola:", source.deps(), default=[])
 
 fc4, fc5 = st.columns(2)
 with fc4:
-    all_porte_raw = df_ativo["porte"].dropna().unique().tolist()
     porte_options = [
-        (PORTE_PT.get(p.strip(), p.strip()), p.strip())
-        for p in all_porte_raw
-        if "Escola sem" not in p
+        (PORTE_PT.get(p, p), p) for p in source.portes_raw()
     ]
     porte_options = sorted(
         porte_options,
@@ -256,28 +101,14 @@ with fc5:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- Aplica filtros ---
-df_filtered = df_ativo.copy()
-if sel_ufs:
-    df_filtered = df_filtered[df_filtered["uf"].isin(sel_ufs)]
-if sel_cities:
-    df_filtered = df_filtered[df_filtered["municipio"].isin(sel_cities)]
-if sel_dep:
-    df_filtered = df_filtered[df_filtered["dep_adm"].isin(sel_dep)]
-if sel_porte_raw:
-    df_filtered = df_filtered[df_filtered["porte"].str.strip().isin(sel_porte_raw)]
-nivel_mask = pd.Series([False] * len(df_filtered), index=df_filtered.index)
-if inc_fundamental:
-    nivel_mask = nivel_mask | df_filtered["niveis"].str.contains("Fundamental", na=False)
-if inc_medio:
-    nivel_mask = nivel_mask | df_filtered["niveis"].str.contains("M.dio", na=False)
-if inc_fundamental or inc_medio:
-    df_filtered = df_filtered[nivel_mask]
+filters = {
+    "ufs": sel_ufs, "cities": sel_cities, "deps": sel_dep,
+    "portes": sel_porte_raw, "inc_fund": inc_fundamental, "inc_medio": inc_medio,
+}
 
 # --- Metricas ao vivo ---
-n_filtered = len(df_filtered)
+n_filtered = source.count(filters)
 
-# Busca quantas ja estao no banco
 n_banco = 0
 try:
     from database.supabase_client import db
@@ -292,28 +123,20 @@ section_header("Resultado dos Filtros", "assessment")
 
 mc1, mc2, mc3, mc4 = st.columns(4)
 with mc1:
-    metric_card(
-        "Total no CSV", f"{total_ativos:,}".replace(",", "."),
-        icon="storage", color=COLORS["on_surface_secondary"],
-    )
+    metric_card("Total na base", f"{total_base:,}".replace(",", "."),
+                icon="storage", color=COLORS["on_surface_secondary"])
 with mc2:
-    metric_card(
-        "Com filtros atuais", f"{n_filtered:,}".replace(",", "."),
-        icon="filter_alt", color=COLORS["primary"],
-        delta=f"{n_filtered - total_ativos:+,}".replace(",", "."),
-    )
+    metric_card("Com filtros atuais", f"{n_filtered:,}".replace(",", "."),
+                icon="filter_alt", color=COLORS["primary"],
+                delta=f"{n_filtered - total_base:+,}".replace(",", "."))
 with mc3:
-    metric_card(
-        "Ja no banco", f"{n_banco:,}".replace(",", "."),
-        icon="cloud_done", color=COLORS["secondary"],
-    )
+    metric_card("Ja no banco", f"{n_banco:,}".replace(",", "."),
+                icon="cloud_done", color=COLORS["secondary"])
 with mc4:
-    metric_card(
-        "Novas p/ importar", f"{max(0, n_filtered - n_banco):,}".replace(",", "."),
-        icon="add_circle", color=COLORS["success"],
-    )
+    metric_card("Novas p/ importar", f"{max(0, n_filtered - n_banco):,}".replace(",", "."),
+                icon="add_circle", color=COLORS["success"])
 
-# --- Indicador visual ---
+# --- Indicador visual (5 niveis de volume) ---
 st.markdown('<div class="mt-1"></div>', unsafe_allow_html=True)
 if n_filtered == 0:
     alert_banner("Nenhuma escola encontrada com esses filtros. Ajuste os criterios.", "warning")
@@ -325,7 +148,7 @@ elif n_filtered < 5000:
     alert_banner(f"{n_filtered} escolas -- volume grande. Considere importar em lotes.", "warning")
 else:
     alert_banner(
-        f"{n_filtered} escolas -- muito grande para importar de uma vez. Use --sample no terminal.",
+        f"{n_filtered} escolas -- muito grande para importar de uma vez. Use o limite abaixo.",
         "error",
     )
 
@@ -336,20 +159,19 @@ st.markdown('<hr class="divider">', unsafe_allow_html=True)
 section_header("Preview (primeiras 15 escolas)", "table_chart")
 
 if n_filtered > 0:
-    preview_cols = [c for c in ["escola", "municipio", "uf", "dep_adm", "porte"] if c in df_filtered.columns]
-    preview = df_filtered[preview_cols].head(15).copy()
-    preview.columns = ["Escola", "Cidade", "UF", "Tipo", "Porte"][: len(preview_cols)]
+    preview = source.preview(filters, n=15)
+    preview = preview.rename(columns={
+        "escola": "Escola", "municipio": "Cidade", "uf": "UF",
+        "dep_adm": "Tipo", "porte": "Porte",
+    })
     if "Porte" in preview.columns:
-        preview["Porte"] = preview["Porte"].str.strip().map(PORTE_PT).fillna(preview["Porte"])
-    # Sinalizacao de contagem (1.1 Quick Win)
+        preview["Porte"] = preview["Porte"].astype(str).str.strip().map(PORTE_PT).fillna(preview["Porte"])
     from dashboard._table_count import render_count
     render_count(
-        total=len(df) if "df" in dir() else n_filtered,
-        filtered=n_filtered,
-        label_singular="escola elegivel",
-        label_plural="escolas elegiveis",
+        total=total_base, filtered=n_filtered,
+        label_singular="escola elegivel", label_plural="escolas elegiveis",
     )
-    st.caption(f"Mostrando primeiras 15 — total importavel: {n_filtered:,}")
+    st.caption(f"Mostrando primeiras 15 — total importavel: {n_filtered:,}".replace(",", "."))
     st.dataframe(preview, use_container_width=True, hide_index=True)
 else:
     alert_banner("Ajuste os filtros para ver o preview.", "info")
@@ -363,34 +185,18 @@ section_header("Importar para o Banco de Dados", "cloud_upload")
 if n_filtered == 0:
     alert_banner("Defina os filtros acima para habilitar a importacao.", "info")
 else:
-    # Resumo dos filtros selecionados — styled card
+    # Resumo dos filtros selecionados
     resumo = []
-    if sel_ufs:
-        ufs_str = ", ".join(sel_ufs[:5]) + (" e mais..." if len(sel_ufs) > 5 else "")
-        resumo.append(f"<strong>Estado(s):</strong> {ufs_str}")
-    else:
-        resumo.append("<strong>Estado(s):</strong> Todos")
-    if sel_cities:
-        cidades_str = ", ".join(sel_cities[:5]) + (" e mais..." if len(sel_cities) > 5 else "")
-        resumo.append(f"<strong>Cidade(s):</strong> {cidades_str}")
-    else:
-        resumo.append("<strong>Cidade(s):</strong> Todas")
-    if sel_dep:
-        resumo.append(f"<strong>Tipo:</strong> {', '.join(sel_dep)}")
-    else:
-        resumo.append("<strong>Tipo:</strong> Todos")
-    if sel_porte_labels:
-        resumo.append(f"<strong>Porte:</strong> {', '.join(sel_porte_labels)}")
-    else:
-        resumo.append("<strong>Porte:</strong> Todos")
+    resumo.append(f"<strong>Estado(s):</strong> {', '.join(sel_ufs[:5]) + (' e mais...' if len(sel_ufs) > 5 else '') if sel_ufs else 'Todos'}")
+    resumo.append(f"<strong>Cidade(s):</strong> {', '.join(sel_cities[:5]) + (' e mais...' if len(sel_cities) > 5 else '') if sel_cities else 'Todas'}")
+    resumo.append(f"<strong>Tipo:</strong> {', '.join(sel_dep) if sel_dep else 'Todos'}")
+    resumo.append(f"<strong>Porte:</strong> {', '.join(sel_porte_labels) if sel_porte_labels else 'Todos'}")
     niveis_sel = []
     if inc_fundamental:
         niveis_sel.append("Fund. Anos Finais")
     if inc_medio:
         niveis_sel.append("Ensino Medio")
-    resumo.append(
-        f"<strong>Niveis:</strong> {', '.join(niveis_sel) if niveis_sel else 'Nenhum'}"
-    )
+    resumo.append(f"<strong>Niveis:</strong> {', '.join(niveis_sel) if niveis_sel else 'Nenhum'}")
 
     st.markdown(
         '<div class="data-card">'
@@ -399,11 +205,8 @@ else:
         + "</div>",
         unsafe_allow_html=True,
     )
-
-    st.caption(
-        "O script usara esses filtros via variaveis de ambiente temporarias. "
-        "O banco de dados nao perdera as escolas existentes (chave INEP unica)."
-    )
+    st.caption("A importacao respeita estes filtros. Escolas ja existentes sao "
+               "ignoradas (chave INEP unica).")
 
     imp_col1, imp_col2 = st.columns([1, 3])
     with imp_col1:
@@ -413,115 +216,52 @@ else:
         )
     with imp_col2:
         st.caption(
-            "Use um limite durante testes (ex: 1, 10, 200). "
-            "Para importar tudo, deixe 0. "
-            f"Com os filtros atuais ha {n_filtered} escolas.\n\n"
-            "ℹ️ **Como funciona o limite**: aplicado APOS os filtros — "
-            "se voce marcar 1, vai importar 1 escola que passa nos filtros "
-            "(nao 1 escola aleatoria do CSV bruto)."
+            "Use um limite durante testes (ex: 1, 10, 200). Para importar tudo, "
+            f"deixe 0. Com os filtros atuais ha {n_filtered:,} escolas.\n\n".replace(",", ".")
+            + "ℹ️ O limite e aplicado APOS os filtros."
         )
 
     if st.button("Confirmar e Importar Agora", type="primary"):
-        env_extra = os.environ.copy()
-        env_extra["TARGET_STATE"] = ",".join(sel_ufs) if sel_ufs else ""
-        env_extra["TARGET_CITY"] = ",".join(sel_cities) if sel_cities else ""
-        if sel_dep:
-            dep_lower = [d.lower() for d in sel_dep]
-            env_extra["TARGET_SCHOOL_TYPES"] = ",".join(dep_lower)
+        with st.spinner("Importando escolas (pode levar alguns minutos para volumes grandes)..."):
+            result = source.import_filtered(filters, limit=int(sample_limit))
+
+        if not result.get("ok"):
+            st.error("❌ **Erro na importacao**. Veja o detalhe abaixo.")
+            _err = result.get("error") or result.get("stderr") or "(sem detalhe)"
+            st.code(str(_err)[-3000:], language="text")
+            if result.get("log"):
+                with st.expander("📋 Stdout completo", expanded=False):
+                    st.code(result["log"][-5000:], language="text")
         else:
-            env_extra.pop("TARGET_SCHOOL_TYPES", None)
-
-        script_path = str(ROOT / "database" / "migrations" / "import_schools.py")
-        python_exe = str(ROOT / "venv" / "Scripts" / "python.exe")
-        if not Path(python_exe).exists():
-            python_exe = sys.executable
-
-        # Forcar UTF-8 no Python child pra evitar UnicodeEncodeError ao
-        # printar emojis (🧪 ⚠️ ❌ etc) com locale Windows cp1252.
-        env_extra["PYTHONIOENCODING"] = "utf-8"
-
-        cmd = [python_exe, script_path]
-        if sample_limit > 0:
-            cmd += ["--sample", str(sample_limit)]
-
-        with st.spinner("Importando escolas (isso pode levar alguns minutos para volumes grandes)..."):
-            try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",      # leitura stdout/stderr em UTF-8 (consistente com PYTHONIOENCODING)
-                    errors="replace",      # se vier byte invalido, substitui ao inves de raise
-                    env=env_extra,
-                    timeout=300,
+            ins = result.get("inseridas")
+            dup = result.get("duplicatas") or 0
+            if result.get("no_match"):
+                st.warning(
+                    "ℹ️ **0 escolas inseridas** — nenhuma escola passa nos filtros atuais. "
+                    "Verifique sua selecao de UF, cidade e tipo."
                 )
-                # Extrair contadores do stdout via regex pra feedback rico
-                import re as _re
-                _inserted_match = _re.search(r"Inseridas?[:\s]+(\d+)", result.stdout or "", _re.IGNORECASE)
-                _duplicates_match = _re.search(r"Duplicatas?[:\s]+(\d+)", result.stdout or "", _re.IGNORECASE)
-                _inserted_count = int(_inserted_match.group(1)) if _inserted_match else None
-                _duplicates_count = int(_duplicates_match.group(1)) if _duplicates_match else 0
-
-                if result.returncode == 0:
-                    # Distinguir 4 cenarios bem-sucedidos:
-                    # (a) inseridas > 0 → sucesso verde
-                    # (b) 0 inseridas + duplicatas > 0 → info azul (escolas ja existiam)
-                    # (c) 0 inseridas, filtros sem match → warning amarelo
-                    # (d) 0 inseridas, sem contexto → info azul generico
-                    if _inserted_count and _inserted_count > 0:
-                        _dup_suffix = (
-                            f" ({_duplicates_count} duplicata(s) ignorada(s).)"
-                            if _duplicates_count else ""
-                        )
-                        st.success(
-                            f"✅ **Importacao concluida** — {_inserted_count} escola(s) "
-                            f"nova(s) inserida(s). Va pra aba **Escolas** pra ver."
-                            + _dup_suffix
-                        )
-                    elif _duplicates_count > 0:
-                        st.info(
-                            f"ℹ️ **Nada novo a importar** — as {_duplicates_count} "
-                            f"escola(s) processada(s) ja existem no banco (duplicatas "
-                            f"detectadas pelo codigo INEP). Use filtros diferentes "
-                            f"pra trazer escolas novas, ou aumente o limite."
-                        )
-                    elif "Nenhuma escola passa nos filtros" in (result.stdout or ""):
-                        st.warning(
-                            "ℹ️ **0 escolas inseridas** — nenhuma escola passa nos "
-                            "filtros atuais. Verifique sua selecao de UF, cidade e "
-                            "tipo de escola acima."
-                        )
-                    else:
-                        st.info(
-                            "ℹ️ Importacao concluida sem inserir escolas. "
-                            "Veja stdout abaixo pra detalhes."
-                        )
-                    with st.expander("📋 Saida completa do script", expanded=False):
-                        output_text = result.stdout or "(sem output)"
-                        if len(output_text) > 5000:
-                            output_text = output_text[-5000:]
-                        st.code(output_text, language="text")
-                else:
-                    st.error(
-                        f"❌ **Erro na importacao** (returncode={result.returncode}). "
-                        f"Veja stderr e stdout abaixo pra diagnosticar."
-                    )
-                    err_text = result.stderr or "(stderr vazio)"
-                    if len(err_text) > 3000:
-                        err_text = err_text[-3000:]
-                    st.code(err_text, language="text")
-                    if result.stdout:
-                        with st.expander("📋 Stdout completo", expanded=False):
-                            out_text = result.stdout
-                            if len(out_text) > 5000:
-                                out_text = out_text[-5000:]
-                            st.code(out_text, language="text")
-            except subprocess.TimeoutExpired:
+            elif ins and ins > 0:
+                _suffix = f" ({dup} duplicata(s) ignorada(s).)" if dup else ""
+                st.success(
+                    f"✅ **Importacao concluida** — {ins} escola(s) nova(s) inserida(s). "
+                    f"Va pra aba **Escolas** pra ver." + _suffix
+                )
+            elif dup > 0:
+                st.info(
+                    f"ℹ️ **Nada novo a importar** — as {dup} escola(s) processada(s) ja "
+                    f"existem no banco (duplicatas detectadas pelo codigo INEP). Use "
+                    f"filtros diferentes ou aumente o limite."
+                )
+            else:
+                st.info("ℹ️ Importacao concluida sem inserir escolas.")
+            if result.get("capped"):
                 alert_banner(
-                    "A importacao excedeu 5 minutos. Use um limite menor para importar em lotes.",
-                    "error",
+                    "Importado o teto de 5.000 por vez (limite=0). Rode de novo ou "
+                    "refine os filtros para importar o restante.",
+                    "info",
                 )
-            except Exception as exc:
-                st.error("Erro ao executar o script: " + str(exc))
+            if result.get("log"):
+                with st.expander("📋 Saida completa do script", expanded=False):
+                    st.code(result["log"][-5000:], language="text")
 
         alert_banner("Atualize a pagina para ver o novo total no banco.", "info")

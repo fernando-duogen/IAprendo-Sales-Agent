@@ -391,6 +391,150 @@ class Database:
             return {'ok': False, 'id': None, 'inep': inep_code, 'already': False,
                     'name': None, 'message': f'Erro: {str(e)[:150]}'}
 
+    # ------------------------------------------------------------------
+    # CATALOGO MEC — queries com filtros-LISTA (paridade com a UI local do
+    # Importar/Mapa, que usa multiselects). filters = {
+    #   ufs:[], cities:[], deps:[], portes:[], inc_fund:bool, inc_medio:bool }
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _apply_catalog_filters(q, filters: Optional[Dict[str, Any]]):
+        """Aplica os filtros-lista numa query do mec_catalog (espelha a UI local)."""
+        f = filters or {}
+        ufs = f.get("ufs") or []
+        cities = f.get("cities") or []
+        deps = f.get("deps") or []
+        portes = f.get("portes") or []
+        if ufs:
+            q = q.in_("state", [str(u).upper()[:2] for u in ufs])
+        if cities:
+            q = q.in_("city", list(cities))
+        if deps:
+            q = q.in_("admin_dependency", list(deps))
+        if portes:
+            q = q.in_("school_size", list(portes))
+        inc_fund = bool(f.get("inc_fund"))
+        inc_medio = bool(f.get("inc_medio"))
+        if inc_fund and inc_medio:
+            q = q.or_("levels_norm.ilike.%fundamental%,levels_norm.ilike.%medio%")
+        elif inc_fund:
+            q = q.ilike("levels_norm", "%fundamental%")
+        elif inc_medio:
+            q = q.ilike("levels_norm", "%medio%")
+        return q
+
+    def count_mec_catalog(self, filters: Optional[Dict[str, Any]]) -> int:
+        """Conta escolas do catalogo que casam os filtros. count='exact' quando
+        ha filtro geografico (subconjunto pequeno, preciso); 'estimated' quando
+        amplo (so niveis), pra nao estourar o statement_timeout no Cloud."""
+        try:
+            f = filters or {}
+            narrow = any(f.get(k) for k in ("ufs", "cities", "deps", "portes"))
+            mode = "exact" if narrow else "estimated"
+            q = self.client.table("mec_catalog").select("inep_code", count=mode)
+            q = self._apply_catalog_filters(q, f)
+            r = q.limit(1).execute()
+            return int(r.count or 0)
+        except Exception as e:
+            logger.warning("count_mec_catalog falhou", extra={"error": str(e)})
+            return 0
+
+    def query_mec_catalog(self, filters: Optional[Dict[str, Any]],
+                          limit: int = 15, columns: str = "*") -> list:
+        """Linhas do catalogo que casam os filtros (preview / pontos do mapa / import)."""
+        try:
+            q = self.client.table("mec_catalog").select(columns)
+            q = self._apply_catalog_filters(q, filters)
+            return q.limit(max(1, int(limit))).execute().data or []
+        except Exception as e:
+            logger.warning("query_mec_catalog falhou", extra={"error": str(e)})
+            return []
+
+    def catalog_cities(self, ufs: Optional[list]) -> list:
+        """Distinct de cidades das UFs dadas (cascata) — via RPC mec_catalog_cities.
+        Requer a migration add_mec_facet_rpcs.sql; sem ela, retorna [] (a UI cai
+        num fallback)."""
+        try:
+            states = [str(u).upper()[:2] for u in (ufs or [])]
+            r = self.client.rpc("mec_catalog_cities", {"p_states": states}).execute()
+            out = []
+            for row in (r.data or []):
+                out.append(row.get("city") if isinstance(row, dict) else row)
+            return [c for c in out if c]
+        except Exception as e:
+            logger.warning("catalog_cities RPC indisponivel", extra={"error": str(e)})
+            return []
+
+    def catalog_facets(self) -> Dict[str, list]:
+        """Distinct de states/deps/portes. Tenta a RPC mec_catalog_facets; se nao
+        existir, faz fallback por amostra (deps/portes sao poucos distintos)."""
+        try:
+            r = self.client.rpc("mec_catalog_facets").execute()
+            d = r.data or {}
+            if d and (d.get("states") or d.get("dependencias")):
+                return {
+                    "states": d.get("states") or [],
+                    "deps": d.get("dependencias") or [],
+                    "portes": d.get("portes") or [],
+                }
+        except Exception:
+            pass
+        deps, portes = set(), set()
+        try:
+            sample = (self.client.table("mec_catalog")
+                      .select("admin_dependency,school_size").limit(3000).execute().data or [])
+            for s in sample:
+                if s.get("admin_dependency"):
+                    deps.add(s["admin_dependency"])
+                if s.get("school_size"):
+                    portes.add(s["school_size"])
+        except Exception as e:
+            logger.warning("catalog_facets fallback falhou", extra={"error": str(e)})
+        return {"states": [], "deps": sorted(deps), "portes": sorted(portes)}
+
+    def import_mec_filtered(self, filters: Optional[Dict[str, Any]], limit: int = 0,
+                            source: str = "dashboard_online") -> Dict[str, Any]:
+        """Importa pro CRM TODAS as escolas do catalogo que casam os filtros (ate
+        `limit`; 0 = teto de seguranca). Pre-checa INEP existente (idempotente) e
+        insere em lote. Espelha o 'Confirmar e Importar' do modo local."""
+        CAP = 5000  # teto por clique (evita inserir 185k de uma vez)
+        eff = CAP if (not limit or int(limit) <= 0) else min(int(limit), CAP)
+        try:
+            rows = self.query_mec_catalog(filters, limit=eff, columns="*")
+            if not rows:
+                return {"inseridas": 0, "duplicatas": 0, "no_match": True, "ok": True}
+            ineps = [str(r.get("inep_code")).strip() for r in rows if r.get("inep_code")]
+            existing = set()
+            for i in range(0, len(ineps), 200):
+                chunk = ineps[i:i + 200]
+                ex = (self.client.table("companies").select("inep_code")
+                      .in_("inep_code", chunk).execute().data or [])
+                existing.update(str(e.get("inep_code")).strip() for e in ex)
+            novos = [r for r in rows if str(r.get("inep_code")).strip() not in existing]
+            inseridas = 0
+            for i in range(0, len(novos), 100):
+                batch = []
+                for r in novos[i:i + 100]:
+                    cd = self._catalog_row_to_company(r)
+                    cd["source"] = source
+                    batch.append(cd)
+                if not batch:
+                    continue
+                try:
+                    res = self.client.table("companies").insert(batch).execute()
+                    inseridas += len(res.data or [])
+                except Exception as e_batch:
+                    logger.warning("import_mec_filtered: lote falhou",
+                                   extra={"error": str(e_batch)[:150]})
+            return {
+                "inseridas": inseridas,
+                "duplicatas": len(existing),
+                "ok": True,
+                "capped": (not limit or int(limit) <= 0) and len(rows) >= CAP,
+            }
+        except Exception as e:
+            logger.error("import_mec_filtered falhou", extra={"error": str(e)})
+            return {"inseridas": 0, "duplicatas": 0, "ok": False, "error": str(e)[:200]}
+
     def update_company(
         self,
         company_id: str,

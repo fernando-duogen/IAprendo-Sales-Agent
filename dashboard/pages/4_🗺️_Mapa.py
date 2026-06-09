@@ -397,52 +397,39 @@ if not is_csv_mode:
 else:
     st.caption("Base mesclada: 180k Censo 2025 + 4.7k Catalogo INEP.")
 
-    df_raw = load_csv()
-    if df_raw is None:
+    from dashboard._mec_source import get_mec_source
+    source = get_mec_source()
+    if source is None:
         alert_banner(
-            f"CSV nao encontrado em {settings.CSV_PATH}. "
-            "Rode merge_catalogo_inep.py para gerar.",
+            "Base MEC indisponivel. Localmente: confirme o CSV em data/raw. No Cloud: "
+            "rode add_mec_catalog.sql + load_mec_catalog.py (+ add_mec_facet_rpcs.sql "
+            "para a cascata de cidades).",
             "error",
         )
         st.stop()
 
-    # Base mesclada ja vem so com escolas ativas
-    df_ativo = df_raw.copy()
-
-    # Garantir lat/lon numerico
-    df_ativo.loc[:, "latitude"] = pd.to_numeric(df_ativo["latitude"], errors="coerce")
-    df_ativo.loc[:, "longitude"] = pd.to_numeric(df_ativo["longitude"], errors="coerce")
-    df_ativo = df_ativo.dropna(subset=["latitude", "longitude"])
-
-    total_ativo = len(df_ativo)
+    total_ativo = source.total()
+    _MAP_CAP = 20000  # teto de pontos plotados (payload/perf — vale local e online)
 
     # --- Filtros --- styled filter bar
     st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3)
     with col1:
-        all_ufs = sorted(df_ativo["uf"].dropna().unique().tolist())
-        sel_ufs = st.multiselect("Estado(s):", all_ufs, default=[])
+        sel_ufs = st.multiselect("Estado(s):", source.ufs(), default=[])
     with col2:
-        if sel_ufs:
-            df_for_city = df_ativo[df_ativo["uf"].isin(sel_ufs)]
-        else:
-            df_for_city = df_ativo
-        all_cities = sorted(df_for_city["municipio"].dropna().unique().tolist())
-        sel_cities = st.multiselect("Cidade(s):", all_cities, default=[])
+        _city_opts = source.cities(sel_ufs)
+        _city_help = ("Cascata requer a RPC mec_catalog_cities (rode add_mec_facet_rpcs.sql)."
+                      if (sel_ufs and not _city_opts) else None)
+        sel_cities = st.multiselect("Cidade(s):", _city_opts, default=[], help=_city_help)
     with col3:
-        all_dep = sorted(df_ativo["dep_adm"].dropna().unique().tolist())
-        sel_dep = st.multiselect("Tipo de escola:", all_dep, default=[])
+        sel_dep = st.multiselect("Tipo de escola:", source.deps(), default=[])
 
     col4, col5 = st.columns(2)
     with col4:
-        all_porte_raw = df_ativo["porte"].dropna().unique().tolist()
-        porte_options = []
-        for p in all_porte_raw:
-            p_stripped = p.strip()
-            if "Escola sem" not in p_stripped:
-                label = PORTE_PT.get(p_stripped, p_stripped)
-                porte_options.append((label, p_stripped))
-        porte_options.sort(key=lambda x: x[0])
+        porte_options = sorted(
+            [(PORTE_PT.get(p, p), p) for p in source.portes_raw()],
+            key=lambda x: x[0],
+        )
         porte_labels = [p[0] for p in porte_options]
         porte_raw_vals = [p[1] for p in porte_options]
         sel_porte_labels = st.multiselect("Porte:", porte_labels, default=[])
@@ -460,34 +447,30 @@ else:
         key="mapa_colorir_por_csv",
     )
 
-    # --- Aplica filtros ---
-    df_filtered = df_ativo.copy()
-    if sel_ufs:
-        df_filtered = df_filtered[df_filtered["uf"].isin(sel_ufs)]
-    if sel_cities:
-        df_filtered = df_filtered[df_filtered["municipio"].isin(sel_cities)]
-    if sel_dep:
-        df_filtered = df_filtered[df_filtered["dep_adm"].isin(sel_dep)]
-    if sel_porte_raw:
-        df_filtered = df_filtered[df_filtered["porte"].str.strip().isin(sel_porte_raw)]
-
-    nivel_mask = pd.Series([False] * len(df_filtered), index=df_filtered.index)
-    if inc_fundamental:
-        nivel_mask = nivel_mask | df_filtered["niveis"].str.contains("Fundamental", na=False)
-    if inc_medio:
-        nivel_mask = nivel_mask | df_filtered["niveis"].str.contains("M.dio", na=False, regex=True)
-    if inc_fundamental or inc_medio:
-        df_filtered = df_filtered[nivel_mask]
+    # --- Busca os pontos (CSV local OU catalogo online), aplica filtros ---
+    _filters = {
+        "ufs": sel_ufs, "cities": sel_cities, "deps": sel_dep,
+        "portes": sel_porte_raw, "inc_fund": inc_fundamental, "inc_medio": inc_medio,
+    }
+    df_filtered = source.points(_filters, limit=_MAP_CAP).copy()
+    df_filtered["latitude"] = pd.to_numeric(df_filtered["latitude"], errors="coerce")
+    df_filtered["longitude"] = pd.to_numeric(df_filtered["longitude"], errors="coerce")
+    df_filtered = df_filtered.dropna(subset=["latitude", "longitude"])
 
     if df_filtered.empty:
-        alert_banner("Nenhuma escola encontrada com esses filtros. Ajuste os criterios.", "warning")
+        alert_banner("Nenhuma escola com esses filtros (ou sem coordenadas). Ajuste os criterios.", "warning")
         st.stop()
+    if len(df_filtered) >= _MAP_CAP:
+        alert_banner(
+            f"Mostrando os primeiros {_MAP_CAP:,} pontos. Refine os filtros para ver outros.".replace(",", "."),
+            "info",
+        )
 
     # --- Monta DataFrame para o mapa ---
     # Coluna NIVEL_TECNOLOGICO existe apenas no CSV mesclado (load_csv nao
     # renomeia, entao ela mantem o nome original). Usa fallback se nao existir.
-    if "NIVEL_TECNOLOGICO" in df_filtered.columns:
-        tech_series = df_filtered["NIVEL_TECNOLOGICO"].fillna("Sem dado")
+    if "nivel_tecnologico" in df_filtered.columns:
+        tech_series = df_filtered["nivel_tecnologico"].fillna("Sem dado").replace("", "Sem dado")
     else:
         tech_series = pd.Series(["Sem dado"] * len(df_filtered), index=df_filtered.index)
 
@@ -498,11 +481,11 @@ else:
             lambda x: DEP_ADM_COLORS.get(x, DEFAULT_COLOR)
         )
 
-    # Calcular alvo (Fund AF + Medio) — colunas mantem nome original do CSV
-    if "MATRICULAS_FUND_AF" in df_filtered.columns and "MATRICULAS_MEDIO" in df_filtered.columns:
+    # Calcular alvo (Fund AF + Medio) — colunas canonicas do _mec_source
+    if "mat_fund_af" in df_filtered.columns and "mat_medio" in df_filtered.columns:
         alvo_series = (
-            pd.to_numeric(df_filtered["MATRICULAS_FUND_AF"], errors="coerce").fillna(0)
-            + pd.to_numeric(df_filtered["MATRICULAS_MEDIO"], errors="coerce").fillna(0)
+            pd.to_numeric(df_filtered["mat_fund_af"], errors="coerce").fillna(0)
+            + pd.to_numeric(df_filtered["mat_medio"], errors="coerce").fillna(0)
         ).astype(int)
     else:
         alvo_series = pd.Series([0] * len(df_filtered), index=df_filtered.index)
