@@ -728,6 +728,12 @@ def _add_sidebar_home():
             unsafe_allow_html=True,
         )
         st.page_link("app.py", label="🏠 Painel")
+        # Carimbo de build — confirma num relance se o Cloud esta na versao nova.
+        try:
+            from dashboard._build import BUILD
+            st.caption(f"build · {BUILD}")
+        except Exception:
+            pass
 
 
 def apply_theme():
