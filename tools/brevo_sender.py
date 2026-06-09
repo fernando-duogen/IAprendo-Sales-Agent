@@ -126,35 +126,59 @@ class BrevoSender:
         # Adicionar header customizado com tracking_id para correlacao
         payload["headers"] = {"X-Tracking-Id": tracking_id}
 
-        try:
-            resp = requests.post(
-                f"{self.BASE_URL}/smtp/email",
-                headers={"api-key": self.api_key, "Content-Type": "application/json"},
-                json=payload,
-                timeout=30,
-            )
-            if resp.status_code == 201:
-                data = resp.json()
-                msg_id = data.get("messageId", "")
-                logger.info("Email enviado via Brevo",
-                    extra={"to": to_email, "queue_id": queue_id,
-                           "message_id": msg_id, "tracking_id": tracking_id})
+        # Envio com retry em falhas TRANSITORIAS (5xx do Brevo/Cloudflare ex 522/503,
+        # timeouts de rede). 4xx = erro do cliente (sender invalido, payload ruim) ->
+        # nao adianta repetir. Sem isto, um blip transitorio derruba um email aprovado.
+        import time as _time
+        last_err: Dict[str, Any] = {"error": "falha desconhecida"}
+        for _attempt in range(1, 4):  # ate 3 tentativas
+            try:
+                resp = requests.post(
+                    f"{self.BASE_URL}/smtp/email",
+                    headers={"api-key": self.api_key, "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=30,
+                )
+                if resp.status_code == 201:
+                    data = resp.json()
+                    msg_id = data.get("messageId", "")
+                    logger.info("Email enviado via Brevo",
+                        extra={"to": to_email, "queue_id": queue_id,
+                               "message_id": msg_id, "tracking_id": tracking_id,
+                               "attempt": _attempt})
 
-                # Atualizar approval_queue com tracking_id e brevo_message_id
-                if queue_id:
-                    self._update_queue_tracking(queue_id, tracking_id, msg_id)
+                    # Atualizar approval_queue com tracking_id e brevo_message_id
+                    if queue_id:
+                        self._update_queue_tracking(queue_id, tracking_id, msg_id)
 
-                return {
-                    "success": True,
-                    "message_id": msg_id,
-                    "tracking_id": tracking_id,
-                }
-            else:
-                logger.error("Erro Brevo", extra={"status": resp.status_code, "body": resp.text[:200]})
-                return {"success": False, "error": resp.text[:200], "status_code": resp.status_code}
-        except Exception as e:
-            logger.error("Excecao ao enviar email", extra={"error": str(e)})
-            return {"success": False, "error": str(e)}
+                    return {
+                        "success": True,
+                        "message_id": msg_id,
+                        "tracking_id": tracking_id,
+                    }
+
+                # 4xx = erro do cliente -> retornar imediatamente (retry nao ajuda)
+                if 400 <= resp.status_code < 500:
+                    logger.error("Erro Brevo (cliente, sem retry)",
+                        extra={"status": resp.status_code, "body": resp.text[:200]})
+                    return {"success": False, "error": resp.text[:200],
+                            "status_code": resp.status_code}
+
+                # 5xx transitorio -> registrar e tentar de novo
+                last_err = {"error": resp.text[:200], "status_code": resp.status_code}
+                logger.warning("Erro Brevo transitorio (vai tentar de novo)",
+                    extra={"status": resp.status_code, "attempt": _attempt})
+            except Exception as e:
+                last_err = {"error": str(e)}
+                logger.warning("Excecao ao enviar email (vai tentar de novo)",
+                    extra={"error": str(e), "attempt": _attempt})
+
+            if _attempt < 3:
+                _time.sleep(2 * _attempt)  # backoff: 2s, 4s
+
+        logger.error("Email NAO enviado apos 3 tentativas",
+            extra={"to": to_email, **last_err})
+        return {"success": False, **last_err}
 
     def _update_queue_tracking(
         self, queue_id: str, tracking_id: str, brevo_message_id: str
