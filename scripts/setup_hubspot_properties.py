@@ -116,7 +116,7 @@ def setup() -> None:
     # Idempotente: roda quantas vezes quiser.
     DEFAULT_STAGE_TO_PT = {
         "appointmentscheduled":  "Prospectado",
-        "qualifiedtobuy":        "Email Enviado",
+        "qualifiedtobuy":        "Contatado",
         "presentationscheduled": "Respondeu",
         "decisionmakerboughtin": "Reuniao Agendada",
         "contractsent":          "Proposta Enviada",

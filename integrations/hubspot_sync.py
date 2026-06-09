@@ -381,7 +381,7 @@ class HubSpotSync:
             deal_id=hs_deal_id,
         )
 
-        # Atualizar deal stage para "Email Enviado" via STAGE_MAP — antes usava
+        # Atualizar deal stage para "Contatado" via STAGE_MAP — antes usava
         # "Qualified To Buy" (label do pipeline default, inexistente aqui).
         if hs_deal_id and self._ensure_pipeline():
             stage_id = self._stage_ids.get(STAGE_MAP["contatado"])

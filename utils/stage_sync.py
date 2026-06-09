@@ -61,10 +61,11 @@ COMMERCIAL_STAGE_ORDER: List[str] = [
 # hubspot_sync.py) e o pull (integrations/hubspot_pull.py) leem daqui, entao
 # os dois sentidos nunca divergem.
 #
-# IMPORTANTE: o pipeline de Deals no HubSpot precisa ter EXATAMENTE esses 8
-# stage labels criados (ver scripts/setup_hubspot_properties.py):
-#   Prospectado, Email Enviado, Email Aberto, Respondeu, Reuniao Agendada,
-#   Proposta Enviada, Convertido, Perdido
+# IMPORTANTE: no free tier o HubSpot tem 1 pipeline de Deals, renomeado in-place
+# por scripts/setup_hubspot_properties.py pros 7 stages PT, nesta ordem:
+#   Prospectado, Contatado, Respondeu, Reuniao Agendada, Proposta Enviada,
+#   Convertido, Perdido
+# ('Contatado' e generico de proposito: o contato pode ser email/WhatsApp/ligacao.)
 # =============================================================================
 
 # commercial_stage -> label do stage no HubSpot (push).
@@ -73,8 +74,8 @@ COMMERCIAL_STAGE_ORDER: List[str] = [
 STAGE_MAP: Dict[str, str] = {
     # Stages automaticos (inferidos pelo sistema)
     "prospectado": "Prospectado",
-    "contatado": "Email Enviado",
-    "email_enviado": "Email Enviado",        # alias retrocompat
+    "contatado": "Contatado",
+    "email_enviado": "Contatado",            # alias retrocompat
     "email_aberto": "Email Aberto",
     "respondeu": "Respondeu",
     "reuniao": "Reuniao Agendada",
@@ -92,8 +93,8 @@ STAGE_MAP: Dict[str, str] = {
 # os valores respeitam companies_commercial_stage_chk.
 LABEL_TO_STAGE: Dict[str, str] = {
     "Prospectado": "prospectado",
-    "Email Enviado": "contatado",
-    "Email Aberto": "contatado",   # abriu, mas comercialmente ainda 'contatado'
+    "Contatado": "contatado",
+    "Email Aberto": "contatado",   # alias: se existir 'Email Aberto', vira 'contatado'
     "Respondeu": "respondeu",
     "Reuniao Agendada": "reuniao",
     "Proposta Enviada": "proposta",
