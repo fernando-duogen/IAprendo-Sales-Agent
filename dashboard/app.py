@@ -29,79 +29,17 @@ apply_theme()
 # =========================================================================
 # config/users.yaml e gitignored. Localmente vem do arquivo.
 # No Streamlit Cloud: copiar secao "auth" do users.yaml para Secrets (TOML).
-import yaml
-import streamlit_authenticator as stauth
+import yaml  # usado na persistencia da troca de senha (sidebar)
+from dashboard._auth import ensure_auth, AUTH_PATH as _AUTH_PATH
 
-_AUTH_PATH = ROOT / "config" / "users.yaml"
-
-
-def _to_mutable_dict(obj):
-    """Deep-copy de st.secrets (Mapping/AttrDict imutaveis) para dict mutavel.
-
-    streamlit_authenticator faz self.credentials['usernames'] = {...} (mutacao),
-    o que falha com TypeError em Secrets read-only. Esta funcao retorna estrutura
-    100% nativa (dict/list/scalar) preservando todos os valores.
-    """
-    if hasattr(obj, "items") and not isinstance(obj, dict):
-        return {k: _to_mutable_dict(v) for k, v in obj.items()}
-    if isinstance(obj, dict):
-        return {k: _to_mutable_dict(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_to_mutable_dict(x) for x in obj]
-    return obj
-
-
-_auth_config = None
-try:
-    if _AUTH_PATH.exists():
-        with _AUTH_PATH.open("r", encoding="utf-8") as _f:
-            _auth_config = yaml.safe_load(_f)
-    elif "auth" in st.secrets:
-        # Streamlit Cloud: secrets.toml com secao [auth] estruturada.
-        # IMPORTANTE: deep-copy obrigatorio porque st.secrets sao imutaveis e
-        # o streamlit_authenticator precisa mutar credentials['usernames'].
-        _auth_config = _to_mutable_dict(st.secrets["auth"])
-except Exception as _e:
-    st.error(f"Falha ao carregar config de autenticacao: {_e}")
-    st.stop()
-
-if not _auth_config:
-    st.error(
-        "Config de autenticacao nao encontrada. "
-        "Crie `config/users.yaml` (use `config/users.yaml.example` como template) "
-        "ou configure `st.secrets['auth']` no Streamlit Cloud."
-    )
-    st.stop()
-
-authenticator = stauth.Authenticate(
-    _auth_config["credentials"],
-    _auth_config["cookie"]["name"],
-    _auth_config["cookie"]["key"],
-    _auth_config["cookie"]["expiry_days"],
-)
-
-# Renderiza form de login (popula st.session_state automaticamente)
-try:
-    authenticator.login(location="main")
-except Exception as _e:
-    st.error(f"Erro no login: {_e}")
-    st.stop()
-
-if st.session_state.get("authentication_status") is False:
-    st.error("Usuario ou senha incorretos")
-    st.stop()
-elif st.session_state.get("authentication_status") is None:
-    st.warning("Faca login para acessar o IAprendo")
-    st.info(
-        "**Primeira vez?** Senhas iniciais foram entregues pelo administrador. "
-        "Recomendamos trocar pela sidebar apos o login."
-    )
-    st.stop()
-
-# A partir daqui o usuario esta autenticado
-_current_user = _auth_config["credentials"]["usernames"].get(
-    st.session_state.get("username", ""), {}
-)
+# Re-loga pelo COOKIE (manter logado) e renderiza o form so quando necessario.
+# Toda a logica (incl. re-login silencioso via cookie) esta em dashboard/_auth.py
+# e e reusada por TODAS as paginas (via _auth_gate.require_auth) — sem isto, F5
+# numa pagina ou reabrir o navegador pediria login de novo.
+_auth = ensure_auth(render_form=True)
+authenticator = _auth["authenticator"]
+_auth_config = _auth["config"]
+_current_user = _auth["user"]
 
 # Sidebar: identidade + logout + trocar senha
 with st.sidebar:

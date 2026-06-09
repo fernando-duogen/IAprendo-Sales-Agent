@@ -9,23 +9,14 @@ Usage (no topo de cada pagina, antes de qualquer outro import):
     from dashboard._auth_gate import require_auth
     require_auth()
 """
-import streamlit as st
-
-
 def require_auth():
-    """Bloqueia execucao se o usuario nao estiver autenticado.
+    """Garante autenticacao na pagina, RE-LOGANDO pelo cookie primeiro.
 
-    Verifica `st.session_state.authentication_status` que e populado pelo
-    streamlit-authenticator no app.py (Home). Se False ou None, mostra aviso
-    e link para a Home, e para a execucao da pagina.
+    Delega pro `ensure_auth` (dashboard/_auth.py), que chama
+    `authenticator.login(location="unrendered")` -> le o cookie e repopula a
+    sessao SEM formulario. Assim, F5 numa pagina ou reabrir o navegador mantem
+    o login (antes so olhava session_state, que zera nesses casos -> pedia senha).
+    Se nao houver cookie/sessao valida, mostra aviso + link e para a pagina.
     """
-    if st.session_state.get("authentication_status") is True:
-        return  # autenticado, segue normal
-
-    # Bloqueio
-    st.warning("Voce precisa fazer login para acessar esta pagina.")
-    try:
-        st.page_link("app.py", label="Ir para o login", icon=":material/login:")
-    except Exception:
-        st.markdown("[Ir para o login](/)")
-    st.stop()
+    from dashboard._auth import ensure_auth
+    ensure_auth(render_form=False)
