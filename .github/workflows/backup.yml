@@ -1,0 +1,36 @@
+name: Backup CRM (Supabase)
+
+# Backup diario das tabelas do CRM -> bucket privado 'backups' no Supabase Storage.
+# Pre-requisitos (1x):
+#   1. Criar no Supabase um bucket PRIVADO chamado 'backups' (Storage -> New bucket -> Public OFF)
+#   2. Adicionar nos Secrets do repo (Settings -> Secrets and variables -> Actions):
+#        SUPABASE_URL  = a mesma do .env local
+#        SUPABASE_KEY  = a service_role (mesma do .env local)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # ~03h BRT (06:00 UTC), diario
+  workflow_dispatch: {}    # permite rodar manual pela aba Actions
+
+permissions: {}            # nenhum acesso de escrita ao repo
+
+concurrency:
+  group: backup-crm
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar cliente supabase
+        run: pip install --quiet "supabase>=2.9.0"
+      - name: Rodar backup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/backup_crm.py
