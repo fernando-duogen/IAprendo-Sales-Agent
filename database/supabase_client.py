@@ -262,10 +262,18 @@ class Database:
         except Exception:
             return False
 
+    # Colunas numericas pelas quais o catalogo pode ser ordenado (ranking).
+    _CATALOG_SORTABLE = {
+        "total_matriculas", "matriculas_medio", "matriculas_fund_af",
+        "total_docentes", "qt_coordenadores",
+    }
+
     def search_mec_catalog(
         self,
         filters: Dict[str, Any],
-        limit: int = 200
+        limit: int = 200,
+        order_by: Optional[str] = None,
+        desc: bool = True,
     ) -> Dict[str, Any]:
         """Busca escolas no catalogo MEC (Supabase) via SQL com filtros.
 
@@ -310,6 +318,10 @@ class Database:
                 q = q.ilike('school_size', f'%{filters["porte"]}%')
             if filters.get('localizacao'):
                 q = q.ilike('localizacao', f'%{filters["localizacao"]}%')
+            # Ordenacao opcional (ranking/superlativo: "maior escola", "top N").
+            # Exclui NULLs na coluna ordenada pra o topo do ranking ser real.
+            if order_by in self._CATALOG_SORTABLE:
+                q = q.not_.is_(order_by, "null").order(order_by, desc=bool(desc))
             res = q.limit(limit).execute()
             rows = res.data or []
             total = res.count if getattr(res, 'count', None) is not None else len(rows)

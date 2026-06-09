@@ -507,11 +507,15 @@ TOOLS = [
     },
     {
         "name": "consulta_livre",
-        "description": "Executa uma consulta flexivel ao banco de dados para perguntas complexas que as outras ferramentas nao cobrem. Pode contar, agrupar, filtrar por qualquer campo. Use esta ferramenta quando nenhuma outra for adequada.",
+        "description": "Executa uma consulta flexivel ao banco para perguntas que as outras ferramentas nao cobrem: "
+                       "contar, filtrar por qualquer campo, ordenar (ranking), top-N. Inclui a base COMPLETA do MEC "
+                       "via tabela 'mec_catalog' (~185k escolas) — ex: 'quantas escolas tem +2000 alunos no RS' "
+                       "(filtro gt em total_matriculas + contar=true), 'top 10 maiores por total_matriculas' "
+                       "(ordenar+ordem=desc+limite=10). Use 'school_analytics' para metricas ENEM.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "tabela": {"type": "string", "description": "Tabela: companies, contacts, approval_queue, interactions, meetings, api_usage"},
+                "tabela": {"type": "string", "description": "Tabela: mec_catalog (base completa MEC, 185k - matriculas/docentes), school_analytics (ENEM), companies, contacts, approval_queue, interactions, meetings, api_usage, campaigns"},
                 "campos": {"type": "string", "description": "Campos para retornar (separados por virgula). Use * para todos."},
                 "filtros": {
                     "type": "array",
@@ -547,11 +551,12 @@ TOOLS = [
     },
     {
         "name": "buscar_escola_brasil",
-        "description": "Busca escolas na base COMPLETA do MEC com 212 mil escolas de todo o Brasil. "
-                       "Use esta ferramenta para encontrar QUALQUER escola do pais por qualquer combinacao "
-                       "de criterios: nome, cidade, estado, porte, niveis de ensino, tipo (publica/privada), "
-                       "localizacao (urbana/rural). Busca parcial por nome. "
-                       "Ideal quando o Fernando pergunta sobre uma escola especifica ou quer explorar escolas de uma regiao.",
+        "description": "Busca escolas na base COMPLETA do MEC com ~185 mil escolas de todo o Brasil. "
+                       "Use para encontrar QUALQUER escola do pais por qualquer combinacao de criterios: "
+                       "nome, cidade, estado, porte, niveis de ensino, tipo (publica/privada), localizacao. "
+                       "TAMBEM responde RANKING/SUPERLATIVO: para 'a maior/menor escola', 'top N por matriculas/"
+                       "docentes', use 'ordenar_por' + 'ordem' (ex: maior escola do Brasil = ordenar_por="
+                       "'total_matriculas', ordem='desc', limite=1). Busca parcial por nome.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -563,7 +568,9 @@ TOOLS = [
                 "tipo": {"type": "string", "description": "Tipo: 'Publica' ou 'Privada'"},
                 "dependencia": {"type": "string", "description": "Dependencia: 'Municipal', 'Estadual', 'Federal', 'Privada'"},
                 "localizacao": {"type": "string", "description": "Localizacao: 'Urbana' ou 'Rural'"},
-                "limite": {"type": "integer", "description": "Max resultados (default 100, max 1000). Se user pedir 'todas' ou 'lista completa', use 1000. Pra listas grandes (>200), prefira exportar_escolas_xlsx em vez de listar texto."}
+                "ordenar_por": {"type": "string", "description": "Ordena o resultado por uma metrica (ranking). Valores: 'total_matriculas', 'matriculas_medio', 'matriculas_fund_af', 'total_docentes', 'qt_coordenadores'. Escolas sem o dado sao excluidas do ranking."},
+                "ordem": {"type": "string", "description": "Direcao da ordenacao: 'desc' (maior->menor, default) ou 'asc' (menor->maior). So tem efeito com ordenar_por."},
+                "limite": {"type": "integer", "description": "Max resultados (default 100, max 1000). Para 'a maior/menor', use limite=1. Pra listas grandes (>200), prefira exportar_escolas_xlsx em vez de listar texto."}
             }
         }
     },
@@ -627,12 +634,12 @@ TOOLS = [
     },
     {
         "name": "agregar_estatisticas_escolas",
-        "description": "Agrega metricas quantitativas (matriculas, docentes, etc) sobre conjunto filtrado de escolas. SEMPRE retorna cobertura (quantas tem dado real vs estimado) + valor concreto + valor estimado pras sem dado. Use pra responder 'quantos alunos ao todo nas estaduais de POA', 'quantos docentes nas privadas do RS', etc. NUNCA invente numero — esta tool agrega o que existe e estima o resto, explicitando.",
+        "description": "Agrega metricas quantitativas (matriculas, docentes, etc) sobre a BASE COMPLETA do MEC (~185k escolas, mec_catalog), filtrada por regiao. SEMPRE retorna cobertura (quantas tem dado real vs estimado) + valor concreto + valor estimado pras sem dado. Use pra 'quantos alunos ao todo nas estaduais de POA', 'quantos docentes nas privadas do RS', etc. EXIGE ao menos 1 filtro (uf e/ou cidade). NUNCA invente numero — agrega o que existe e estima o resto, explicitando. (Para 'a MAIOR escola' use buscar_escola_brasil com ordenar_por; para contagem nacional sem filtro use consulta_livre.)",
         "input_schema": {
             "type": "object",
             "properties": {
-                "uf": {"type": "string", "description": "UF (ex: RS, SP). Opcional."},
-                "cidade": {"type": "string", "description": "Cidade. Opcional. Pode ser parcial (busca contains)."},
+                "uf": {"type": "string", "description": "UF (ex: RS, SP). Informe uf e/ou cidade (ao menos um e obrigatorio)."},
+                "cidade": {"type": "string", "description": "Cidade (busca parcial). Informe uf e/ou cidade (ao menos um e obrigatorio)."},
                 "admin_dependency": {"type": "string", "description": "Dependencia admin: Estadual, Municipal, Federal, Privada. Opcional."},
                 "metricas": {"type": "array", "items": {"type": "string"}, "description": "Lista de campos pra agregar. Default: ['total_matriculas', 'total_docentes']. Aceita tambem: matriculas_fund_af, matriculas_medio, qt_coordenadores, total_turmas."},
                 "estimar_faltantes": {"type": "boolean", "description": "Se true (default), pras escolas sem dado, estima usando media do grupo COM dado. Se false, retorna so soma do concreto + count das sem dado (sem estimar)."}
@@ -1775,7 +1782,9 @@ def _search_mec_catalog(params: Dict) -> Optional[Dict]:
         return None  # tabela vazia/inexistente -> fallback CSV
     try:
         limite = min(int(params.get("limite", 100) or 100), 1000)
-        out = db.search_mec_catalog(params, limit=limite)
+        _order_by = params.get("ordenar_por")
+        _desc = str(params.get("ordem", "desc")).lower() != "asc"
+        out = db.search_mec_catalog(params, limit=limite, order_by=_order_by, desc=_desc)
         rows = out.get("rows", [])
         total = out.get("total", len(rows))
         escolas = []
@@ -2106,16 +2115,28 @@ def _handle_agregar_estatisticas_escolas(params: Dict) -> str:
     Sempre retorna cobertura + concreto + estimativa transparente.
     """
     try:
-        # 1. Construir query com filtros
-        q = db.client.table("companies").select("*")
+        # 1. Construir query sobre a BASE COMPLETA do MEC (mec_catalog, ~185k),
+        #    nao o CRM (companies). Exige ao menos 1 filtro geografico — agregar
+        #    o Brasil inteiro de uma vez nao e suportado aqui (use consulta_livre
+        #    com contar=true pra contagens nacionais).
+        if not any(params.get(k) for k in ("uf", "cidade", "admin_dependency")):
+            return json.dumps({
+                "erro": "Informe ao menos um filtro: uf e/ou cidade (ou admin_dependency). "
+                        "Agregar a base inteira (185k) de uma vez nao e suportado aqui; "
+                        "para contagens nacionais use consulta_livre com contar=true.",
+            }, ensure_ascii=False)
+        _CAP = 20000
+        _cols = "total_matriculas,total_docentes,matriculas_medio,matriculas_fund_af,qt_coordenadores"
+        q = db.client.table("mec_catalog").select(_cols)
         if params.get("uf"):
-            q = q.eq("state", str(params["uf"]).upper())
+            q = q.eq("state", str(params["uf"]).upper()[:2])
         if params.get("cidade"):
-            q = q.ilike("city", f"%{params['cidade']}%")
+            q = q.ilike("city_norm", f"%{_normalize(params['cidade'])}%")
         if params.get("admin_dependency"):
             q = q.ilike("admin_dependency", f"%{params['admin_dependency']}%")
-        rows = q.limit(20000).execute().data or []
+        rows = q.limit(_CAP).execute().data or []
         total_escolas = len(rows)
+        truncado = total_escolas >= _CAP
         if total_escolas == 0:
             return json.dumps({
                 "filtros": {k: v for k, v in params.items() if v and k not in ("metricas", "estimar_faltantes")},
@@ -2182,7 +2203,13 @@ def _handle_agregar_estatisticas_escolas(params: Dict) -> str:
 
         return json.dumps({
             "filtros": {k: v for k, v in params.items() if v and k not in ("metricas", "estimar_faltantes")},
+            "fonte": "base_mec_completa (mec_catalog)",
             "total_escolas": total_escolas,
+            "truncado": truncado,
+            "aviso_truncado": (
+                f"Filtro retornou mais de {_CAP} escolas; o resultado foi limitado a {_CAP} "
+                "e a soma/estimativa e PARCIAL. Refine o filtro (ex: cidade especifica)."
+            ) if truncado else None,
             "metricas": resultado_metricas,
             "lembrete": (
                 "IMPORTANTE: ao responder, SEMPRE distinguir CONCRETO de ESTIMADO. "
@@ -6314,12 +6341,20 @@ def _handle_consulta_livre(params: Dict) -> str:
     if not tabela:
         return json.dumps({"erro": "Informe a tabela."})
 
-    tabelas_permitidas = {"companies", "contacts", "approval_queue", "interactions", "meetings", "api_usage", "campaigns"}
+    tabelas_permitidas = {"companies", "contacts", "approval_queue", "interactions",
+                          "meetings", "api_usage", "campaigns",
+                          "mec_catalog", "school_analytics"}
     if tabela not in tabelas_permitidas:
         return json.dumps({"erro": f"Tabela '{tabela}' nao permitida. Use: {', '.join(tabelas_permitidas)}"})
 
     campos = params.get("campos", "*")
-    query = db.client.table(tabela).select(campos, count="exact")
+    # count='exact' de uma tabela grande (185k) SEM filtro estoura o statement_timeout
+    # no Cloud. Com filtro, o subconjunto e pequeno -> exact (preciso) e rapido.
+    # Logo: estimated so em tabela grande sem filtro; exact no resto.
+    _big = tabela in ("mec_catalog", "school_analytics")
+    _has_filters = bool(params.get("filtros"))
+    _count_mode = "estimated" if (_big and not _has_filters) else "exact"
+    query = db.client.table(tabela).select(campos, count=_count_mode)
 
     # Aplicar filtros
     for filtro in (params.get("filtros") or []):
@@ -7938,7 +7973,22 @@ Quando o usuario perguntar metricas QUANTITATIVAS agregadas (quantos alunos, doc
 4. NUNCA invente numero sem qualificar a fonte. Se cobertura == 0%, diga "nao tenho dados".
 5. Pra perguntas tipo "quantos alunos nas escolas X", NAO responda so com subset que
    tem ENEM ou outro filtro restritivo — USE `agregar_estatisticas_escolas` que
-   considera TODAS as escolas filtradas e estima honestamente as faltantes.
+   agrega a BASE COMPLETA do MEC (~185k) filtrada e estima honestamente as faltantes.
+   (Essa tool exige ao menos 1 filtro: uf e/ou cidade. Para totais nacionais sem
+   filtro, use `consulta_livre` com tabela='mec_catalog' e contar=true.)
+
+== RANKING / SUPERLATIVO / TOP-N (base completa de ~185k escolas) ==
+Para "qual a MAIOR/MENOR escola", "top N por matriculas/docentes", "as 10 com mais alunos":
+- USE `buscar_escola_brasil` com `ordenar_por` + `ordem`. Ex: a maior escola do Brasil =
+  buscar_escola_brasil(ordenar_por='total_matriculas', ordem='desc', limite=1). Com filtro:
+  "maiores privadas de SP" = uf='SP', tipo='Privada', ordenar_por='total_matriculas',
+  ordem='desc', limite=10. Metricas: total_matriculas, matriculas_medio, matriculas_fund_af,
+  total_docentes, qt_coordenadores.
+- Para contagem por limiar ("quantas escolas tem +2000 alunos no RS") ou consultas que as
+  tools acima nao cobrem, USE `consulta_livre` com tabela='mec_catalog' (filtros gt/lt,
+  ordenar, contar=true). Ranking por ENEM: use as tools ENEM (analisar_dados_analytics).
+- VOCE CONSEGUE responder isso sobre as ~185k escolas — NAO diga que nao tem acesso. So
+  declare falta de dado se a metrica realmente nao existir pra aquelas escolas.
 
 Quando o usuario pedir ARQUIVO (excel, xlsx, baixar, exportar, planilha, csv):
 - USE `exportar_escolas_xlsx` com os filtros pedidos
