@@ -3789,10 +3789,11 @@ def _handle_registrar_proposta_enviada(params: Dict) -> str:
         except Exception as e:
             logger.debug(f"memory.remember skip: {e}")
 
-        # HubSpot (no-op se desabilitado)
+        # HubSpot (no-op se desabilitado) — passa a chave de commercial_stage;
+        # o label PT e resolvido via STAGE_MAP. Singleton reaproveita o pipeline.
         try:
-            from integrations.hubspot_sync import HubSpotSync
-            HubSpotSync().update_deal_stage(company_id, "Proposta Enviada")
+            from integrations.hubspot_sync import hubspot_sync
+            hubspot_sync.update_deal_stage(company_id, "proposta")
         except Exception as e:
             logger.debug(f"hubspot update_deal_stage skip: {e}")
 
@@ -3855,8 +3856,8 @@ def _handle_marcar_cliente_ganho(params: Dict) -> str:
             logger.debug(f"memory.remember skip: {e}")
 
         try:
-            from integrations.hubspot_sync import HubSpotSync
-            HubSpotSync().update_deal_stage(company_id, "Convertido")
+            from integrations.hubspot_sync import hubspot_sync
+            hubspot_sync.update_deal_stage(company_id, "cliente")
         except Exception as e:
             logger.debug(f"hubspot update_deal_stage skip: {e}")
 
@@ -3928,8 +3929,8 @@ def _handle_marcar_perdido(params: Dict) -> str:
             logger.debug(f"memory.remember skip: {e}")
 
         try:
-            from integrations.hubspot_sync import HubSpotSync
-            HubSpotSync().update_deal_stage(company_id, "Perdido")
+            from integrations.hubspot_sync import hubspot_sync
+            hubspot_sync.update_deal_stage(company_id, "perdido")
         except Exception as e:
             logger.debug(f"hubspot update_deal_stage skip: {e}")
 

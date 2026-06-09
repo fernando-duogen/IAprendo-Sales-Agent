@@ -22,7 +22,7 @@ from typing import Dict, Any, List, Optional
 from database.supabase_client import db
 from integrations.hubspot_client import hubspot_client
 from utils.logger import logger
-from utils.stage_sync import should_advance_commercial_stage
+from utils.stage_sync import should_advance_commercial_stage, LABEL_TO_STAGE
 
 
 # Campos do HubSpot que nao devem sobrescrever os do Supabase
@@ -33,43 +33,13 @@ PROTECTED_SUPABASE_FIELDS = {
 }
 
 # -----------------------------------------------------------------------------
-# Mapeamento reverso de stage: HubSpot -> commercial_stage do Supabase.
-#
-# Espelha o STAGE_MAP de integrations/hubspot_sync.py (commercial_stage -> label
-# do HubSpot). Se voce mexer la, mexa aqui. Todos os destinos respeitam a
-# constraint companies_commercial_stage_chk (prospectado/contatado/respondeu/
-# reuniao/proposta/cliente/perdido).
+# Resolucao de stage do HubSpot -> commercial_stage do Supabase.
 #
 # CUIDADO: a propriedade `dealstage` do HubSpot guarda o ID INTERNO do stage
 # (ex.: "appointmentscheduled" ou um id numerico em pipelines customizados),
-# NAO o label visivel. Por isso o resolver abaixo primeiro tenta traduzir
-# id -> label via o pipeline (reusando hubspot_sync), e so entao label ->
-# commercial_stage. As chaves aqui sao normalizadas (sem acento, minusculas).
-HUBSPOT_LABEL_TO_STAGE: Dict[str, str] = {
-    "prospectado": "prospectado",
-    "email enviado": "contatado",
-    "email aberto": "contatado",   # abriu, mas comercialmente ainda 'contatado'
-    "respondeu": "respondeu",
-    "reuniao agendada": "reuniao",
-    "proposta enviada": "proposta",
-    "convertido": "cliente",
-    "perdido": "perdido",
-}
-
-# Fallback: IDs internos do pipeline DEFAULT do HubSpot. create_deal() e
-# log_email_sent() em hubspot_sync.py tocam esse pipeline ("Appointment
-# Scheduled" / "Qualified To Buy"), entao deals podem viver la em vez do
-# pipeline customizado IAprendo. Best-effort, usado so se a traducao via
-# pipeline + labels customizados nao reconhecer o valor.
-DEFAULT_PIPELINE_STAGE_TO_STAGE: Dict[str, str] = {
-    "appointmentscheduled": "prospectado",
-    "qualifiedtobuy": "contatado",
-    "presentationscheduled": "reuniao",
-    "decisionmakerboughtin": "proposta",
-    "contractsent": "proposta",
-    "closedwon": "cliente",
-    "closedlost": "perdido",
-}
+# NAO o label visivel. Por isso o resolver primeiro tenta traduzir id -> label
+# via o pipeline (reusando hubspot_sync), e so entao label -> commercial_stage.
+# -----------------------------------------------------------------------------
 
 
 def _norm_stage_key(value: Optional[str]) -> str:
@@ -80,6 +50,29 @@ def _norm_stage_key(value: Optional[str]) -> str:
         c for c in unicodedata.normalize("NFD", s)
         if unicodedata.category(c) != "Mn"
     )
+
+
+# Indice normalizado (label HubSpot -> commercial_stage), derivado de
+# LABEL_TO_STAGE em utils/stage_sync.py — FONTE UNICA, compartilhada com o push.
+# Mudou um stage? Mexa so no STAGE_MAP/LABEL_TO_STAGE do stage_sync. Todos os
+# destinos respeitam companies_commercial_stage_chk.
+_LABEL_TO_STAGE_NORM: Dict[str, str] = {
+    _norm_stage_key(label): stage for label, stage in LABEL_TO_STAGE.items()
+}
+
+# Fallback por ID interno do stage (default do HubSpot). No free tier o unico
+# pipeline e o default, renomeado pros labels PT (scripts/setup_hubspot_properties.py),
+# mas os stage IDs continuam em ingles. Mantido 1:1 com o DEFAULT_STAGE_TO_PT do
+# setup. Usado so se a traducao id->label via pipeline nao resolver.
+DEFAULT_PIPELINE_STAGE_TO_STAGE: Dict[str, str] = {
+    "appointmentscheduled": "prospectado",
+    "qualifiedtobuy": "contatado",
+    "presentationscheduled": "respondeu",
+    "decisionmakerboughtin": "reuniao",
+    "contractsent": "proposta",
+    "closedwon": "cliente",
+    "closedlost": "perdido",
+}
 
 
 class HubSpotPull:
@@ -248,13 +241,13 @@ class HubSpotPull:
         key = _norm_stage_key(raw_stage)
 
         # 1) Valor ja eh um label customizado conhecido.
-        if key in HUBSPOT_LABEL_TO_STAGE:
-            return HUBSPOT_LABEL_TO_STAGE[key]
+        if key in _LABEL_TO_STAGE_NORM:
+            return _LABEL_TO_STAGE_NORM[key]
 
         # 2) Valor eh um stage ID -> resolver para label via pipeline.
         label = self._dealstage_id_to_label(raw_stage)
         if label:
-            mapped = HUBSPOT_LABEL_TO_STAGE.get(_norm_stage_key(label))
+            mapped = _LABEL_TO_STAGE_NORM.get(_norm_stage_key(label))
             if mapped:
                 return mapped
 

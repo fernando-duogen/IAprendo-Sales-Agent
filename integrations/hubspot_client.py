@@ -315,7 +315,8 @@ class HubSpotClient:
         try:
             result = self._retry(self._client.crm.pipelines.pipelines_api.get_all, object_type="deals")
             return [{"id": p.id, "label": p.label, "stages": [
-                {"id": s.id, "label": s.label, "display_order": s.display_order}
+                {"id": s.id, "label": s.label, "display_order": s.display_order,
+                 "metadata": getattr(s, "metadata", None)}
                 for s in p.stages
             ]} for p in result.results]
         except Exception as e:
@@ -347,6 +348,63 @@ class HubSpotClient:
         except Exception as e:
             logger.error("Erro ao criar pipeline", extra={"error": str(e), "label": label})
             return None
+
+    def update_pipeline_stage_label(self, pipeline_id: str, stage_id: str, label: str,
+                                    display_order: Optional[int] = None,
+                                    metadata: Optional[Dict[str, Any]] = None,
+                                    object_type: str = "deals") -> bool:
+        """Renomeia o label de um stage existente (PATCH). Usado pra alinhar o
+        unico pipeline (free tier nao permite criar outro) ao esquema PT.
+
+        Preserva metadata/ordem se fornecidos — CRITICO p/ closedwon/closedlost,
+        que carregam isClosed/probability; um patch sem metadata poderia zera-los.
+        """
+        if not self._enabled:
+            return False
+        try:
+            from hubspot.crm.pipelines import PipelineStagePatchInput
+            kwargs: Dict[str, Any] = {"label": label}
+            if display_order is not None:
+                kwargs["display_order"] = display_order
+            if metadata is not None:
+                kwargs["metadata"] = metadata
+            patch = PipelineStagePatchInput(**kwargs)
+            self._retry(
+                self._client.crm.pipelines.pipeline_stages_api.update,
+                object_type=object_type,
+                pipeline_id=pipeline_id,
+                stage_id=stage_id,
+                pipeline_stage_patch_input=patch,
+            )
+            logger.info("HubSpot Pipeline Stage renomeado",
+                extra={"pipeline_id": pipeline_id, "stage_id": stage_id, "label": label})
+            return True
+        except Exception as e:
+            logger.error("Erro ao renomear pipeline stage",
+                extra={"error": str(e), "stage_id": stage_id, "label": label})
+            return False
+
+    def update_deal_pipeline_label(self, pipeline_id: str, label: str,
+                                   object_type: str = "deals") -> bool:
+        """Renomeia o label de um pipeline de deals existente (best-effort)."""
+        if not self._enabled:
+            return False
+        try:
+            from hubspot.crm.pipelines import PipelinePatchInput
+            patch = PipelinePatchInput(label=label)
+            self._retry(
+                self._client.crm.pipelines.pipelines_api.update,
+                object_type=object_type,
+                pipeline_id=pipeline_id,
+                pipeline_patch_input=patch,
+            )
+            logger.info("HubSpot Pipeline renomeado",
+                extra={"pipeline_id": pipeline_id, "label": label})
+            return True
+        except Exception as e:
+            logger.error("Erro ao renomear pipeline",
+                extra={"error": str(e), "label": label})
+            return False
 
     # =========================================================================
     # Properties (Custom Fields)

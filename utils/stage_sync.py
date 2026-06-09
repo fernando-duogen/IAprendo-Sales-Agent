@@ -55,6 +55,52 @@ COMMERCIAL_STAGE_ORDER: List[str] = [
     "prospectado", "contatado", "respondeu", "reuniao", "proposta", "cliente",
 ]
 
+# =============================================================================
+# Mapeamento commercial_stage <-> label do stage no pipeline HubSpot
+# ("IAprendo Sales", labels em PT). FONTE UNICA: o push (integrations/
+# hubspot_sync.py) e o pull (integrations/hubspot_pull.py) leem daqui, entao
+# os dois sentidos nunca divergem.
+#
+# IMPORTANTE: o pipeline de Deals no HubSpot precisa ter EXATAMENTE esses 8
+# stage labels criados (ver scripts/setup_hubspot_properties.py):
+#   Prospectado, Email Enviado, Email Aberto, Respondeu, Reuniao Agendada,
+#   Proposta Enviada, Convertido, Perdido
+# =============================================================================
+
+# commercial_stage -> label do stage no HubSpot (push).
+# Inclui aliases retrocompat (email_enviado, reuniao_agendada, convertido) que
+# apontam pro mesmo label do canonico — uteis na entrada, ignorados no inverso.
+STAGE_MAP: Dict[str, str] = {
+    # Stages automaticos (inferidos pelo sistema)
+    "prospectado": "Prospectado",
+    "contatado": "Email Enviado",
+    "email_enviado": "Email Enviado",        # alias retrocompat
+    "email_aberto": "Email Aberto",
+    "respondeu": "Respondeu",
+    "reuniao": "Reuniao Agendada",
+    "reuniao_agendada": "Reuniao Agendada",  # alias retrocompat
+    # Stages manuais (setados via IAlex)
+    "proposta": "Proposta Enviada",
+    "cliente": "Convertido",
+    "convertido": "Convertido",              # alias retrocompat
+    "perdido": "Perdido",
+}
+
+# label do HubSpot -> commercial_stage CANONICO (pull). Inverso de STAGE_MAP,
+# mas NAO uma inversao cega: 'Email Aberto' -> 'contatado' (nao existe
+# commercial_stage 'email_aberto'), e os aliases colapsam pro canonico. Todos
+# os valores respeitam companies_commercial_stage_chk.
+LABEL_TO_STAGE: Dict[str, str] = {
+    "Prospectado": "prospectado",
+    "Email Enviado": "contatado",
+    "Email Aberto": "contatado",   # abriu, mas comercialmente ainda 'contatado'
+    "Respondeu": "respondeu",
+    "Reuniao Agendada": "reuniao",
+    "Proposta Enviada": "proposta",
+    "Convertido": "cliente",
+    "Perdido": "perdido",
+}
+
 
 def coherent_status_for_stage(
     current_status: Optional[str],

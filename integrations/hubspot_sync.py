@@ -17,31 +17,17 @@ from database.supabase_client import db
 from utils.logger import logger
 
 
-# Mapeamento de status IAprendo -> stage label do HubSpot
+# Mapeamento commercial_stage -> stage label do HubSpot.
 #
-# IMPORTANTE: Quando voce ativar HubSpot, o pipeline de Deals no HubSpot
-# precisa ter EXATAMENTE esses stage labels criados:
-#   Prospectado, Email Enviado, Email Aberto, Respondeu, Reuniao Agendada,
-#   Proposta Enviada, Convertido, Perdido
+# FONTE UNICA: STAGE_MAP vive em utils/stage_sync.py (compartilhado com o pull
+# via LABEL_TO_STAGE, pra os dois sentidos nao divergirem). Re-exportado aqui
+# pra nao quebrar `from integrations.hubspot_sync import STAGE_MAP`.
 #
-# Se algum nao existir, update_deal_stage() loga warning e nao faz nada
-# (seguro, mas sincronia nao acontece). Use o HubSpot UI (Settings > Objects >
-# Deals > Pipelines) pra criar os stages faltantes antes de ativar.
-STAGE_MAP = {
-    # Stages automaticos (inferidos pelo sistema)
-    "prospectado": "Prospectado",
-    "contatado": "Email Enviado",
-    "email_enviado": "Email Enviado",      # alias retrocompat
-    "email_aberto": "Email Aberto",
-    "respondeu": "Respondeu",
-    "reuniao": "Reuniao Agendada",
-    "reuniao_agendada": "Reuniao Agendada",  # alias retrocompat
-    # Stages manuais (setados por Fernando via IAlex)
-    "proposta": "Proposta Enviada",
-    "cliente": "Convertido",
-    "convertido": "Convertido",             # alias retrocompat
-    "perdido": "Perdido",
-}
+# IMPORTANTE: o pipeline de Deals no HubSpot precisa ter EXATAMENTE os 8 stage
+# labels do STAGE_MAP. Se algum nao existir, update_deal_stage() loga warning e
+# nao faz nada (seguro, mas a sincronia nao acontece). Rode
+# scripts/setup_hubspot_properties.py pra criar/reconciliar os stages.
+from utils.stage_sync import STAGE_MAP
 
 
 class HubSpotSync:
@@ -58,18 +44,40 @@ class HubSpotSync:
     # =========================================================================
 
     def _ensure_pipeline(self) -> bool:
-        """Carrega IDs do pipeline e stages. Retorna True se encontrado."""
+        """Carrega IDs do pipeline e stages. Retorna True se encontrado.
+
+        Seleciona o pipeline pelo nome configurado (settings.HUBSPOT_PIPELINE_NAME,
+        default "IAprendo Sales") — NAO o primeiro da lista, que pode ser o
+        pipeline default do HubSpot (labels em ingles: Appointment Scheduled...)
+        e quebrar todo o mapeamento de stages. Cai pro primeiro so como ultimo
+        recurso, com aviso.
+        """
         if self._pipeline_id and self._stage_ids:
             return True
         pipelines = hubspot_client.get_deal_pipelines()
         if not pipelines:
             logger.warning("Nenhum pipeline encontrado no HubSpot")
             return False
-        # Usa o primeiro pipeline disponivel (geralmente "default")
-        p = pipelines[0]
+        if len(pipelines) == 1:
+            # Free tier: existe so 1 pipeline de deals — use-o direto, sem
+            # depender de nome/acento.
+            p = pipelines[0]
+        else:
+            from config.settings import settings
+            wanted = getattr(settings, "HUBSPOT_PIPELINE_NAME", "IAprendo Sales")
+            p = next((x for x in pipelines if x.get("label") == wanted), None)
+            if p is None:
+                p = pipelines[0]
+                logger.warning(
+                    "Pipeline configurado nao encontrado no HubSpot; usando o primeiro",
+                    extra={"wanted": wanted, "fallback": p.get("label")},
+                )
         self._pipeline_id = p["id"]
         self._stage_ids = {s["label"]: s["id"] for s in p["stages"]}
-        logger.info("Pipeline carregado", extra={"pipeline_id": self._pipeline_id, "stages": len(self._stage_ids)})
+        logger.info(
+            "Pipeline carregado",
+            extra={"pipeline_id": self._pipeline_id, "pipeline_label": p.get("label"), "stages": len(self._stage_ids)},
+        )
         return True
 
     # =========================================================================
@@ -274,7 +282,9 @@ class HubSpotSync:
         if existing_deal_id:
             return {"success": True, "hubspot_deal_id": existing_deal_id}
 
-        first_stage_id = self._stage_ids.get("Appointment Scheduled", "")
+        # Novo deal entra no 1o stage do funil ("Prospectado"), via STAGE_MAP —
+        # NAO "Appointment Scheduled" (label do pipeline default, inexistente aqui).
+        first_stage_id = self._stage_ids.get(STAGE_MAP["prospectado"], "")
         props = {
             "dealname": f"IAprendo - {school_name}",
             "pipeline": self._pipeline_id,
@@ -290,8 +300,14 @@ class HubSpotSync:
 
         return {"success": bool(hs_deal_id), "hubspot_deal_id": hs_deal_id}
 
-    def update_deal_stage(self, company_id: str, stage_label: str) -> bool:
-        """Atualiza stage de um Deal existente. Busca deal_id no Supabase."""
+    def update_deal_stage(self, company_id: str, stage: str) -> bool:
+        """Atualiza o stage de um Deal existente (busca deal_id no Supabase).
+
+        `stage` e a chave de commercial_stage (prospectado..cliente/perdido),
+        igual ao db.set_commercial_stage — a label do HubSpot e resolvida via
+        STAGE_MAP (fonte unica). Se vier um label do HubSpot direto, passa
+        adiante (retrocompat).
+        """
         if not self.enabled or not self._ensure_pipeline():
             return False
         try:
@@ -300,9 +316,10 @@ class HubSpotSync:
             if not deal_id:
                 logger.warning("Company sem hubspot_deal_id", extra={"company_id": company_id})
                 return False
+            stage_label = STAGE_MAP.get(stage, stage)
             stage_id = self._stage_ids.get(stage_label)
             if not stage_id:
-                logger.warning("Stage nao encontrado", extra={"stage_label": stage_label})
+                logger.warning("Stage nao encontrado", extra={"stage": stage, "stage_label": stage_label})
                 return False
             return hubspot_client.update_deal(deal_id, {"dealstage": stage_id})
         except Exception as e:
@@ -364,9 +381,10 @@ class HubSpotSync:
             deal_id=hs_deal_id,
         )
 
-        # Atualizar deal stage para "Email Enviado" (Qualified To Buy no pipeline default)
+        # Atualizar deal stage para "Email Enviado" via STAGE_MAP — antes usava
+        # "Qualified To Buy" (label do pipeline default, inexistente aqui).
         if hs_deal_id and self._ensure_pipeline():
-            stage_id = self._stage_ids.get("Qualified To Buy")
+            stage_id = self._stage_ids.get(STAGE_MAP["contatado"])
             if stage_id:
                 hubspot_client.update_deal(hs_deal_id, {"dealstage": stage_id})
 

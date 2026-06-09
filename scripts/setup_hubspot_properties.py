@@ -102,35 +102,70 @@ def setup() -> None:
     print()
 
     # -----------------------------------------------------------------
-    # 5. Pipeline de Deals
+    # 5. Pipeline de Deals — esquema PT no UNICO pipeline (free tier = 1)
     # -----------------------------------------------------------------
-    print("5. Configurando pipeline de Deals...")
+    print("5. Configurando pipeline de Deals (esquema PT)...")
     from config.settings import settings
     pipeline_name = getattr(settings, "HUBSPOT_PIPELINE_NAME", "IAprendo Sales")
 
-    # Verificar se ja existe
+    # O free tier do HubSpot permite SO 1 pipeline de deals ("You have reached
+    # your limit of 1 deal pipelines"), entao NAO criamos um "IAprendo Sales"
+    # separado: renomeamos o pipeline default + seus 7 stages pro esquema PT,
+    # casando por STAGE ID (estavel, independe de label/locale). Os labels
+    # resultantes batem 1:1 com STAGE_MAP/LABEL_TO_STAGE (utils/stage_sync.py).
+    # Idempotente: roda quantas vezes quiser.
+    DEFAULT_STAGE_TO_PT = {
+        "appointmentscheduled":  "Prospectado",
+        "qualifiedtobuy":        "Email Enviado",
+        "presentationscheduled": "Respondeu",
+        "decisionmakerboughtin": "Reuniao Agendada",
+        "contractsent":          "Proposta Enviada",
+        "closedwon":             "Convertido",
+        "closedlost":            "Perdido",
+    }
+
     pipelines = hubspot_client.get_deal_pipelines()
-    existing = next((p for p in pipelines if p["label"] == pipeline_name), None)
-    if existing:
-        print(f"   Pipeline '{pipeline_name}' ja existe (ID: {existing['id']})")
-        print("   Stages:")
-        for s in sorted(existing["stages"], key=lambda x: x["display_order"]):
-            print(f"     {s['display_order']}. {s['label']} (ID: {s['id']})")
+    if not pipelines:
+        print("   Nenhum pipeline de deals encontrado — nada a configurar.")
     else:
-        stages = [
-            {"label": "Prospectado", "display_order": 0, "probability": 0.1},
-            {"label": "Email Enviado", "display_order": 1, "probability": 0.2},
-            {"label": "Email Aberto", "display_order": 2, "probability": 0.3},
-            {"label": "Respondeu", "display_order": 3, "probability": 0.5},
-            {"label": "Reuniao Agendada", "display_order": 4, "probability": 0.7},
-            {"label": "Convertido", "display_order": 5, "probability": 1.0},
-            {"label": "Perdido", "display_order": 6, "probability": 0.0},
-        ]
-        pipeline_id = hubspot_client.create_deal_pipeline(pipeline_name, stages)
-        if pipeline_id:
-            print(f"   Pipeline '{pipeline_name}' criado (ID: {pipeline_id})")
-        else:
-            print(f"   FALHA ao criar pipeline '{pipeline_name}'")
+        # Alvo: por nome configurado, senao o unico/primeiro.
+        target = next((p for p in pipelines if p["label"] == pipeline_name), None) or pipelines[0]
+        pid = target["id"]
+        print(f"   Pipeline alvo: '{target['label']}' (ID: {pid})")
+
+        # Renomear o pipeline pro nome configurado (best-effort, cosmetico).
+        if target["label"] != pipeline_name:
+            ok = hubspot_client.update_deal_pipeline_label(pid, pipeline_name)
+            print(f"   Renomear pipeline -> '{pipeline_name}': {'OK' if ok else 'NAO PERMITIDO/SKIP'}")
+
+        # Renomear stages pro esquema PT (por stage ID). Preserva display_order e
+        # metadata (isClosed/probability dos closed stages).
+        renamed = 0
+        unknown = []
+        for s in sorted(target["stages"], key=lambda x: x["display_order"]):
+            pt = DEFAULT_STAGE_TO_PT.get(s["id"])
+            if pt is None:
+                unknown.append((s["id"], s["label"]))
+                continue
+            if s["label"] == pt:
+                continue  # ja PT (idempotente)
+            ok = hubspot_client.update_pipeline_stage_label(
+                pid, s["id"], pt, display_order=s["display_order"], metadata=s.get("metadata"),
+            )
+            print(f"     {s['label']!r} -> {pt!r}: {'OK' if ok else 'FALHOU'}")
+            if ok:
+                renamed += 1
+        if renamed == 0:
+            print("   Stages ja no esquema PT (nada a renomear).")
+        if unknown:
+            # Pipeline nao-default (stage IDs fora do mapa) — nao mexer por ID.
+            print(f"   {len(unknown)} stage(s) fora do mapa default (ignorados): {unknown}")
+
+        # Estado final
+        final = next((p for p in hubspot_client.get_deal_pipelines() if p["id"] == pid), target)
+        print("   Stages atuais:")
+        for s in sorted(final["stages"], key=lambda x: x["display_order"]):
+            print(f"     {s['display_order']}. {s['label']} (ID: {s['id']})")
     print()
 
     # -----------------------------------------------------------------

@@ -4,7 +4,13 @@ Logica central da consistencia (fonte unica de verdade). Pura, sem DB.
 """
 import pytest
 
-from utils.stage_sync import coherent_status_for_stage, infer_stage
+from utils.stage_sync import (
+    coherent_status_for_stage,
+    infer_stage,
+    STAGE_MAP,
+    LABEL_TO_STAGE,
+    COMMERCIAL_STAGE_ORDER,
+)
 
 # commercial_stage_rank / should_advance_commercial_stage podem nao existir ainda
 # (sincronizacao externa do estagio — ex: pull do HubSpot). Os testes desses
@@ -99,3 +105,37 @@ class TestShouldAdvanceCommercialStage:
     ])
     def test(self, cur, inc, expected):
         assert should_advance_commercial_stage(cur, inc) == expected
+
+
+class TestStageLabelMaps:
+    """STAGE_MAP (push) e LABEL_TO_STAGE (pull) sao a fonte unica do mapeamento
+    commercial_stage <-> label do HubSpot. Travam os dois sentidos pra nao
+    divergirem (era o risco do espelho manual que existia no hubspot_pull)."""
+
+    # commercial_stage validos: funil linear + terminal 'perdido'.
+    CANONICAL = COMMERCIAL_STAGE_ORDER + ["perdido"]
+
+    def test_todo_stage_canonico_tem_label(self):
+        for stage in self.CANONICAL:
+            assert stage in STAGE_MAP, f"{stage} sem label em STAGE_MAP"
+
+    def test_roundtrip_canonico(self):
+        # commercial_stage -> label -> commercial_stage volta no mesmo canonico.
+        for stage in self.CANONICAL:
+            label = STAGE_MAP[stage]
+            assert LABEL_TO_STAGE[label] == stage, (
+                f"round-trip quebrou: {stage} -> {label} -> {LABEL_TO_STAGE.get(label)}"
+            )
+
+    def test_email_aberto_colapsa_em_contatado(self):
+        # 'Email Aberto' nao tem commercial_stage proprio -> 'contatado'.
+        assert LABEL_TO_STAGE["Email Aberto"] == "contatado"
+
+    def test_todo_label_do_stage_map_tem_inverso(self):
+        for label in set(STAGE_MAP.values()):
+            assert label in LABEL_TO_STAGE, f"label '{label}' sem inverso em LABEL_TO_STAGE"
+
+    def test_inverso_so_aponta_pra_stage_valido(self):
+        validos = set(self.CANONICAL)
+        for label, stage in LABEL_TO_STAGE.items():
+            assert stage in validos, f"'{label}' -> '{stage}' fora do dominio valido"
