@@ -57,6 +57,10 @@ class IALexScheduler:
         # Auto-healing (F6 Fase 3A) — a cada 30 min, apos urgency
         # Detecta problemas e tenta remediar (restart bridge, notifica Fernando)
         schedule.every(30).minutes.do(self._auto_heal_system)
+        # Activity engine (redesign v2 F1) — agenda do time: varredor de
+        # auto-resolucao + criacao pelas regras (docs/SPEC_AGENDA_METAS.md).
+        # Idempotente por dedupe_key; tambem rodara no load da Home (F2).
+        schedule.every(30).minutes.do(self._run_activity_engine)
         # Retreino semanal do modelo preditivo (domingo 03:00)
         schedule.every().sunday.at("03:00").do(self._retrain_predictive_model)
 
@@ -498,6 +502,13 @@ class IALexScheduler:
             brain = Brain()
             briefing = brain.get_morning_briefing()
 
+            # v2 F1: o digest ABRE com a agenda do dia (SPEC §2/§6).
+            agenda_section = ""
+            try:
+                agenda_section = self._agenda_digest_section()
+            except Exception:
+                pass
+
             # F2: adicionar contagem de urgencia ao briefing
             urgency_line = ""
             try:
@@ -534,11 +545,54 @@ class IALexScheduler:
             except Exception:
                 pass
 
-            if briefing:
-                full_msg = f"\u2600\ufe0f *Bom dia, Fernando!*\n\n{briefing}{urgency_line}{digest_section}"
+            if briefing or agenda_section:
+                full_msg = (f"\u2600\ufe0f *Bom dia, Fernando!*\n\n{agenda_section}"
+                            f"{briefing}{urgency_line}{digest_section}")
                 self._send_to_owner(full_msg)
         except Exception as e:
             logger.error(f"Erro no briefing matinal: {e}")
+
+    def _agenda_digest_section(self) -> str:
+        """Bloco de agenda que abre o digest (SPEC \u00a72): atividades de hoje,
+        atrasadas e prioridade 1 + aviso de sobrecarga (>12)."""
+        try:
+            from workflows.activity_engine import now_utc, parse_ts, to_brt
+            from database.supabase_client import db
+            import os as _os
+            owner = _os.getenv("IALEX_OWNER_USERNAME", "fernando")
+            now = now_utc()
+            today = to_brt(now).date()
+            acts = db.list_activities(owner=owner, status=["open"], limit=100)
+            late, today_n, prio1 = 0, 0, 0
+            for a in acts:
+                due = parse_ts(a.get("due_at"))
+                if not due:
+                    continue
+                if due < now:
+                    late += 1
+                if to_brt(due).date() == today:
+                    today_n += 1
+                if a.get("priority") == 1 and (due < now or to_brt(due).date() == today):
+                    prio1 += 1
+            if not acts:
+                return ""
+            line = (f"\U0001f4cb *Sua agenda:* {today_n} atividades hoje"
+                    + (f" ({late} atrasadas" + (f", {prio1} prioridade maxima)" if prio1 else ")") if late or prio1 else ""))
+            if today_n > 12:
+                line += "\n\u26a0\ufe0f Dia cheio \u2014 ataque so as de prioridade 1."
+            return line + "\n\n"
+        except Exception:
+            return ""
+
+    def _run_activity_engine(self):
+        """Roda o motor da agenda (v2 F1) \u2014 varredor + regras. Idempotente."""
+        try:
+            from workflows.activity_engine import run_engine
+            summary = run_engine()
+            if summary.get("created") or summary.get("swept"):
+                logger.info("activity_engine via scheduler", extra=summary)
+        except Exception as e:
+            logger.error(f"Erro no activity engine: {e}")
 
     def _midday_check(self):
         """Check rapido ao meio-dia."""
@@ -613,6 +667,12 @@ class IALexScheduler:
             # Nao logar se for erro normal (tabela sem coluna, etc)
             if "column" not in str(e).lower():
                 logger.error(f"Erro ao verificar replies: {e}")
+        # v2 F1: resposta de lead e o gatilho mais valioso — roda o engine ja
+        # (latencia de 15min pra atividade "Responder" nascer; SPEC §1.3 R1).
+        try:
+            self._run_activity_engine()
+        except Exception:
+            pass
 
     def _hubspot_pull(self):
         """Puxa mudancas do HubSpot a cada 15 min (sincronizacao reversa)."""
