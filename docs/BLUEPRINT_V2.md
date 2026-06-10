@@ -3,11 +3,11 @@
 > Redesign da plataforma IAprendo Sales Agent: de 11 paginas organizadas pelo
 > fluxo tecnico dos dados para 8 espacos organizados pelo dia do vendedor.
 >
-> **Status**: PROPOSTA v1.2 — para validacao com o time antes de qualquer codigo.
+> **Status**: PROPOSTA v1.3 — para validacao com o time antes de qualquer codigo.
 > **Data**: 2026-06-10 (v1.1: feedback do dono + 3 auditorias adversariais —
 > 12 jornadas de uso simulado + paridade v1->v2 · v1.2: impressoes do dono sobre
-> os mockups — navegacao p/ ficha, filtros de completude, seletor de colunas,
-> modelos visiveis)
+> os mockups · v1.3: auditoria final — paridade tecnica nao-UI 100% fechada
+> (Apendice A) + aderencia a praticas de vendas e gestao, ver §14)
 > **Base**: tag `v1-prod` | **Branch de trabalho**: `redesign-v2`
 > **Mockups navegaveis**: `docs/mockups/index.html` (abra no navegador)
 > **Teste com o time**: `docs/mockups/TESTE_NOVATO.md` (roteiro de 15 min)
@@ -43,6 +43,21 @@ Sintomas medidos:
 3. **Agenda de atividades compartilhada + Metas na primeira onda** — a agenda e o
    coracao da nova Home; metas dao a visao do gestor.
 4. **Blueprint validado antes de codar** (este documento + mockups).
+
+### 2.1 ICP e foco (v1.3 — perfil de cliente ideal)
+
+A maquina so funciona com FOCO. O perfil que priorizamos (calibra as
+Recomendadas e orienta o time):
+
+- **Escola privada**, 400–1000 alunos-alvo (Fund. anos finais e/ou Medio) —
+  ticket R$ 3,2k–8k MRR; abaixo de ~100 alunos o ticket nao paga o ciclo.
+- **Dores que viram argumento**: gap ENEM vs escolas semelhantes (>15-20 pts em
+  alguma area = dor clara); matriculas crescentes (orcamento em expansao);
+  sem coordenador de tecnologia (decisao centralizada na direcao = ciclo curto).
+- **Regioes de atuacao atual**: RS e CE (expansao por adjacencia, nao pulverizar).
+- **Evitar**: publicas (ciclo longo/licitacao), escolas sem Fund AF/Medio.
+- **Disciplina de foco**: teto suave de ~15 leads "em conversa" por vendedor
+  (indicador na Home; configuravel em Ajustes). Fechar antes de abrir.
 
 ## 3. Principios organizadores
 
@@ -127,9 +142,16 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
 - **Minha Agenda** (nova tabela `activities`): atividades em *Atrasadas / Hoje /
   Amanha*, cada linha com ✓ Concluir, ⏰ Adiar, → Abrir escola (1 clique).
 - **3 numeros do dia**: atividades de hoje · mensagens aguardando aprovacao ·
-  respostas novas (cada um clicavel, leva direto a acao).
+  respostas novas — com **alerta de SLA** (v1.3): "3 respostas novas (1 esperando
+  ha 5h)" em vermelho. Calculados AO VIVO no load (nao dependem do scheduler).
+- **"Em conversa: N"** (v1.3 — disciplina de foco): contador de leads ativos do
+  vendedor com aviso suave acima do teto (§2.1).
 - **Lateral**: leads "🔴 Agir agora", reunioes das proximas 24h, anel de progresso
   da minha meta do mes.
+- **Toggle Equipe (gestor, v1.3)** vira o painel de gestao semanal: resumo da
+  semana por vendedor (atividades, reunioes) · fila de aprovacao envelhecendo ·
+  respostas atrasadas do time · leads parados >7d por dono (reatribuir 1-clique)
+  · leads sem dono. O weekly report do IAlex (sexta 17:30) segue o mesmo formato.
 - **Busca global acionavel**: resultado abre a escola (hoje a busca so informa).
 - **Estado vazio (novato)**: checklist guiado de 4 passos com botoes que navegam
   ja filtrado. Gestor (admin) tem toggle "Minha agenda / Equipe".
@@ -193,8 +215,10 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
   Enviadas / Recebidas / Follow-ups*) e de canal (*Todos / E-mail / WhatsApp*).
   Estados deixam de ficar escondidos em sub-abas.
 - **"Aprovar e proxima"** para revisar em serie (botao verde grande). No painel de
-  revisao: **agendar envio** (opcional, data/hora) e **"Enviar como"** (admin) —
-  explicitados na v1.1 (existiam na v1, ficavam implicitos no blueprint).
+  revisao: **agendar envio** (opcional, data/hora; default = proximo ciclo em
+  horario comercial) e **"Enviar como"** (admin) — explicitados na v1.1. v1.3:
+  se o destinatario e **e-mail deduzido ⚠️**, o painel avisa e oferece "enviar so
+  pros confirmados" (protege a reputacao de envio).
 - **Recebidas**: respostas com "Responder com IA" (**com escolha de canal**:
   e-mail ou WhatsApp) e "Marcar tratada".
 - **Aba "Modelos"** (ex-Templates; v1.2 — aba VISIVEL, nao link discreto): lista
@@ -211,6 +235,14 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
 - Colunas = etapa comercial (A contatar / Contatada / Respondeu / Reuniao /
   Proposta / Cliente / Perdida), cards ricos: escola, dono, valor, dias parado,
   prioridade. Mover via popover "Mover para ▸" (drag-drop e spike opcional).
+- **Higiene de pipeline (v1.3)**:
+  - **Motivo de perda OBRIGATORIO** ao mover pra Perdida (select padronizado:
+    Sem orcamento / Momento errado / Concorrente / Sem resposta / Inatividade /
+    Outro + texto) — alimenta a analise de perdas em Resultados.
+  - **Proximo passo obrigatorio**: mover pra "Em reuniao" exige data da reuniao;
+    pra "Proposta enviada" exige valor.
+  - **"Auto-rot" suave**: negocio parado >15d gera atividade "Decidir: retomar ou
+    arquivar {escola}?" — NUNCA move sozinho (socios decidem; o sistema cobra).
 - **Aba Reunioes**: proximas + passadas sem resultado ("Registrar resultado").
 - Soma de valores propostos/fechados por coluna.
 
@@ -220,16 +252,42 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
   admin ve grade time × metrica e define metas em dialog.
 - **Funil** (ex-Analytics) com header de "numeros do pipeline" (contagem por
   etapa) e **filtros por cidade / tipo / porte** (v1.1 — gestor decide onde focar:
-  "que segmento converte melhor?"). **Envios** (ex-Comunicacao>Metricas — o UNICO
-  lugar de metricas de envio), **Explorar dados** (ex-Inteligencia>Explorador,
-  admin, para analises ad-hoc alem da desagregacao simples do Funil).
+  "que segmento converte melhor?"). v1.3: o funil mostra **TAXAS de conversao
+  entre etapas** (Contatada→Respondeu 25%...), nao so contagens, + analise de
+  motivos de perda.
+- **Envios** (o UNICO lugar de metricas de envio) — v1.3: **5 cards grandes**
+  (enviados · abertura % · resposta % · reunioes · clientes) + **tempo medio de
+  1a resposta** (SLA) + **comparativo por canal** (e-mail vs WhatsApp — a taxa
+  superior do WhatsApp aparece e auto-educa o time) + engajamento do Relatorio
+  da escola (pageviews). **Explorar dados** (admin, analises ad-hoc).
+
+### Os 7 indicadores oficiais (v1.3 — com benchmark cold outreach B2B BR)
+
+| # | Indicador | Tipo | Benchmark/alvo |
+|---|---|---|---|
+| 1 | E-mails enviados | atividade | 40-60/vendedor/semana |
+| 2 | Taxa de abertura | qualidade | 40-50% |
+| 3 | Taxa de resposta | engajamento | 5-15% (o KPI-diamante) |
+| 4 | Reunioes realizadas | conversao | 0,5-1/vendedor/semana |
+| 5 | Propostas enviadas | pipeline | 1-2/vendedor/semana |
+| 6 | Clientes novos | resultado | 1-2/vendedor/mes |
+| 7 | Receita (MRR fechado) | negocio | soma dos deals (R$ 2-8k cada) |
+
+Regra: estes 7 sao OS numeros do negocio (Hoje + Resultados); todo o resto e
+detalhe sob demanda. Diagnostico tecnico (APIs, health) fica em Ajustes, nunca
+em Resultados. **Calibracao de metas** (v1.3): ao definir meta, o dialog mostra o
+contexto historico ("ultimos 30d: X e-mails → Y respostas (Z%) → W reunioes; para
+{meta}, ~N e-mails") — sugestao baseada no funil real, nao numero arbitrario.
 
 ### ⚙️ AJUSTES (admin-only) e ❓ AJUDA
 
 - Ajustes = Configuracoes + config de follow-ups + matriz de templates + (v1.1)
   **aba Diagnostico** (uso de APIs/creditos dos ultimos 7 dias + health check +
-  build stamp — orfaos da Home v1 resolvidos), **ticket por aluno** (da Receita
-  potencial §3.2) e deducao de e-mails (modo avancado). Oculta para nao-admin.
+  build stamp + (v1.3) bounce rate/deliverability + ultima sync HubSpot + status
+  do webhook Brevo + info do modelo preditivo), **ticket por aluno** (§3.2),
+  deducao de e-mails (modo avancado) e (v1.3) **limites de envio por canal**
+  (anti-bloqueio: default e-mail 50/dia, WhatsApp 30/dia por vendedor) + teto de
+  "em conversa" (§2.1). Oculta para nao-admin.
 - Ajuda = Manual REESCRITO no vocabulario novo: 12 tabs → 5 ("Comece aqui",
   "O dia a dia", "Trabalhando com o IAlex", "Entendendo a Prioridade", "FAQ")
   + tour de 1o login + botoes "?" contextuais nas paginas.
@@ -270,6 +328,11 @@ como 4 verdades concorrentes.
 
 Todo badge de Prioridade abre um popover com o "porque" em linguagem natural
 (3 mini-barras: Engajamento / Potencial / Avaliacao da IA).
+
+**Thresholds (v1.3 — ja sao os da v1, agora documentados e centralizados no
+labels.py)**: Agir agora 80+ · Quente 60-79 · Morno 40-59 · Frio 0-39.
+O "score dinamico" e o modelo preditivo ML (retreinado aos domingos) sao
+**insumos** do urgency — nao existem como scores proprios na UI.
 
 **Regra de ouro**: *"Prioridade responde 'quem eu atendo primeiro hoje'.
 Potencial responde 'quem eu prospecto primeiro'. Nunca os dois na mesma tabela."*
@@ -342,6 +405,14 @@ ALTERs: meetings + owner_username, created_by.
 | meeting_outcome | reuniao passada sem resultado | "Registrar resultado" |
 | hot_no_contact | lead quente sem contato ha 5d | "Retomar {escola} — esfriando" (prio 1) |
 | approvals_aging | fila pendente > 24h | "Aprovar {n} mensagens paradas" (1/dia) |
+| **sequencia_toques** (v1.3) | cadencia estruturada com break-up | toque 1 enviado → sem resposta em 3d → "Toque 2 — {escola}" em **canal alternado** (e-mail→WhatsApp) → sem resposta em 7d → toque 3 → sem resposta → "Decidir: arquivar {escola} com motivo?" (break-up — decisao humana, nunca auto-arquiva) |
+
+Campo `sequence_step` em activities (sem tabela nova). **Precedencia** (v1.3):
+o comportamento (hot_click/curious_open/silent_open/revival, do follow_up_manager)
+decide O QUE e QUANDO acelerar; a matriz de situacao decide O MODELO base; a IA
+personaliza; o humano aprova. **Consolidacao com o scheduler** (v1.3): os jobs
+existentes (check_replies 15min, outlook poll, briefings) viram ALIMENTADORES do
+engine — chamam as regras; o dedupe_key garante que nada duplica.
 
 Idempotente (dedupe_key). Roda no scheduler local (30min) **e** no load da Home
 (cache 5min) — cobre o caso do PC local desligado. Teto anti-spam: 25 atividades
@@ -391,12 +462,12 @@ Streamlit Cloud apontando pro branch; **main (v1) intocada ate a F7**.
 
 | Fase | Escopo | Aceitacao |
 |---|---|---|
-| **F1 Fundacoes** | Migration activities/goals (additive); activity_engine + job; **16 tools IAlex** (agenda+metas+gestao+inteligencia+extensoes); labels.py; componentes theme.py + `school_filters()` + `export_button()`; config ticket por aluno | v1 segue identica; engine roda 2x sem duplicar; "IAlex, minha agenda" e "como estou na meta?" respondem |
-| **F2 Hoje+Metas** | Home nova (agenda+numeros+busca acionavel+checklist novato); Resultados c/ Metas + Funil com filtros cidade/tipo/porte | concluir/adiar em ≤2 cliques; meta com progresso real; Home <3s |
-| **F3 Mensagens** | Fila unica + chips; Recebidas (responder c/ canal); Modelos c/ canal; agendar envio + "Enviar como" no painel; labels em TODOS os badges | aprovar→enviar ponta-a-ponta no preview; zero status hardcoded |
+| **F1 Fundacoes** | Migration activities/goals (additive, incl. `sequence_step`); activity_engine (7 regras, incl. sequencia de toques) + consolidacao com scheduler; **16 tools IAlex**; labels.py (incl. thresholds); componentes theme.py + `school_filters()` + `export_button()`; config ticket por aluno | v1 segue identica; engine roda 2x sem duplicar; "IAlex, minha agenda" e "como estou na meta?" respondem |
+| **F2 Hoje+Metas** | Home nova (agenda+numeros AO VIVO c/ alerta SLA+busca acionavel+checklist novato+"Em conversa: N"); toggle Equipe = painel do gestor (semana+fila envelhecendo+parados+sem dono); Resultados c/ Metas (dialog com calibracao historica) + Funil com TAXAS e filtros cidade/tipo/porte + Envios 5 cards c/ tempo de 1a resposta e canal | concluir/adiar em ≤2 cliques; meta com progresso real e contexto; Home <3s |
+| **F3 Mensagens** | Fila unica + chips; Recebidas (responder c/ canal); Modelos c/ canal (+3o modelo WhatsApp follow-up); agendar envio + "Enviar como" + aviso de e-mail deduzido no painel; labels em TODOS os badges | aprovar→enviar ponta-a-ponta no preview; zero status hardcoded |
 | **F4 Prospectar+Escolas** | Recomendadas + wizards (resultado da busca com export) + toggle Mapa + Sinais de compra; detalhe 7→4 c/ Argumentos de venda + Relatorio no header; Pessoas (⚠️ deduzidos, filtros proprios); filtros padrao (incl. Completude) + Potencial R$/mes + export em todas as listas; **seletor de colunas (4 presets) + export_utils modo completo**; nome-link + coluna ↗ p/ a ficha | novato importa e gera 1a mensagem so pelo wizard; ENEM em exatamente 2 lugares; "planilha" em 1 clique de qualquer lista (incl. TODAS as colunas); abrir a ficha a partir da lista em 1 clique; checklist de paridade da fase 100% |
-| **F5 Negocios** | Kanban pagina propria + popover mover + valores + Reunioes; **transferencia de leads em lote (admin)**; spike drag-drop | mover card reflete no IAlex; reuniao sem resultado gera atividade; redistribuir N leads em <2min |
-| **F6 Polimento+Ajuda** | Estados vazios; Ajuda 5 tabs; tour 1o login; Ajustes admin-only (+Diagnostico: APIs/health/build) | **teste do novato**: pessoa externa completa o roteiro sem ajuda, <15min |
+| **F5 Negocios** | Kanban pagina propria + popover mover + valores + Reunioes; **higiene**: motivo de perda obrigatorio + proximo passo obrigatorio + auto-rot suave; **transferencia de leads em lote (admin)**; spike drag-drop | mover card reflete no IAlex; mover pra Perdida sem motivo e impossivel; reuniao sem resultado gera atividade; redistribuir N leads em <2min |
+| **F6 Polimento+Ajuda** | Estados vazios; Ajuda 5 tabs (incl. ICP e thresholds); tour 1o login; Ajustes admin-only (+Diagnostico: APIs/health/build/bounce/syncs + limites de envio por canal) | **teste do novato**: pessoa externa completa o roteiro sem ajuda, <15min |
 | **F7 Cutover** | Merge na main; stubs de redirect 30 dias; Manual+prompt IAlex atualizados; treinamento 1h | time opera 1 semana sem abrir a v1; rollback = revert; pytest verde; checklist de paridade (apendice A) 100% |
 
 ## 10. Riscos e mitigacoes (top 8)
@@ -474,7 +545,55 @@ inacabadas da v1 · morning_panel (absorvido pela agenda) · metricas duplicadas
 Comunicacao (movidas para Resultados) · edicao inline AgGrid-style (substituida
 por dialogs — mais estavel no Streamlit).
 
-## 14. Criterios de sucesso da v2
+**Clarificacoes da auditoria tecnica final (v1.3 — paridade nao-UI, 100% fechada)**
+| Item da v1 | Decisao na v2 |
+|---|---|
+| Jobs midday_check / end_of_day (IAlex) | Continuam como notificacoes WhatsApp; numeros da Home sao AO VIVO (independem de job) |
+| _update_dynamic_scores | Insumo do urgency (§5) — nao e score proprio |
+| _auto_heal_system | Continua background; status em Ajustes>Diagnostico |
+| Modelo preditivo ML + retrain domingo | MANTIDO como sub-score do urgency; info em Ajustes>Diagnostico |
+| opr_pageviews (views do Relatorio) | Vira interacao em Conversas ("abriu o relatorio 2x") + mini-KPI em Envios |
+| Campanhas (listar/criar) | Mantidas via IAlex (sem UI dedicada) |
+| Memorias do IAlex | Permanecem GLOBAIS (memoria de negocio compartilhada entre socios); gestao em Ajustes |
+| Kanban: dados | COMPARTILHADOS com filtro por dono (transparencia entre socios; sem RLS por vendedor) |
+| follow_up_manager × matriz de modelos | Precedencia: comportamento decide o que/quando; situacao decide o modelo; IA personaliza; humano aprova |
+| Fila unica × hierarquia de follow-ups | UI flat; backend preserva follow_up_number/parent_id (sem mudanca de schema) |
+| activity_engine × scheduler | Jobs viram alimentadores do engine (dedupe_key evita duplicacao) |
+| Thresholds de Prioridade | Documentados (§5) e centralizados no labels.py |
+| Webhooks/syncs | "Ultima sync HubSpot" + "status webhook Brevo" em Ajustes>Diagnostico |
+
+## 14. Auditoria de aderencia a praticas de vendas e gestao (v1.3, 2026-06-10)
+
+Duas lentes de consultoria avaliaram o desenho. Scorecard e decisoes:
+
+**Lente EXECUCAO DE VENDAS** (padroes de sales engagement B2B)
+| Dimensao | Veredicto | Decisao incorporada |
+|---|---|---|
+| Cadencia multicanal | era PARCIAL | regra "sequencia de toques" c/ canal alternado + break-up humano (§7) |
+| SLA de resposta | era PARCIAL | KPI tempo de 1a resposta + alerta na Home + visao do gestor (§4) |
+| Qualificacao/foco | era PARCIAL | ICP documentado (§2.1) + "Em conversa: N" c/ teto suave |
+| Higiene de pipeline | era GAP | motivo de perda obrigatorio + proximo passo obrigatorio + auto-rot suave (§4 Negocios) |
+| Personalizacao em escala | ADERENTE | (diferencial: argumentos por dados + aprovacao humana) + aviso de e-mail deduzido e limites de envio |
+| Multicanal (WhatsApp) | era PARCIAL | 3o modelo Whats + canal alternado na cadencia + KPI por canal + limite anti-bloqueio |
+| Pos-venda | fora de escopo | backlog F8+ (decisao consciente: primeiro vender) |
+
+**Lente GESTAO COMERCIAL**
+| Dimensao | Veredicto | Decisao incorporada |
+|---|---|---|
+| Metas leading×lagging | era PARCIAL | calibracao historica no dialog de metas (§4 Resultados) |
+| Rituais | ADERENTE | toggle Equipe = painel semanal do gestor; weekly report alinhado |
+| Forecast | — | deliberadamente MINIMO (dias-parado colorido); sem probabilidade/forecast formal |
+| Visibilidade s/ microgestao | ADERENTE | leads sem dono + parados >7d visiveis c/ reatribuir 1-clique |
+| Indicadores | era PARCIAL | 7 KPIs oficiais com benchmark (§4 Resultados); funil com taxas |
+| Capacidade/gargalo | ADERENTE | fila de aprovacao envelhecendo + reunioes da semana no painel do gestor |
+| Adocao | ADERENTE | tour 1o login + teste do novato + papeis documentados |
+
+**Recusados de proposito** (proporcionalidade — 3 socios, produto early):
+tiering A/B/C formal (Potencial ★ ja cumpre; evitar 5o sistema de score) ·
+forecast probabilistico · fila compartilhada de respostas (toggle Equipe cobre) ·
+automacao de reatribuicao (socios decidem juntos) · pos-venda/renovacao (F8+).
+
+## 15. Criterios de sucesso da v2
 
 1. Um vendedor novo executa o ciclo (achar escola → aprovar mensagem → registrar
    contato → concluir atividade) **sozinho, sem treinamento, em <15 minutos**.
