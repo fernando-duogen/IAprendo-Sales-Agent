@@ -3,9 +3,11 @@
 > Redesign da plataforma IAprendo Sales Agent: de 11 paginas organizadas pelo
 > fluxo tecnico dos dados para 8 espacos organizados pelo dia do vendedor.
 >
-> **Status**: PROPOSTA v1.1 — para validacao com o time antes de qualquer codigo.
-> **Data**: 2026-06-10 (v1.1: incorpora feedback do dono + 3 auditorias adversariais
-> — 12 jornadas de uso simulado + auditoria de paridade v1->v2 sobre as 11 paginas)
+> **Status**: PROPOSTA v1.2 — para validacao com o time antes de qualquer codigo.
+> **Data**: 2026-06-10 (v1.1: feedback do dono + 3 auditorias adversariais —
+> 12 jornadas de uso simulado + paridade v1->v2 · v1.2: impressoes do dono sobre
+> os mockups — navegacao p/ ficha, filtros de completude, seletor de colunas,
+> modelos visiveis)
 > **Base**: tag `v1-prod` | **Branch de trabalho**: `redesign-v2`
 > **Mockups navegaveis**: `docs/mockups/index.html` (abra no navegador)
 > **Teste com o time**: `docs/mockups/TESTE_NOVATO.md` (roteiro de 15 min)
@@ -62,10 +64,37 @@ Escolas, e o export) oferece o MESMO conjunto padrao:
 | **Faixa de alunos** | **range numerico (ex: 400–1000)** — nao apenas porte fixo |
 | Etapa | pill (Nova ... Cliente) — so em listas do CRM |
 | Prioridade / Dono | so em listas do CRM |
+| **Completude** (v1.2) | Contatos: Todos/Com/**Sem** · E-mail: Todos/Com/Sem · WhatsApp: Todos/Com/Sem · Telefone: Todos/Com/Sem — herdados dos "filtros de preparo" da v1, reescritos afirmativos ("escolas sem contatos" = Contatos: Sem) |
 
 Implementacao: componente unico `school_filters()` (futuro `dashboard/filters.py`)
 usado por todas as paginas — fim da reimplementacao por pagina (raiz dos bugs de
 filtro da v1).
+
+A aba **Pessoas** tem o proprio conjunto: filtro por escola (autocomplete —
+"escolher uma escola e ver os contatos dela"), busca livre (nome/cargo/e-mail),
+papel (decide/influencia/apoio) e com/sem e-mail. Cross-navegacao: em Pessoas, a
+escola do contato linka a ficha; na ficha, a aba Pessoas ja mostra so os daquela
+escola.
+
+### 3.3 Seletor de colunas + export completo (v1.2 — ideia do dono)
+
+As colunas default das tabelas sao otimizadas (enxutas), mas o usuario pode ver
+**tudo o que temos** da escola: popover **"Colunas ▾"** ao lado do Exportar em
+toda lista, com 4 presets — **★ Essencial** (default) · **Comercial** (etapa,
+prioridade, potencial R$, dono, valores) · **Censo & ENEM** (matriculas por
+nivel, docentes, tech, medias) · **Tudo** (~40 campos) — + checklist individual
+com nomes amigaveis (labels.py). O **export respeita as colunas visiveis** e ha
+a opcao "Exportar TUDO (todas as colunas)" — o export atual e curado
+(utils/export_utils.py seleciona colunas "relevantes"); o modo completo e
+extensao da F4. Preferencia de colunas lembrada por usuario.
+
+### 3.4 Navegacao para a ficha da escola (v1.2 — regra explicita)
+
+**O nome da escola e SEMPRE um link para a ficha** — na lista de Escolas, no
+resultado da busca do Prospectar, nas Recomendadas, nos cards do kanban, na
+busca global da Home e nas atividades da agenda. Na tabela de Escolas, alem do
+nome-link (azul, sublinha no hover), ha a coluna de acao **"↗ Abrir"** como
+primeira acao da linha. (Streamlit: selecao de linha + LinkColumn, na F4.)
 
 ### 3.2 Receita potencial — "Potencial R$/mes" (v1.1 — NOVO)
 
@@ -168,9 +197,13 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
   explicitados na v1.1 (existiam na v1, ficavam implicitos no blueprint).
 - **Recebidas**: respostas com "Responder com IA" (**com escolha de canal**:
   e-mail ou WhatsApp) e "Marcar tratada".
-- **Aba "Modelos"** (ex-Templates) com banner permanente:
-  *"Modelos sao a base que a IA personaliza por escola. Voce sempre revisa antes de sair."*
-  Modelos tem **canal** (e-mail / WhatsApp) — fim da aba WhatsApp separada.
+- **Aba "Modelos"** (ex-Templates; v1.2 — aba VISIVEL, nao link discreto): lista
+  dos modelos com chips de **situacao-alvo** (a matriz da selecao automatica:
+  nominal/generico × com/sem dados ENEM) e **canal** (e-mail / WhatsApp — fim da
+  aba WhatsApp separada), modelo padrao ★, botao "Novo modelo". Banner permanente:
+  *"A IA escolhe o modelo pela situacao da escola e personaliza por dados — voce
+  sempre revisa antes de sair."* A matriz fina da selecao automatica (situacao →
+  modelo) e config de admin e fica em Ajustes.
 - Metricas de envio SAEM daqui → Resultados (fim da triplicacao).
 
 ### 💼 NEGOCIOS (kanban comercial promovido a pagina propria)
@@ -361,7 +394,7 @@ Streamlit Cloud apontando pro branch; **main (v1) intocada ate a F7**.
 | **F1 Fundacoes** | Migration activities/goals (additive); activity_engine + job; **16 tools IAlex** (agenda+metas+gestao+inteligencia+extensoes); labels.py; componentes theme.py + `school_filters()` + `export_button()`; config ticket por aluno | v1 segue identica; engine roda 2x sem duplicar; "IAlex, minha agenda" e "como estou na meta?" respondem |
 | **F2 Hoje+Metas** | Home nova (agenda+numeros+busca acionavel+checklist novato); Resultados c/ Metas + Funil com filtros cidade/tipo/porte | concluir/adiar em ≤2 cliques; meta com progresso real; Home <3s |
 | **F3 Mensagens** | Fila unica + chips; Recebidas (responder c/ canal); Modelos c/ canal; agendar envio + "Enviar como" no painel; labels em TODOS os badges | aprovar→enviar ponta-a-ponta no preview; zero status hardcoded |
-| **F4 Prospectar+Escolas** | Recomendadas + wizards (resultado da busca com export) + toggle Mapa + Sinais de compra; detalhe 7→4 c/ Argumentos de venda + Relatorio no header; Pessoas (⚠️ deduzidos); filtros padrao + Potencial R$/mes + export em todas as listas | novato importa e gera 1a mensagem so pelo wizard; ENEM em exatamente 2 lugares; "planilha" em 1 clique de qualquer lista; checklist de paridade da fase 100% |
+| **F4 Prospectar+Escolas** | Recomendadas + wizards (resultado da busca com export) + toggle Mapa + Sinais de compra; detalhe 7→4 c/ Argumentos de venda + Relatorio no header; Pessoas (⚠️ deduzidos, filtros proprios); filtros padrao (incl. Completude) + Potencial R$/mes + export em todas as listas; **seletor de colunas (4 presets) + export_utils modo completo**; nome-link + coluna ↗ p/ a ficha | novato importa e gera 1a mensagem so pelo wizard; ENEM em exatamente 2 lugares; "planilha" em 1 clique de qualquer lista (incl. TODAS as colunas); abrir a ficha a partir da lista em 1 clique; checklist de paridade da fase 100% |
 | **F5 Negocios** | Kanban pagina propria + popover mover + valores + Reunioes; **transferencia de leads em lote (admin)**; spike drag-drop | mover card reflete no IAlex; reuniao sem resultado gera atividade; redistribuir N leads em <2min |
 | **F6 Polimento+Ajuda** | Estados vazios; Ajuda 5 tabs; tour 1o login; Ajustes admin-only (+Diagnostico: APIs/health/build) | **teste do novato**: pessoa externa completa o roteiro sem ajuda, <15min |
 | **F7 Cutover** | Merge na main; stubs de redirect 30 dias; Manual+prompt IAlex atualizados; treinamento 1h | time opera 1 semana sem abrir a v1; rollback = revert; pytest verde; checklist de paridade (apendice A) 100% |

@@ -38,55 +38,74 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7F
 .p-agir{color:#C62828}.p-quente{color:#E65100}.p-morno{color:#F9A825}.p-frio{color:#90A4AE}
 </style>
 <style>
-/* ===== CSS específico: Escolas ===== */
-.tabs{display:flex;gap:8px;margin-bottom:16px}
-.filters{padding:14px 18px;margin-bottom:12px}
-.f-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+/* ===== CSS específico — Escolas v2.2 ===== */
+.tabs-row{display:flex;gap:8px;margin-bottom:14px}
+
+/* Barra de filtros */
+.filterbar{padding:14px 18px;margin-bottom:10px;position:relative}
+.f-row{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
 .f-row + .f-row{margin-top:10px;padding-top:10px;border-top:1px dashed #EEF2F7}
-.f-field{display:flex;flex-direction:column;gap:3px}
-.f-field label{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
-.f-field select{border:1px solid #CBD5E1;border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#334155;min-width:110px}
-.f-check{display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;white-space:nowrap}
-.f-check input{accent-color:#1976D2;width:15px;height:15px}
-.f-range{display:flex;align-items:center;gap:6px;font-size:13px;color:#334155}
-.f-range input{width:64px;border:1px solid #CBD5E1;border-radius:8px;padding:6px 8px;font-size:13px;color:#334155}
-.f-spacer{flex:1}
-.f-caption{font-size:12.5px;color:#64748B;margin-top:10px}
-.f-caption b{color:#1565C0}
-/* barra de ação em lote */
-.bulkbar{display:flex;align-items:center;gap:10px;background:#E3F2FD;border:1px solid #BBDEFB;border-radius:12px;padding:9px 16px;margin-bottom:12px;font-size:13px;color:#1565C0;font-weight:600}
-.bulkbar .clear{margin-left:4px;color:#64748B;font-weight:400;font-size:12.5px;text-decoration:underline;cursor:pointer}
-.pop-wrap{position:relative;display:inline-block}
-.popover{position:absolute;top:calc(100% + 6px);left:0;background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 8px 24px rgba(16,24,40,.14);min-width:200px;padding:6px;z-index:20}
-.popover .ph{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;padding:6px 10px 4px}
-.popover .pi{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;font-size:13px;color:#334155;cursor:pointer;font-weight:500}
-.popover .pi:hover{background:#F1F5F9}
-.popover .pnote{font-size:11px;color:#94A3B8;padding:6px 10px 4px;border-top:1px solid #EEF2F7;margin-top:4px;font-weight:400}
-/* avatares */
-.av-s{width:26px;height:26px;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0}
-.av-f{background:#1976D2}.av-l{background:#8E24AA}.av-f2{background:#00897B}
-/* tabela */
-.tbl-card{padding:0;overflow:hidden}
-table.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
-.tbl th{text-align:left;font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;padding:11px 14px;border-bottom:1px solid #E3E8EF;background:#FAFCFF;white-space:nowrap}
-.tbl td{padding:11px 14px;border-bottom:1px solid #F1F5F9;vertical-align:middle;white-space:nowrap}
-.tbl tr:last-child td{border-bottom:none}
-.tbl tbody tr:hover{background:#F8FAFD}
-.tbl tbody tr.sel{background:#EAF3FE}
-.tbl tbody tr.sel:hover{background:#E3EFFC}
-.tbl input[type=checkbox]{accent-color:#1976D2;width:15px;height:15px;cursor:pointer}
-.school{font-weight:700;color:#1A202C;cursor:pointer}
-.school.lnk{color:#1565C0;text-decoration:underline;text-underline-offset:3px}
+.fgroup{display:flex;flex-direction:column;gap:3px}
+.fgroup label{font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.4px}
+.fgroup select,.fgroup input[type=number]{border:1px solid #CBD5E1;border-radius:8px;padding:6px 8px;font-size:13px;background:#fff;color:#1A202C;font-family:inherit}
+.fgroup select:focus,.fgroup input:focus{outline:2px solid #90CAF9}
+.fgroup.small select{padding:4px 6px;font-size:12.5px}
+.f-check{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#334155;padding-bottom:7px}
+.f-check input{width:15px;height:15px;accent-color:#1976D2}
+.range-wrap{display:flex;align-items:center;gap:6px}
+.range-wrap input{width:74px}
+.range-wrap .dash{color:#94A3B8;padding-bottom:2px}
+.f-actions{margin-left:auto;display:flex;gap:8px;align-items:flex-end}
+.f-caption{font-size:11.5px;color:#94A3B8;align-self:center;padding-bottom:6px}
+
+/* Popovers */
+.pop-wrap{position:relative}
+.popover{position:absolute;top:calc(100% + 8px);right:0;width:300px;background:#fff;border:1px solid #D7DEE8;border-radius:12px;box-shadow:0 12px 32px rgba(16,24,40,.22);padding:14px 16px;z-index:50;text-align:left}
+.popover h4{font-size:12px;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.pop-radio,.pop-check{display:flex;align-items:center;gap:8px;font-size:13px;color:#334155;padding:4px 2px;cursor:pointer}
+.pop-radio input{accent-color:#1976D2}
+.pop-check input{width:14px;height:14px;accent-color:#1976D2}
+.pop-div{border:none;border-top:1px solid #EEF2F7;margin:10px 0}
+.pop-note{font-size:11.5px;color:#94A3B8;margin-top:10px;line-height:1.45}
+.pop-link{display:inline-block;margin-top:6px;font-size:12.5px;color:#1565C0;font-weight:600;text-decoration:none}
+.pop-link:hover{text-decoration:underline}
+.pop-menu{width:200px;padding:8px}
+.pop-menu .pm-item{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;font-size:13px;color:#334155;cursor:pointer}
+.pop-menu .pm-item:hover{background:#F1F5F9}
+.pop-menu .pm-item .mini-av{width:22px;height:22px;border-radius:50%;color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.pop-menu.left{right:auto;left:0}
+
+/* Sub-caption + barra de lote */
+.count-line{font-size:13px;color:#64748B;margin:14px 2px 8px}
+.count-line b{color:#1A202C}
+.bulkbar{display:flex;align-items:center;gap:10px;background:#E3F2FD;border:1px solid #BBDEFB;border-radius:10px;padding:8px 14px;margin-bottom:10px;font-size:13px;color:#1565C0;font-weight:600}
+.bulkbar .clear-link{margin-left:auto;font-size:12.5px;color:#64748B;font-weight:500;text-decoration:underline;cursor:pointer}
+
+/* Tabela */
+.table-card{padding:0;overflow:visible}
+table.lista{width:100%;border-collapse:collapse;font-size:13px}
+table.lista th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#64748B;padding:11px 12px;border-bottom:1px solid #E3E8EF;background:#FAFCFE;white-space:nowrap}
+table.lista td{padding:10px 12px;border-bottom:1px solid #F1F5F9;vertical-align:middle;white-space:nowrap}
+table.lista tr:last-child td{border-bottom:none}
+table.lista tr:hover td{background:#F8FAFC}
+table.lista tr.sel td{background:#EAF3FD}
+table.lista input[type=checkbox]{width:15px;height:15px;accent-color:#1976D2;cursor:pointer}
+.open-ic{color:#1976D2;text-decoration:none;font-size:14px;font-weight:700}
+.open-ic:hover{color:#0D47A1}
+a.school-link{color:#1565C0;font-weight:600;text-decoration:none}
+a.school-link:hover{text-decoration:underline}
 .money{font-weight:700;color:#2E7D32}
 .muted{color:#94A3B8}
-.last{color:#64748B;font-size:12.5px}
-/* rodapé */
-.foot-notes{margin-top:14px;font-size:12px;color:#94A3B8;line-height:1.7}
-/* aba pessoas (placeholder) */
-.tab-panel{display:none}
-.tab-panel.active{display:block}
-.pessoas-ph{text-align:center;padding:48px 24px;color:#64748B;font-size:14px}
-.pessoas-ph .big{font-size:34px;margin-bottom:8px}
+.av-dono{width:26px;height:26px;border-radius:50%;color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;cursor:default}
+.av-f{background:#1976D2}.av-l{background:#8E24AA}.av-fe{background:#2E7D32}
+.av-none{background:#fff;color:#94A3B8;border:1.5px dashed #CBD5E1;cursor:pointer}
+
+/* Rodapé */
+.foot-notes{margin-top:14px;font-size:12.5px;color:#94A3B8;line-height:1.7}
+
+/* Aba Pessoas (placeholder) */
+.pessoas-ph{text-align:center;padding:46px 20px;color:#64748B;font-size:14px}
+.pessoas-ph .big{font-size:34px;margin-bottom:10px}
 </style>
 </head>
 <body>
@@ -116,192 +135,261 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
   <div class="page-sub">A memória do time: toda escola, sua etapa e quem cuida dela</div>
 
   <!-- Tabs -->
-  <div class="tabs">
-    <span class="chip on" id="tab-lista" onclick="showTab('lista')">Lista</span>
-    <span class="chip" id="tab-pessoas" onclick="showTab('pessoas')">👥 Pessoas (249)</span>
+  <div class="tabs-row">
+    <span class="chip on" id="tabLista" onclick="showTab('lista')">Lista</span>
+    <span class="chip" id="tabPessoas" onclick="showTab('pessoas')">👥 Pessoas (249)</span>
   </div>
 
-  <!-- ====== TAB: LISTA ====== -->
-  <div class="tab-panel active" id="panel-lista">
+  <div id="viewLista">
 
-    <!-- Barra de filtros padrão -->
-    <div class="card filters">
-      <div class="f-row">
-        <div class="f-field"><label>UF</label><select><option>RS ▾</option></select></div>
-        <div class="f-field"><label>Cidade</label><select><option>Todas ▾</option></select></div>
-        <div class="f-field"><label>Tipo</label><select><option>Privada ▾</option></select></div>
-        <div class="f-field"><label>Etapa</label><select><option>Todas ▾</option></select></div>
-        <div class="f-field"><label>Prioridade</label><select><option>Todas ▾</option></select></div>
-        <div class="f-field"><label>Dono</label><select><option>Todos ▾</option></select></div>
+  <!-- Barra de filtros -->
+  <div class="card filterbar">
+    <div class="f-row">
+      <div class="fgroup"><label>UF</label><select><option>RS</option><option>CE</option><option>Todas</option></select></div>
+      <div class="fgroup"><label>Cidade</label><select><option>Todas</option><option>Porto Alegre</option><option>Caxias do Sul</option></select></div>
+      <div class="fgroup"><label>Tipo</label><select><option>Privada</option><option>Pública</option><option>Todas</option></select></div>
+      <div class="fgroup"><label>Etapa</label><select><option>Todas</option><option>Nova</option><option>Avaliada</option><option>Pronta para contato</option><option>Contatada</option><option>Respondeu</option><option>Em reunião</option><option>Proposta enviada</option><option>Cliente</option><option>Perdida</option></select></div>
+      <div class="fgroup"><label>Prioridade</label><select><option>Todas</option><option>🔴 Agir agora</option><option>🟠 Quente</option><option>🟡 Morno</option><option>⚪ Frio</option></select></div>
+      <div class="fgroup"><label>Dono</label><select><option>Todos</option><option>Fernando</option><option>Lizianne</option><option>Felipe</option><option>Sem dono</option></select></div>
+      <div class="f-actions">
+        <div class="pop-wrap">
+          <button class="btn btn-o" onclick="togglePop('popColunas')">🧩 Colunas ▾</button>
+          <!-- Popover Colunas (aberto) -->
+          <div class="popover" id="popColunas">
+            <h4>Conjuntos prontos</h4>
+            <label class="pop-radio"><input type="radio" name="preset" checked> ★ Essencial</label>
+            <label class="pop-radio"><input type="radio" name="preset"> Comercial</label>
+            <label class="pop-radio"><input type="radio" name="preset"> Censo &amp; ENEM</label>
+            <label class="pop-radio"><input type="radio" name="preset"> Tudo (~40 campos)</label>
+            <hr class="pop-div">
+            <h4>Colunas visíveis</h4>
+            <label class="pop-check"><input type="checkbox" checked> Escola</label>
+            <label class="pop-check"><input type="checkbox" checked> Cidade</label>
+            <label class="pop-check"><input type="checkbox" checked> Etapa</label>
+            <label class="pop-check"><input type="checkbox" checked> Prioridade</label>
+            <label class="pop-check"><input type="checkbox" checked> Potencial R$/mês</label>
+            <label class="pop-check"><input type="checkbox" checked> Alunos-alvo</label>
+            <label class="pop-check"><input type="checkbox"> Docentes</label>
+            <label class="pop-check"><input type="checkbox"> Nível tecnológico</label>
+            <label class="pop-check"><input type="checkbox"> Médias ENEM</label>
+            <label class="pop-check"><input type="checkbox"> Endereço</label>
+            <div class="pop-note">o export usa as colunas visíveis · sua escolha fica salva</div>
+            <a class="pop-link" href="#">Exportar TUDO (todas as colunas)</a>
+          </div>
+        </div>
+        <button class="btn btn-o" title="Exporta o que está filtrado, com as colunas escolhidas">📥 Exportar (XLSX)</button>
       </div>
-      <div class="f-row">
-        <label class="f-check"><input type="checkbox" checked> Fund. anos finais</label>
-        <label class="f-check"><input type="checkbox" checked> Ensino Médio</label>
-        <div class="f-range">Alunos: <input type="text" value="de 400"> – <input type="text" value="até 1000"></div>
-        <div class="f-field"><label>Agrupar por</label><select><option>Nenhum ▾</option><option>Rede</option><option>Cidade</option></select></div>
-        <div class="f-spacer"></div>
-        <button class="btn btn-o" title="Exporta exatamente o que está filtrado">📥 Exportar (XLSX)</button>
-      </div>
-      <div class="f-caption">119 escolas na base · <b>47 com os filtros atuais</b></div>
     </div>
-
-    <!-- Barra de ação em lote -->
-    <div class="bulkbar">
-      <span>2 selecionadas ·</span>
-      <div class="pop-wrap">
-        <button class="btn btn-o btn-sm" onclick="togglePop()">Transferir para ▾</button>
-        <div class="popover" id="pop-transfer">
-          <div class="ph">Transferir dono</div>
-          <div class="pi"><span class="av-s av-f">F</span> Fernando</div>
-          <div class="pi"><span class="av-s av-l">L</span> Lizianne</div>
-          <div class="pi"><span class="av-s av-f2">F2</span> Felipe</div>
-          <div class="pnote">Disponível apenas para administradores</div>
+    <div class="f-row">
+      <label class="f-check"><input type="checkbox" checked> Fund. anos finais</label>
+      <label class="f-check"><input type="checkbox" checked> Ensino Médio</label>
+      <div class="fgroup"><label>Alunos</label>
+        <div class="range-wrap">
+          <input type="number" value="400" title="de"><span class="dash">–</span><input type="number" value="1000" title="até">
         </div>
       </div>
-      <button class="btn btn-o btn-sm">📥 Exportar seleção</button>
-      <span class="clear">limpar</span>
+      <div class="fgroup"><label>Agrupar por</label><select><option>Nenhum</option><option>Rede (mantenedora)</option><option>Cidade</option><option>Dono</option></select></div>
     </div>
-
-    <!-- Tabela -->
-    <div class="card tbl-card">
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th><input type="checkbox"></th>
-            <th>Escola</th>
-            <th>Cidade/UF</th>
-            <th>Etapa</th>
-            <th>Prioridade</th>
-            <th>Alunos-alvo</th>
-            <th>Potencial R$/mês</th>
-            <th>Dono</th>
-            <th>Último contato</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr class="sel">
-            <td><input type="checkbox" checked></td>
-            <td><a class="school lnk" href="escola-ficha.html" title="abrir ficha" style="text-decoration:none">Colégio Santa Cecília</a></td>
-            <td>Porto Alegre/RS</td>
-            <td><span class="pill st-resp">Respondeu</span></td>
-            <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 82/100">🟠 Quente</span></td>
-            <td>612</td>
-            <td class="money">R$ 4.890</td>
-            <td><span class="av-s av-f" title="Fernando">F</span></td>
-            <td class="last">ontem</td>
-          </tr>
-          <tr>
-            <td><input type="checkbox"></td>
-            <td><span class="school" title="abrir ficha">Colégio Horizonte Sul</span></td>
-            <td>Porto Alegre/RS</td>
-            <td><span class="pill st-cont">Contatada</span></td>
-            <td><span class="prio p-morno" title="Por que? Engajamento ▰▰▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 64/100">🟡 Morno</span></td>
-            <td>480</td>
-            <td class="money">R$ 3.835</td>
-            <td><span class="av-s av-f" title="Fernando">F</span></td>
-            <td class="last">3d</td>
-          </tr>
-          <tr>
-            <td><input type="checkbox"></td>
-            <td><span class="school" title="abrir ficha">Instituto Monte Alverne</span></td>
-            <td>Caxias do Sul/RS</td>
-            <td><span class="pill st-reun">Em reunião</span></td>
-            <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▱▱ · Avaliação da IA 71/100">🟠 Quente</span></td>
-            <td>350</td>
-            <td class="money">R$ 2.797</td>
-            <td><span class="av-s av-l" title="Lizianne">L</span></td>
-            <td class="last">2d</td>
-          </tr>
-          <tr class="sel">
-            <td><input type="checkbox" checked></td>
-            <td><span class="school" title="abrir ficha">Colégio Atlântico</span></td>
-            <td>Fortaleza/CE</td>
-            <td><span class="pill st-reun">Em reunião</span></td>
-            <td><span class="prio p-agir" title="Por que? Engajamento ▰▰▰▰ · Potencial ▰▰▰▰ · Avaliação da IA 91/100">🔴 Agir agora</span></td>
-            <td>890</td>
-            <td class="money">R$ 7.111</td>
-            <td><span class="av-s av-f" title="Fernando">F</span></td>
-            <td class="last">hoje</td>
-          </tr>
-          <tr>
-            <td><input type="checkbox"></td>
-            <td><span class="school" title="abrir ficha">Escola Nova Geração</span></td>
-            <td>Porto Alegre/RS</td>
-            <td><span class="pill st-pronta">Pronta para contato</span></td>
-            <td><span class="prio p-frio" title="Por que? Engajamento ▱▱▱▱ · Potencial ▰▰▱▱ · Avaliação da IA 48/100">⚪ Frio</span></td>
-            <td>295</td>
-            <td class="money">R$ 2.357</td>
-            <td><span class="av-s av-l" title="Lizianne">L</span></td>
-            <td class="last">—</td>
-          </tr>
-          <tr>
-            <td><input type="checkbox"></td>
-            <td><span class="school" title="abrir ficha">Colégio Dom Pedro II</span></td>
-            <td>Fortaleza/CE</td>
-            <td><span class="pill st-cont">Contatada</span></td>
-            <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▱ · Avaliação da IA 74/100">🟠 Quente</span></td>
-            <td>540</td>
-            <td class="money">R$ 4.315</td>
-            <td><span class="av-s av-f2" title="Felipe">F2</span></td>
-            <td class="last">5d</td>
-          </tr>
-          <tr>
-            <td><input type="checkbox"></td>
-            <td><span class="school" title="abrir ficha">Instituto Educar Mais</span></td>
-            <td>Caxias do Sul/RS</td>
-            <td><span class="pill st-aval">Avaliada</span></td>
-            <td><span class="prio p-frio" title="Por que? Engajamento ▱▱▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 55/100">⚪ Frio</span></td>
-            <td>640</td>
-            <td class="money">R$ 5.114</td>
-            <td><span class="muted" title="Sem dono — escola ainda não distribuída">—</span></td>
-            <td class="last">—</td>
-          </tr>
-          <tr>
-            <td><input type="checkbox"></td>
-            <td><span class="school" title="abrir ficha">Colégio Sol Nascente</span></td>
-            <td>Porto Alegre/RS</td>
-            <td><span class="pill st-nova">Nova</span></td>
-            <td><span class="prio p-frio" title="Por que? Engajamento ▱▱▱▱ · Potencial ▰▰▰▰ · Avaliação da IA ainda não feita">⚪ Frio</span></td>
-            <td>820</td>
-            <td class="money">R$ 6.552</td>
-            <td><span class="muted" title="Sem dono — escola ainda não distribuída">—</span></td>
-            <td class="last">—</td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="f-row">
+      <div class="fgroup small"><label>Contatos</label><select><option>Todos</option><option>Com</option><option>Sem</option></select></div>
+      <div class="fgroup small"><label>E-mail</label><select><option>Todos</option><option>Com</option><option>Sem</option></select></div>
+      <div class="fgroup small"><label>WhatsApp</label><select><option>Todos</option><option>Com</option><option>Sem</option></select></div>
+      <div class="fgroup small"><label>Telefone</label><select><option>Todos</option><option>Com</option><option>Sem</option></select></div>
+      <div class="f-caption">ex.: Contatos: Sem = escolas ainda sem nenhum contato mapeado</div>
     </div>
-
-    <!-- Rodapé -->
-    <div class="foot-notes">
-      💰 Potencial R$/mês = alunos-alvo × ticket por aluno (R$ 7,99 — configure em Ajustes).<br>
-      Agrupar por Rede junta unidades da mesma mantenedora (✏️ para corrigir o nome da rede).
-    </div>
-
   </div>
 
-  <!-- ====== TAB: PESSOAS (placeholder) ====== -->
-  <div class="tab-panel" id="panel-pessoas">
+  <!-- Contagem -->
+  <div class="count-line"><b>119</b> escolas na base · <b>47</b> com os filtros atuais</div>
+
+  <!-- Barra de ação em lote -->
+  <div class="bulkbar" id="bulkbar">
+    <span id="selCount">2 selecionadas</span> ·
+    <span class="pop-wrap">
+      <button class="btn btn-o btn-sm" onclick="togglePop('popTransfer')">Transferir para ▾</button>
+      <!-- Popover Transferir (aberto · admin) -->
+      <div class="popover pop-menu left" id="popTransfer">
+        <div class="pm-item"><span class="mini-av av-f">F</span> Fernando</div>
+        <div class="pm-item"><span class="mini-av av-l">L</span> Lizianne</div>
+        <div class="pm-item"><span class="mini-av av-fe">Fe</span> Felipe</div>
+      </div>
+    </span>
+    <button class="btn btn-o btn-sm">📥 Exportar seleção</button>
+    <span class="clear-link" onclick="clearSel()">limpar</span>
+  </div>
+
+  <!-- Tabela -->
+  <div class="card table-card">
+    <table class="lista">
+      <thead>
+        <tr>
+          <th><input type="checkbox" title="Selecionar todas"></th>
+          <th></th>
+          <th>Escola</th>
+          <th>Cidade/UF</th>
+          <th>Etapa</th>
+          <th>Prioridade</th>
+          <th>Alunos-alvo</th>
+          <th>Potencial R$/mês</th>
+          <th>Dono</th>
+          <th>Último contato</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><input type="checkbox" onchange="rowSel(this)"></td>
+          <td><a class="open-ic" href="escola-ficha.html" title="Abrir ficha">↗</a></td>
+          <td><a class="school-link" href="escola-ficha.html">Colégio Atlântico</a></td>
+          <td>Fortaleza/CE</td>
+          <td><span class="pill st-reun">Em reunião</span></td>
+          <td><span class="prio p-agir" title="Por que? Engajamento ▰▰▰▰ · Potencial ▰▰▰▰ · Avaliação da IA 88/100">🔴 Agir agora</span></td>
+          <td>890</td>
+          <td class="money">R$ 7.111</td>
+          <td><span class="av-dono av-f" title="Fernando">F</span></td>
+          <td>hoje</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" onchange="rowSel(this)"></td>
+          <td><a class="open-ic" href="escola-ficha.html" title="Abrir ficha">↗</a></td>
+          <td><a class="school-link" href="escola-ficha.html">Colégio Santa Cecília</a></td>
+          <td>Porto Alegre/RS</td>
+          <td><span class="pill st-resp">Respondeu</span></td>
+          <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▱ · Avaliação da IA 74/100">🟠 Quente</span></td>
+          <td>612</td>
+          <td class="money">R$ 4.890</td>
+          <td><span class="av-dono av-f" title="Fernando">F</span></td>
+          <td>ontem</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" onchange="rowSel(this)"></td>
+          <td><a class="open-ic" href="escola-ficha.html" title="Abrir ficha">↗</a></td>
+          <td><a class="school-link" href="escola-ficha.html">Instituto Monte Alverne</a></td>
+          <td>Caxias do Sul/RS</td>
+          <td><span class="pill st-reun">Em reunião</span></td>
+          <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▱▱ · Avaliação da IA 68/100">🟠 Quente</span></td>
+          <td>350</td>
+          <td class="money">R$ 2.797</td>
+          <td><span class="av-dono av-l" title="Lizianne">L</span></td>
+          <td>há 2 dias</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" onchange="rowSel(this)"></td>
+          <td><a class="open-ic" href="escola-ficha.html" title="Abrir ficha">↗</a></td>
+          <td><a class="school-link" href="escola-ficha.html">Colégio Dom Pedro II</a></td>
+          <td>Fortaleza/CE</td>
+          <td><span class="pill st-cont">Contatada</span></td>
+          <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▱ · Avaliação da IA 70/100">🟠 Quente</span></td>
+          <td>540</td>
+          <td class="money">R$ 4.315</td>
+          <td><span class="av-dono av-fe" title="Felipe">Fe</span></td>
+          <td>há 5 dias</td>
+        </tr>
+        <tr class="sel">
+          <td><input type="checkbox" checked onchange="rowSel(this)"></td>
+          <td><a class="open-ic" href="escola-ficha.html" title="Abrir ficha">↗</a></td>
+          <td><a class="school-link" href="escola-ficha.html">Colégio Horizonte Sul</a></td>
+          <td>Porto Alegre/RS</td>
+          <td><span class="pill st-cont">Contatada</span></td>
+          <td><span class="prio p-morno" title="Por que? Engajamento ▰▰▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 61/100">🟡 Morno</span></td>
+          <td>480</td>
+          <td class="money">R$ 3.835</td>
+          <td><span class="av-dono av-none" title="Sem dono — clique para atribuir">—</span></td>
+          <td>há 3 dias</td>
+        </tr>
+        <tr class="sel">
+          <td><input type="checkbox" checked onchange="rowSel(this)"></td>
+          <td><a class="open-ic" href="escola-ficha.html" title="Abrir ficha">↗</a></td>
+          <td><a class="school-link" href="escola-ficha.html">Escola Nova Geração</a></td>
+          <td>Porto Alegre/RS</td>
+          <td><span class="pill st-pronta">Pronta para contato</span></td>
+          <td><span class="prio p-frio" title="Por que? Engajamento ▰▱▱▱ · Potencial ▰▰▱▱ · Avaliação da IA 42/100">⚪ Frio</span></td>
+          <td>295</td>
+          <td class="money">R$ 2.357</td>
+          <td><span class="av-dono av-l" title="Lizianne">L</span></td>
+          <td class="muted">—</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" onchange="rowSel(this)"></td>
+          <td><a class="open-ic" href="escola-ficha.html" title="Abrir ficha">↗</a></td>
+          <td><a class="school-link" href="escola-ficha.html">Instituto Educar Mais</a></td>
+          <td>Caxias do Sul/RS</td>
+          <td><span class="pill st-aval">Avaliada</span></td>
+          <td><span class="prio p-frio" title="Por que? Engajamento ▰▱▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 48/100">⚪ Frio</span></td>
+          <td>640</td>
+          <td class="money">R$ 5.114</td>
+          <td><span class="av-dono av-none" title="Sem dono — clique para atribuir">—</span></td>
+          <td class="muted">—</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" onchange="rowSel(this)"></td>
+          <td><a class="open-ic" href="escola-ficha.html" title="Abrir ficha">↗</a></td>
+          <td><a class="school-link" href="escola-ficha.html">Colégio Sol Nascente</a></td>
+          <td>Porto Alegre/RS</td>
+          <td><span class="pill st-nova">Nova</span></td>
+          <td><span class="prio p-frio" title="Por que? Engajamento ▰▱▱▱ · Potencial ▰▰▰▰ · Avaliação da IA 35/100">⚪ Frio</span></td>
+          <td>820</td>
+          <td class="money">R$ 6.552</td>
+          <td><span class="av-dono av-none" title="Sem dono — clique para atribuir">—</span></td>
+          <td class="muted">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Rodapé -->
+  <div class="foot-notes">
+    💰 Potencial R$/mês = alunos-alvo × ticket (R$ 7,99 — Ajustes).<br>
+    Clique no nome da escola (ou no ↗) para abrir a ficha completa.<br>
+    Agrupar por Rede junta unidades da mesma mantenedora (✏️ para corrigir nome).
+  </div>
+
+  </div><!-- /viewLista -->
+
+  <!-- Aba Pessoas (placeholder) -->
+  <div id="viewPessoas" style="display:none">
     <div class="card pessoas-ph">
       <div class="big">👥</div>
-      <b>Pessoas — 249 contatos de decisores</b><br>
-      Diretores, coordenadores e mantenedores ligados às escolas da base.<br>
-      <span style="font-size:12.5px;color:#94A3B8">Mesmos filtros da Lista (UF · Cidade · Tipo · Etapa · Dono) + cargo. Mockup detalhado nesta rodada apenas para a aba Lista.</span>
+      <b>Pessoas — 249 decisores mapeados</b><br>
+      Power Map de diretores, coordenadores e mantenedores de todas as escolas da base.<br>
+      Veja os contatos de uma escola específica na <a class="school-link" href="escola-ficha.html">ficha da escola</a>.
     </div>
   </div>
 
 </main>
 </div>
+
 <script>
-function showTab(name){
-  document.getElementById('tab-lista').classList.toggle('on', name==='lista');
-  document.getElementById('tab-pessoas').classList.toggle('on', name==='pessoas');
-  document.getElementById('panel-lista').classList.toggle('active', name==='lista');
-  document.getElementById('panel-pessoas').classList.toggle('active', name==='pessoas');
+function togglePop(id){
+  var el=document.getElementById(id);
+  el.style.display=(el.style.display==='none')?'block':'none';
 }
-function togglePop(){
-  var p=document.getElementById('pop-transfer');
-  p.style.display=(p.style.display==='none')?'block':'none';
+function showTab(t){
+  document.getElementById('viewLista').style.display=(t==='lista')?'block':'none';
+  document.getElementById('viewPessoas').style.display=(t==='pessoas')?'block':'none';
+  document.getElementById('tabLista').classList.toggle('on',t==='lista');
+  document.getElementById('tabPessoas').classList.toggle('on',t==='pessoas');
 }
+function rowSel(cb){
+  cb.closest('tr').classList.toggle('sel',cb.checked);
+  updateBulk();
+}
+function clearSel(){
+  document.querySelectorAll('table.lista tbody input[type=checkbox]').forEach(function(cb){
+    cb.checked=false; cb.closest('tr').classList.remove('sel');
+  });
+  updateBulk();
+}
+function updateBulk(){
+  var n=document.querySelectorAll('table.lista tbody input[type=checkbox]:checked').length;
+  document.getElementById('bulkbar').style.display=(n>0)?'flex':'none';
+  document.getElementById('selCount').textContent=n+' selecionada'+(n===1?'':'s');
+}
+// Fecha popovers ao clicar fora
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.pop-wrap')){
+    document.querySelectorAll('.popover').forEach(function(p){p.style.display='none';});
+  }
+});
 </script>
 </body>
 </html>

@@ -102,6 +102,16 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7F
 /* banner rodape */
 .foot-banner{margin-top:26px;background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:10px 16px;font-size:12.5px;color:#5D4037}
 .foot-banner a{color:#1565C0;font-weight:600;text-decoration:none}
+/* aba Modelos */
+.mdl-banner{background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px 16px;font-size:13px;color:#5D4037;margin-bottom:14px}
+.mdl-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.mdl-card{background:#fff;border:1px solid #E3E8EF;border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(16,24,40,.05)}
+.mdl-t{font-weight:700;font-size:14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.mdl-star{font-size:11px;color:#F57F17;background:#FFF8E1;border-radius:99px;padding:2px 8px;font-weight:700}
+.mdl-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.mdl-chips .chip{padding:2px 9px;font-size:11px;cursor:default}
+.mdl-prev{font-size:12.5px;color:#64748B;font-style:italic;margin-bottom:10px;line-height:1.45}
+.mdl-foot{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:#94A3B8}
 </style>
 </head>
 <body>
@@ -142,7 +152,7 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7F
     <span class="chip canal-chip on" onclick="setCanal(this,'todos')">Todos</span>
     <span class="chip canal-chip" onclick="setCanal(this,'email')">✉️ E-mail</span>
     <span class="chip canal-chip" onclick="setCanal(this,'whats')">📱 WhatsApp</span>
-    <a class="modelos-link" href="#" title="Gerencie os modelos de mensagem que a IA usa como base">📄 Modelos</a>
+    <span class="chip state-chip" id="chip-modelos" style="margin-left:auto;border-style:dashed" onclick="showState(this,'panel-modelos')" title="Os modelos que a IA usa como base — escolhidos pela situação da escola">📄 Modelos (6)</span>
   </div>
 
   <!-- PAINEL: AGUARDANDO (padrão) -->
@@ -315,6 +325,38 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7F
     </div>
   </section>
 
+  <!-- PAINEL: MODELOS -->
+  <section class="state-panel" id="panel-modelos" style="display:none">
+    <div class="mdl-banner">📄 <strong>A IA escolhe o modelo pela SITUAÇÃO da escola</strong> (contato nominal ou genérico? com ou sem dados ENEM?) e personaliza com os dados dela. Você sempre revisa antes de sair. <span style="color:#8D6E63">A matriz fina da seleção automática fica em ⚙️ Ajustes (admin).</span></div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-p btn-sm">+ Novo modelo</button></div>
+    <div class="mdl-grid">
+      <div class="mdl-card"><div class="mdl-t">Diagnóstico ENEM — nominal <span class="mdl-star">★ Padrão</span></div>
+        <div class="mdl-chips"><span class="chip">👤 Nominal</span><span class="chip">📊 Com dados ENEM</span><span class="chip">✉️ E-mail</span></div>
+        <div class="mdl-prev">"Olá {nome}, analisei os resultados de Matemática do {escola} e encontrei algo que…"</div>
+        <div class="mdl-foot">usado 34× · 18% de resposta <span><button class="btn btn-o btn-sm">Editar</button> <button class="btn btn-o btn-sm">Duplicar</button></span></div></div>
+      <div class="mdl-card"><div class="mdl-t">Diagnóstico ENEM — genérico</div>
+        <div class="mdl-chips"><span class="chip">🏫 Genérico</span><span class="chip">📊 Com dados ENEM</span><span class="chip">✉️ E-mail</span></div>
+        <div class="mdl-prev">"Olá, equipe do {escola}! Os resultados de {area_mais_fraca} chamaram nossa atenção…"</div>
+        <div class="mdl-foot">usado 21× · 11% de resposta <span><button class="btn btn-o btn-sm">Editar</button> <button class="btn btn-o btn-sm">Duplicar</button></span></div></div>
+      <div class="mdl-card"><div class="mdl-t">Primeira abordagem — nominal</div>
+        <div class="mdl-chips"><span class="chip">👤 Nominal</span><span class="chip">📋 Sem dados ENEM</span><span class="chip">✉️ E-mail</span></div>
+        <div class="mdl-prev">"Olá {nome}, com {matriculas} alunos no {nivel}, o {escola} tem um perfil em que…"</div>
+        <div class="mdl-foot">usado 17× · 9% de resposta <span><button class="btn btn-o btn-sm">Editar</button> <button class="btn btn-o btn-sm">Duplicar</button></span></div></div>
+      <div class="mdl-card"><div class="mdl-t">Primeira abordagem — genérica</div>
+        <div class="mdl-chips"><span class="chip">🏫 Genérico</span><span class="chip">📋 Sem dados ENEM</span><span class="chip">✉️ E-mail</span></div>
+        <div class="mdl-prev">"Olá, equipe do {escola}! Trabalhamos com escolas como a de vocês para…"</div>
+        <div class="mdl-foot">usado 12× · 7% de resposta <span><button class="btn btn-o btn-sm">Editar</button> <button class="btn btn-o btn-sm">Duplicar</button></span></div></div>
+      <div class="mdl-card"><div class="mdl-t">Follow-up pós-abertura</div>
+        <div class="mdl-chips"><span class="chip">🔁 Follow-up</span><span class="chip">✉️ E-mail</span></div>
+        <div class="mdl-prev">"{nome}, vi que o assunto despertou interesse — aquela análise de {area_mais_fraca}…"</div>
+        <div class="mdl-foot">usado 28× · 14% de resposta <span><button class="btn btn-o btn-sm">Editar</button> <button class="btn btn-o btn-sm">Duplicar</button></span></div></div>
+      <div class="mdl-card"><div class="mdl-t">Primeira mensagem — WhatsApp</div>
+        <div class="mdl-chips"><span class="chip">👤 Nominal</span><span class="chip">📱 WhatsApp</span></div>
+        <div class="mdl-prev">"Olá {nome}, tudo bem? Sou {vendedor} da IAprendo. Posso te mandar uma análise rápida…"</div>
+        <div class="mdl-foot">usado 9× · 22% de resposta <span><button class="btn btn-o btn-sm">Editar</button> <button class="btn btn-o btn-sm">Duplicar</button></span></div></div>
+    </div>
+  </section>
+
   <!-- bloco recebidas (sempre visivel) -->
   <div class="rec-block">
     <div class="rec-title">💬 Recebidas <span style="font-size:12px;font-weight:400;color:#64748B">— respostas que chegaram e ainda não foram tratadas</span></div>
@@ -335,7 +377,7 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7F
   </div>
 
   <!-- banner rodape -->
-  <div class="foot-banner">📄 Modelos são a base que a IA personaliza por escola. Você sempre revisa antes de sair. <a href="#">Gerencie em Modelos →</a></div>
+  <div class="foot-banner">📄 Modelos são a base que a IA personaliza por escola. Você sempre revisa antes de sair. <a href="#" onclick="document.getElementById('chip-modelos').click();return false">Gerencie em Modelos →</a></div>
 
 </main>
 </div>

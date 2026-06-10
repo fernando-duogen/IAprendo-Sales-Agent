@@ -2,6 +2,7 @@
 
 **Para**: Lizianne e Felipe (cada um faz sozinho, sem ajuda)
 **Tempo alvo**: até 15 minutos
+**Versao dos mockups**: rodada 2.2 (escolas com seletor de colunas; Mensagens com aba Modelos)
 **Material**: abra `docs/mockups/index.html` no navegador e navegue pelos mockups
 
 ## Como funciona
@@ -18,7 +19,7 @@ Para cada tarefa, quem aplica anota:
 
 ---
 
-## As 6 tarefas
+## As 7 tarefas
 
 **T1 — Comecar o dia.**
 "Voce chegou agora de manha. Me mostre onde voce ve O QUE tem pra fazer hoje
@@ -52,6 +53,12 @@ botao '+ Registrar contato'._
 "Me mostre como voce sabe se esta bem no mes — e (se voce fosse o gestor)
 onde veria o time inteiro."
 _Esperado: Hoje (anel da meta) e/ou Resultados → Metas._
+
+**T7 — Ver e exportar TUDO de uma escola.**
+"A tabela de Escolas mostra poucas colunas. Me mostre como voce veria MAIS
+informacoes (ex: docentes, medias ENEM) na propria tabela — e como exportaria
+a planilha COMPLETA, com todas as colunas."
+_Esperado: Escolas → botao 'Colunas ▾' (presets/checklist) → Exportar._
 
 ---
 
