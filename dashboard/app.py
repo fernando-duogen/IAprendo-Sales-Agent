@@ -9,58 +9,28 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 
-# === Streamlit Cloud: copiar secrets para os.environ ANTES de tudo ===
-try:
-    for _k, _v in st.secrets.items():
-        if isinstance(_v, str):
-            os.environ[_k] = _v
-except Exception:
-    pass
-
 ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dashboard.theme import (
-    apply_theme, metric_card, section_header, alert_banner, COLORS,
+    apply_theme_no_config, metric_card, section_header, alert_banner, COLORS,
     activity_row, goal_progress, priority_badge, stage_pill, empty_state,
     ACTIVITY_CSS,
 )
 
-apply_theme()
+# set_page_config + auth + sidebar de identidade rodam no entrypoint
+# (dashboard/main.py com st.navigation). Aqui: so tema e conteudo.
+apply_theme_no_config()
 st.markdown(ACTIVITY_CSS, unsafe_allow_html=True)
 
-# =========================================================================
-# AUTENTICACAO (streamlit-authenticator) — gate de TODAS as paginas
-# =========================================================================
-import yaml  # usado na persistencia da troca de senha (sidebar)
-from dashboard._auth import ensure_auth, AUTH_PATH as _AUTH_PATH
+from dashboard._auth_gate import require_auth
+require_auth()  # idempotente: o gate central do main.py ja autenticou
 
-_auth = ensure_auth(render_form=True)
-authenticator = _auth["authenticator"]
-_auth_config = _auth["config"]
-_current_user = _auth["user"]
-
-with st.sidebar:
-    st.markdown(
-        f'<div style="padding:12px 8px;border-bottom:1px solid #E0E0E0;margin-bottom:8px">'
-        f'<div style="font-size:11px;color:#9E9E9E;text-transform:uppercase;letter-spacing:0.5px">Logado como</div>'
-        f'<div style="font-weight:600;color:#212121">{_current_user.get("name", "?")}</div>'
-        f'<div style="font-size:12px;color:#757575">{_current_user.get("email", "?")} &middot; {_current_user.get("role", "")}</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-    authenticator.logout("Sair", location="sidebar")
-    with st.expander("Trocar senha", icon=":material/lock_reset:"):
-        try:
-            if authenticator.reset_password(
-                st.session_state.get("username"), location="main"
-            ):
-                with _AUTH_PATH.open("w", encoding="utf-8") as _f:
-                    yaml.safe_dump(_auth_config, _f, allow_unicode=True, sort_keys=False)
-                st.success("Senha atualizada. Use no proximo login.")
-        except Exception as _e:
-            st.error(f"Erro ao trocar senha: {_e}")
+_current_user = st.session_state.get("_v2_current_user") or {
+    "name": st.session_state.get("name", "?"),
+    "email": "", "role": "",
+}
 
 # =========================================================================
 # DADOS (helpers testaveis) + ENGINE no load (cache 5min — SPEC §0)

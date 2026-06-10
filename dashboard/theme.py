@@ -123,14 +123,16 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
     padding-bottom: 0 !important;
     margin-bottom: 0 !important;
 }
-/* Esconder link "app" auto-gerado (substituido por "Painel" via page_link) */
-section[data-testid="stSidebar"] [data-testid="stSidebarNav"] li:first-child {
-    display: none !important;
-}
-/* Estilo do link Painel customizado */
-section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:first-of-type {
+/* v2 (st.navigation): NAO esconder o 1o item — e a pagina "Hoje".
+   Cabecalhos de grupo do nav (Vender/Acompanhar/Sistema) no padrao do mockup */
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] header,
+section[data-testid="stSidebar"] [data-testid="stNavSectionHeader"] {
+    font-size: 10.5px !important;
     font-weight: 600 !important;
-    margin-bottom: 0 !important;
+    color: #94A3B8 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.8px !important;
+    padding: 12px 12px 4px 12px !important;
 }
 /* Reduzir gap do primeiro item da navegacao auto-gerada (depois que Painel some) */
 section[data-testid="stSidebar"] [data-testid="stSidebarNav"] ul {
@@ -727,7 +729,7 @@ def _add_sidebar_home():
             '<span style="font-size:11px;color:#9E9E9E">Agente de Vendas</span></p>',
             unsafe_allow_html=True,
         )
-        st.page_link("app.py", label="🏠 Painel")
+        # v2: "Hoje" ja e o 1o item do st.navigation — sem page_link duplicado.
         # Carimbo de build — confirma num relance se o Cloud esta na versao nova.
         try:
             from dashboard._build import BUILD
