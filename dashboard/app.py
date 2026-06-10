@@ -384,8 +384,12 @@ else:
             _quando = to_brt(_dt).strftime("%d/%m %Hh%M") if _dt else "?"
             st.markdown(f"📅 **{_quando}** — {_m.get('title') or 'Reuniao'}")
 
-        section_header("Minha meta — " +
-                       to_brt(_now).strftime("%B").capitalize(), "flag")
+        try:
+            from utils.date_pt import format_pt as _fmt_pt
+            _mes_nome = _fmt_pt(to_brt(_now), "%B").capitalize()
+        except Exception:
+            _mes_nome = to_brt(_now).strftime("%m/%Y")
+        section_header(f"Minha meta — {_mes_nome}", "flag")
         _metas = hv.minhas_metas(_username, _now)
         if not _metas:
             st.caption("Sem metas definidas para o mes." +

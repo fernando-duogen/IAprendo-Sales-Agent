@@ -181,6 +181,108 @@ with k6:
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
 # =============================================================================
+# SECAO 1B — METAS DO MES (redesign v2 F2 — docs/SPEC_AGENDA_METAS.md §4)
+# Vendedor ve as proprias barras; admin ve a grade do time e define metas
+# (com calibracao historica). Realizado e calculado AO VIVO de eventos.
+# =============================================================================
+from datetime import timezone as _tz
+from dashboard.theme import goal_progress as _goal_progress
+from dashboard.labels import GOAL_METRICS as _GM, goal_metric_label as _gml
+from utils.sender_profile import is_admin as _is_admin_fn
+from workflows.activity_engine import all_usernames as _all_users, to_brt as _to_brt
+
+_me_user = st.session_state.get("username", "fernando")
+_eh_admin = bool(_is_admin_fn(_me_user))
+_mes_inicio = _to_brt(datetime.now(_tz.utc)).date().replace(day=1)
+_mes_fim = (_mes_inicio + timedelta(days=32)).replace(day=1)
+try:
+    from utils.date_pt import format_pt as _fmt_pt
+    _mes_label = _fmt_pt(datetime.combine(_mes_inicio, datetime.min.time()),
+                         "%B/%Y").capitalize()
+except Exception:
+    _mes_label = _mes_inicio.strftime("%m/%Y")
+
+section_header(f"Metas — {_mes_label}", "flag")
+
+
+@st.dialog("Definir meta")
+def _dlg_definir_meta():
+    _du = st.selectbox("Vendedor", _all_users() + ["team"])
+    _dm = st.selectbox("Metrica", list(_GM), format_func=_gml)
+    # Calibracao historica (SPEC §4.1): ancora em dados reais, nao chute
+    try:
+        _h_end = _to_brt(datetime.now(_tz.utc)).date()
+        _h_start = _h_end - timedelta(days=30)
+        _hist = db.goal_realized(_du, _dm, _h_start.isoformat(), _h_end.isoformat())
+        st.info(f"Ultimos 30 dias de {_du}: **{_hist:g}** {_gml(_dm)}. "
+                f"Benchmark: {_GM[_dm]['benchmark']}.")
+    except Exception:
+        pass
+    _dv = st.number_input("Alvo do mes", min_value=0.0, value=10.0, step=1.0)
+    _motivo = st.text_input("Motivo (obrigatorio apos o dia 5 do mes)",
+                            placeholder="ex: ajuste de capacidade")
+    if st.button("Salvar meta", type="primary"):
+        _dia = _to_brt(datetime.now(_tz.utc)).day
+        if _dia > 5:
+            _exist = db.list_goals(period_start=_mes_inicio.isoformat(), username=_du)
+            if any(g["metric"] == _dm for g in _exist) and not _motivo.strip():
+                st.error("Mudanca de meta apos o dia 5 exige motivo (SPEC §4.1).")
+                return
+        db.upsert_goal(_du, _dm, _mes_inicio.isoformat(), float(_dv), _me_user,
+                       reason=_motivo.strip() or None)
+        st.rerun()
+
+
+_goals_mes = db.list_goals(period_start=_mes_inicio.isoformat())
+if _eh_admin:
+    _gh1, _gh2 = st.columns([4, 1.3])
+    with _gh2:
+        if st.button("🎯 Definir metas", use_container_width=True):
+            _dlg_definir_meta()
+
+if not _goals_mes:
+    alert_banner(f"Nenhuma meta definida para {_mes_label}." +
+                 (" Clique em 'Definir metas' para comecar — o dialog mostra o "
+                  "historico como calibracao." if _eh_admin else
+                  " Fale com o gestor."), "info")
+else:
+    _por_user = {}
+    for _gl in _goals_mes:
+        _por_user.setdefault(_gl["username"], []).append(_gl)
+    if _eh_admin:
+        _ucols = st.columns(max(1, len(_por_user)))
+        for _ui, (_uu, _ugoals) in enumerate(sorted(_por_user.items())):
+            with _ucols[_ui % len(_ucols)]:
+                st.markdown(f"**{_uu.capitalize()}**")
+                for _gl in _ugoals:
+                    _real = db.goal_realized(_uu, _gl["metric"],
+                                             _mes_inicio.isoformat(),
+                                             _mes_fim.isoformat())
+                    _rev = _gl.get("revision_log") or []
+                    _aj = " ✎" if len(_rev) > 1 else ""
+                    st.markdown(_goal_progress(_gml(_gl["metric"]) + _aj, _real,
+                                               float(_gl.get("target") or 0)),
+                                unsafe_allow_html=True)
+    else:
+        for _gl in _por_user.get(_me_user, []):
+            _real = db.goal_realized(_me_user, _gl["metric"],
+                                     _mes_inicio.isoformat(), _mes_fim.isoformat())
+            st.markdown(_goal_progress(_gml(_gl["metric"]), _real,
+                                       float(_gl.get("target") or 0)),
+                        unsafe_allow_html=True)
+        if "team" in _por_user:
+            st.markdown("**Time**")
+            for _gl in _por_user["team"]:
+                _real = db.goal_realized("team", _gl["metric"],
+                                         _mes_inicio.isoformat(),
+                                         _mes_fim.isoformat())
+                st.markdown(_goal_progress(_gml(_gl["metric"]), _real,
+                                           float(_gl.get("target") or 0)),
+                            unsafe_allow_html=True)
+
+st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+# =============================================================================
 # SECAO 2 — Funil de conversao
 # =============================================================================
 section_header("Funil de conversao", "filter_alt")
