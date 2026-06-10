@@ -3,11 +3,12 @@
 > Redesign da plataforma IAprendo Sales Agent: de 11 paginas organizadas pelo
 > fluxo tecnico dos dados para 8 espacos organizados pelo dia do vendedor.
 >
-> **Status**: PROPOSTA v1.3 — para validacao com o time antes de qualquer codigo.
-> **Data**: 2026-06-10 (v1.1: feedback do dono + 3 auditorias adversariais —
-> 12 jornadas de uso simulado + paridade v1->v2 · v1.2: impressoes do dono sobre
-> os mockups · v1.3: auditoria final — paridade tecnica nao-UI 100% fechada
-> (Apendice A) + aderencia a praticas de vendas e gestao, ver §14)
+> **Status**: PROPOSTA v1.4 — para validacao com o time antes de qualquer codigo.
+> **Data**: 2026-06-10 (v1.1: feedback do dono + 3 auditorias adversariais ·
+> v1.2: impressoes do dono sobre os mockups · v1.3: auditoria final — paridade
+> 100% (Apendice A) + aderencia a vendas/gestao (§14) · v1.4: templates com
+> visibilidade, respostas de e-mail, "Registrar encontro", e SPEC operacional
+> da Agenda/Metas → **docs/SPEC_AGENDA_METAS.md**)
 > **Base**: tag `v1-prod` | **Branch de trabalho**: `redesign-v2`
 > **Mockups navegaveis**: `docs/mockups/index.html` (abra no navegador)
 > **Teste com o time**: `docs/mockups/TESTE_NOVATO.md` (roteiro de 15 min)
@@ -188,6 +189,16 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
   nome da rede via dialog ✏️ no agrupamento).
 - **Acao em lote (admin)**: selecionar N escolas → "Transferir para ▸ {vendedor}"
   (resolve ferias/redistribuicao; com registro de quem fez).
+- **Fluxo "Registrar encontro" (v1.4)** — "conheci alguem na rua": dialog unico
+  (na Home, na ficha e por voz no IAlex) em 3 passos: ① **Escola** — busca no
+  CRM → nao achou? busca no MEC (autocomplete 185k, importa na hora) → nao esta
+  no MEC? **"Criar escola manual"** (nome+cidade+UF; inep sintetico `M-{8}`,
+  `fonte_dados='manual'`); ② **Pessoa** — existente OU nova (nome+cargo+
+  email/whats/tel) via novo `criar_contato` (gap real da v1: nao existia criacao
+  manual de contato); ③ **Interacao** — tipo (encontro/ligacao/whats/email),
+  notas e "proximo passo?" (opcional → ja cria a atividade com prazo).
+  IAlex: *"conheci a diretora Maria do Colegio X na feira, registra e me lembra
+  de ligar quinta"* → tool `registrar_encontro` orquestra os 3 passos.
 - **Aba "Pessoas"**: a pagina Contatos inteira entra aqui (decisores + export;
   e-mails deduzidos marcados ⚠️ "provavel, nao confirmado").
 - **Ficha da escola — "Argumentos de venda"** (v1.1 — ENEM/Censo de forma
@@ -228,6 +239,18 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
   *"A IA escolhe o modelo pela situacao da escola e personaliza por dados — voce
   sempre revisa antes de sair."* A matriz fina da selecao automatica (situacao →
   modelo) e config de admin e fica em Ajustes.
+- **Visibilidade dos modelos (v1.4)**: ao criar, escolhe **👥 Compartilhado**
+  (default — biblioteca comum do time) ou **🔒 Pessoal** (so o criador ve/usa).
+  Colunas additive `created_by` + `visibility`. A selecao automatica considera
+  os compartilhados + os pessoais DO REMETENTE da mensagem.
+- **Respostas de e-mail (v1.4 — como funciona)**: a captura JA E AUTOMATICA
+  (webhook Brevo marca a resposta → em ate 15min o sistema classifica a intencao
+  e gera um rascunho de resposta → fila de aprovacao). Na v2: (a) armazenar e
+  exibir o **corpo completo** da resposta (hoje so 500 chars) em Recebidas e na
+  timeline Conversas; (b) botao **"Registrar resposta recebida"** (Recebidas +
+  ficha) para colar resposta que chegou fora do fluxo (outro endereco, telefone)
+  — dispara o mesmo tratamento (atividade Responder + rascunho IA). Conexao de
+  caixa real (IMAP/Graph) fica para F8+.
 - Metricas de envio SAEM daqui → Resultados (fim da triplicacao).
 
 ### 💼 NEGOCIOS (kanban comercial promovido a pagina propria)
@@ -377,6 +400,15 @@ Regra: **nenhuma pagina escreve string de status na mao** — tudo via labels.py
 
 ## 7. Agenda + Metas
 
+> **📋 SPEC OPERACIONAL COMPLETA: `docs/SPEC_AGENDA_METAS.md`** (v1.4) — ciclo
+> de vida com AUTO-RESOLUCAO (varredor que conclui/dismissa atividades cujo
+> gatilho morreu — a agenda "nunca mente"), anti-colisao (max 1 cobranca por
+> escola/dono), snooze com limite (3), TTL de expiracao por regra, rotinas
+> prescritas (vendedor 3 blocos; gestor segunda 15min; ciclo mensal de metas
+> com rollover automatico + revision_log), matriz de notificacoes anti-ruido
+> (max 6 pushes/dia; quiet hours), 15 edge cases resolvidos, metricas da propria
+> agenda e 15 "nao fazer". Em conflito, a SPEC prevalece sobre este resumo.
+
 ### Modelo de dados (additive-only; v1 ignora sem quebrar)
 
 `activities`: id, company_id, contact_id, meeting_id, **owner_username**, type
@@ -384,16 +416,30 @@ Regra: **nenhuma pagina escreve string de status na mao** — tudo via labels.py
 aprovar_mensagens | tarefa), title, details, **due_at**, priority (1-3),
 **status** (open | done | snoozed | dismissed), source (manual | auto | ialex),
 auto_rule, **dedupe_key UNIQUE** (idempotencia), snoozed_until, completed_at/by,
-created_by/at/updated_at. Indices: (owner, status, due_at), (company_id).
+created_by/at/updated_at, sequence_step, **resolution** (v1.4: manual |
+auto_trabalho_detectado | auto_gatilho_morto | expirada | lead_transferido —
+viabiliza a auto-resolucao auditavel e as metricas de saude da agenda),
+**snooze_count** (v1.4: limite de 3 adiamentos). Indices: (owner, status,
+due_at), (company_id). FK company_id ON DELETE CASCADE.
 
 `goals`: username ('fernando'|'lizianne'|'felipe'|'team'), metric
 (emails_enviados | respostas | reunioes_realizadas | propostas | clientes |
 valor_fechado | atividades_concluidas), period_type (week|month|quarter),
-period_start, target. UNIQUE(username, metric, period_type, period_start).
+period_start, target, created_by/at/updated_at, **revision_log JSONB** (v1.4:
+toda mudanca de meta registrada — incl. o rollover automatico 'herdada').
+UNIQUE(username, metric, period_type, period_start).
 **Sem coluna `current`** — o realizado e calculado ao vivo das tabelas existentes
 (queries ja existem no Analytics). Evita drift.
 
 ALTERs: meetings + owner_username, created_by.
+
+**TRIGGER `stage_changed` (v1.4 — OBRIGATORIO na F1)**: `ON UPDATE OF
+status/commercial_stage ON companies` grava evento imutavel em interactions
+(`type='stage_changed'`, metadata {from, to, valor}). Sem ele, as metas de
+propostas/clientes/valor seriam contadas do status ATUAL (mutavel) e o
+fechamento de um mes mudaria retroativamente — meta viraria enfeite. Trigger
+(nao codigo) captura todos os caminhos: dashboard v1, v2, IAlex e HubSpot pull.
+Detalhe: SPEC §4.3.
 
 ### Motor de atividades (`workflows/activity_engine.py` — 6 regras automaticas)
 
@@ -422,7 +468,8 @@ auto abertas por dono.
 
 Auditoria de cobertura: das necessidades novas, ~50% ja e atendido pelas ~105
 tools existentes do brain.py (mover etapa, registrar proposta/cliente/perdido,
-exportar planilha por voz, dados da escola). Faltam **16 tools novas/estendidas**:
+exportar planilha por voz, dados da escola). Faltam **18 tools novas/estendidas**
+(16 da v1.1 + `criar_contato` e `registrar_encontro` da v1.4):
 
 | Grupo | Tools |
 |---|---|
@@ -431,6 +478,7 @@ exportar planilha por voz, dados da escola). Faltam **16 tools novas/estendidas*
 | Gestao (2) | `reatribuir_leads_lote(origem, destino)` (admin, com auditoria) · `kpi_periodo(inicio, fim, vendedor?)` |
 | Inteligencia (2) | `argumentos_venda(escola)` (sintese dos dados ENEM/Censo em municao de conversa) · `preparar_reuniao(escola, data?)` (orquestra: agenda + relatorio + ultimas interacoes + argumentos) |
 | Extensoes (4) | `tracking_emails`/`funil_vendas`/`ver_agenda` ganham filtro por vendedor (admin) · `exportar_escolas_xlsx` ganha filtros de data de contato e faixa de alunos |
+| Registro (2, v1.4) | `criar_contato(escola, nome, cargo, email?, whats?)` · `registrar_encontro(...)` (orquestra escola+pessoa+interacao+proximo passo por voz) |
 
 Digest 8:15 passa a abrir com "Sua agenda de hoje: N atividades (X atrasadas)" +
 progresso da meta. Exemplos de uso: "como estou na meta?", "passa os leads do
@@ -462,10 +510,10 @@ Streamlit Cloud apontando pro branch; **main (v1) intocada ate a F7**.
 
 | Fase | Escopo | Aceitacao |
 |---|---|---|
-| **F1 Fundacoes** | Migration activities/goals (additive, incl. `sequence_step`); activity_engine (7 regras, incl. sequencia de toques) + consolidacao com scheduler; **16 tools IAlex**; labels.py (incl. thresholds); componentes theme.py + `school_filters()` + `export_button()`; config ticket por aluno | v1 segue identica; engine roda 2x sem duplicar; "IAlex, minha agenda" e "como estou na meta?" respondem |
+| **F1 Fundacoes** | Migration activities/goals (additive, incl. `sequence_step`, `resolution`, `snooze_count`, `revision_log`) + **trigger stage_changed**; activity_engine (7 regras + VARREDOR de auto-resolucao, conforme SPEC) + consolidacao com scheduler; **18 tools IAlex** (incl. criar_contato, registrar_encontro); labels.py (incl. thresholds); componentes theme.py + `school_filters()` + `export_button()`; config ticket por aluno | v1 segue identica; criterios de aceitacao da SPEC §10 (engine 2x sem duplicar E sem zumbis; auto-resolucao ≤30min; mes fechado imutavel); "IAlex, minha agenda" e "como estou na meta?" respondem |
 | **F2 Hoje+Metas** | Home nova (agenda+numeros AO VIVO c/ alerta SLA+busca acionavel+checklist novato+"Em conversa: N"); toggle Equipe = painel do gestor (semana+fila envelhecendo+parados+sem dono); Resultados c/ Metas (dialog com calibracao historica) + Funil com TAXAS e filtros cidade/tipo/porte + Envios 5 cards c/ tempo de 1a resposta e canal | concluir/adiar em ≤2 cliques; meta com progresso real e contexto; Home <3s |
-| **F3 Mensagens** | Fila unica + chips; Recebidas (responder c/ canal); Modelos c/ canal (+3o modelo WhatsApp follow-up); agendar envio + "Enviar como" + aviso de e-mail deduzido no painel; labels em TODOS os badges | aprovar→enviar ponta-a-ponta no preview; zero status hardcoded |
-| **F4 Prospectar+Escolas** | Recomendadas + wizards (resultado da busca com export) + toggle Mapa + Sinais de compra; detalhe 7→4 c/ Argumentos de venda + Relatorio no header; Pessoas (⚠️ deduzidos, filtros proprios); filtros padrao (incl. Completude) + Potencial R$/mes + export em todas as listas; **seletor de colunas (4 presets) + export_utils modo completo**; nome-link + coluna ↗ p/ a ficha | novato importa e gera 1a mensagem so pelo wizard; ENEM em exatamente 2 lugares; "planilha" em 1 clique de qualquer lista (incl. TODAS as colunas); abrir a ficha a partir da lista em 1 clique; checklist de paridade da fase 100% |
+| **F3 Mensagens** | Fila unica + chips; Recebidas (responder c/ canal + **corpo completo da resposta** + **"Registrar resposta recebida"** manual); Modelos c/ canal e **visibilidade compartilhado/pessoal** (+3o modelo WhatsApp follow-up); agendar envio + "Enviar como" + aviso de e-mail deduzido no painel; labels em TODOS os badges | aprovar→enviar ponta-a-ponta no preview; zero status hardcoded; resposta colada manualmente dispara o mesmo fluxo da automatica |
+| **F4 Prospectar+Escolas** | Recomendadas + wizards (resultado da busca com export) + toggle Mapa + Sinais de compra; detalhe 7→4 c/ Argumentos de venda + Relatorio no header; Pessoas (⚠️ deduzidos, filtros proprios); filtros padrao (incl. Completude) + Potencial R$/mes + export em todas as listas; **seletor de colunas (4 presets) + export_utils modo completo**; nome-link + coluna ↗ p/ a ficha; **fluxo "Registrar encontro"** (escola CRM→MEC→manual c/ inep sintetico + pessoa nova + interacao + proximo passo) | novato importa e gera 1a mensagem so pelo wizard; ENEM em exatamente 2 lugares; "planilha" em 1 clique (incl. TODAS as colunas); abrir a ficha em 1 clique; registrar um encontro de rua em <60s (UI ou voz); checklist de paridade 100% |
 | **F5 Negocios** | Kanban pagina propria + popover mover + valores + Reunioes; **higiene**: motivo de perda obrigatorio + proximo passo obrigatorio + auto-rot suave; **transferencia de leads em lote (admin)**; spike drag-drop | mover card reflete no IAlex; mover pra Perdida sem motivo e impossivel; reuniao sem resultado gera atividade; redistribuir N leads em <2min |
 | **F6 Polimento+Ajuda** | Estados vazios; Ajuda 5 tabs (incl. ICP e thresholds); tour 1o login; Ajustes admin-only (+Diagnostico: APIs/health/build/bounce/syncs + limites de envio por canal) | **teste do novato**: pessoa externa completa o roteiro sem ajuda, <15min |
 | **F7 Cutover** | Merge na main; stubs de redirect 30 dias; Manual+prompt IAlex atualizados; treinamento 1h | time opera 1 semana sem abrir a v1; rollback = revert; pytest verde; checklist de paridade (apendice A) 100% |
