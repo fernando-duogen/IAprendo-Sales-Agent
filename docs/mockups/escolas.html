@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAprendo v2 — Escolas</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7FB;color:#1A202C}
+.mockup-banner{background:#1A237E;color:#fff;text-align:center;padding:8px 16px;font-size:12.5px;letter-spacing:.3px}
+.mockup-banner a{color:#90CAF9}
+.app{display:flex;min-height:calc(100vh - 36px)}
+.sidebar{width:240px;background:#fff;border-right:1px solid #E3E8EF;padding:20px 12px;flex-shrink:0}
+.logo{text-align:center;padding:4px 0 16px;border-bottom:1px solid #EEF2F7;margin-bottom:14px}
+.logo .t{font-size:19px;font-weight:700;color:#1976D2}
+.logo .s{font-size:11px;color:#94A3B8}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;color:#475569;text-decoration:none;font-size:14px;margin-bottom:2px;border-left:3px solid transparent}
+.nav-item:hover{background:#F1F5F9}
+.nav-item.active{background:#E3F2FD;color:#1565C0;font-weight:600;border-left:3px solid #1976D2}
+.nav-item .badge{margin-left:auto;background:#1976D2;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
+.nav-sep{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;margin:14px 12px 6px}
+.main{flex:1;padding:28px 36px;max-width:1280px}
+.page-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.page-h h1{font-size:23px;font-weight:700}
+.user-pill{display:flex;align-items:center;gap:8px;font-size:13px;color:#475569}
+.user-pill .av{width:30px;height:30px;border-radius:50%;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.page-sub{color:#64748B;font-size:13.5px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:18px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:9px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+.btn-p{background:#1976D2;color:#fff}
+.btn-g{background:#2E7D32;color:#fff}
+.btn-o{background:#fff;color:#334155;border:1px solid #CBD5E1}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:7px}
+.pill{display:inline-block;border-radius:99px;padding:3px 11px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:4px 12px;font-size:12.5px;font-weight:600;border:1.5px solid #CBD5E1;background:#fff;color:#475569;cursor:pointer}
+.chip.on{border-color:#1976D2;color:#1565C0;background:#E3F2FD}
+.st-nova{background:#90A4AE}.st-aval{background:#7E57C2}.st-pronta{background:#26A69A}.st-cont{background:#1E88E5}.st-resp{background:#F9A825;color:#3E2723}.st-reun{background:#FB8C00}.st-prop{background:#8E24AA}.st-cli{background:#2E7D32}.st-perd{background:#B0BEC5;color:#37474F}
+.prio{font-size:12.5px;font-weight:700;white-space:nowrap;cursor:help}
+.p-agir{color:#C62828}.p-quente{color:#E65100}.p-morno{color:#F9A825}.p-frio{color:#90A4AE}
+</style>
+<style>
+/* ===== CSS específico: Escolas ===== */
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.filters{padding:14px 18px;margin-bottom:12px}
+.f-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.f-row + .f-row{margin-top:10px;padding-top:10px;border-top:1px dashed #EEF2F7}
+.f-field{display:flex;flex-direction:column;gap:3px}
+.f-field label{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.f-field select{border:1px solid #CBD5E1;border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#334155;min-width:110px}
+.f-check{display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;white-space:nowrap}
+.f-check input{accent-color:#1976D2;width:15px;height:15px}
+.f-range{display:flex;align-items:center;gap:6px;font-size:13px;color:#334155}
+.f-range input{width:64px;border:1px solid #CBD5E1;border-radius:8px;padding:6px 8px;font-size:13px;color:#334155}
+.f-spacer{flex:1}
+.f-caption{font-size:12.5px;color:#64748B;margin-top:10px}
+.f-caption b{color:#1565C0}
+/* barra de ação em lote */
+.bulkbar{display:flex;align-items:center;gap:10px;background:#E3F2FD;border:1px solid #BBDEFB;border-radius:12px;padding:9px 16px;margin-bottom:12px;font-size:13px;color:#1565C0;font-weight:600}
+.bulkbar .clear{margin-left:4px;color:#64748B;font-weight:400;font-size:12.5px;text-decoration:underline;cursor:pointer}
+.pop-wrap{position:relative;display:inline-block}
+.popover{position:absolute;top:calc(100% + 6px);left:0;background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 8px 24px rgba(16,24,40,.14);min-width:200px;padding:6px;z-index:20}
+.popover .ph{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;padding:6px 10px 4px}
+.popover .pi{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;font-size:13px;color:#334155;cursor:pointer;font-weight:500}
+.popover .pi:hover{background:#F1F5F9}
+.popover .pnote{font-size:11px;color:#94A3B8;padding:6px 10px 4px;border-top:1px solid #EEF2F7;margin-top:4px;font-weight:400}
+/* avatares */
+.av-s{width:26px;height:26px;border-radius:50%;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0}
+.av-f{background:#1976D2}.av-l{background:#8E24AA}.av-f2{background:#00897B}
+/* tabela */
+.tbl-card{padding:0;overflow:hidden}
+table.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;padding:11px 14px;border-bottom:1px solid #E3E8EF;background:#FAFCFF;white-space:nowrap}
+.tbl td{padding:11px 14px;border-bottom:1px solid #F1F5F9;vertical-align:middle;white-space:nowrap}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover{background:#F8FAFD}
+.tbl tbody tr.sel{background:#EAF3FE}
+.tbl tbody tr.sel:hover{background:#E3EFFC}
+.tbl input[type=checkbox]{accent-color:#1976D2;width:15px;height:15px;cursor:pointer}
+.school{font-weight:700;color:#1A202C;cursor:pointer}
+.school.lnk{color:#1565C0;text-decoration:underline;text-underline-offset:3px}
+.money{font-weight:700;color:#2E7D32}
+.muted{color:#94A3B8}
+.last{color:#64748B;font-size:12.5px}
+/* rodapé */
+.foot-notes{margin-top:14px;font-size:12px;color:#94A3B8;line-height:1.7}
+/* aba pessoas (placeholder) */
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+.pessoas-ph{text-align:center;padding:48px 24px;color:#64748B;font-size:14px}
+.pessoas-ph .big{font-size:34px;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="mockup-banner">🧪 MOCKUP — proposta de redesign v2 "Dia de Venda" · dados ilustrativos · <a href="index.html">← voltar ao índice</a></div>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="t">🎓 IAprendo</div><div class="s">Plataforma de Vendas</div></div>
+  <a class="nav-item" href="hoje.html">🏠 Hoje</a>
+  <a class="nav-item" href="#" title="Página mantida da v1 — sem mockup nesta rodada">🤖 IAlex</a>
+  <div class="nav-sep">Vender</div>
+  <a class="nav-item" href="prospectar.html">🔍 Prospectar</a>
+  <a class="nav-item active" href="escolas.html">🏫 Escolas</a>
+  <a class="nav-item" href="mensagens.html">✉️ Mensagens <span class="badge">12</span></a>
+  <a class="nav-item" href="negocios.html">💼 Negócios</a>
+  <div class="nav-sep">Acompanhar</div>
+  <a class="nav-item" href="resultados.html">📊 Resultados</a>
+  <div class="nav-sep">Sistema</div>
+  <a class="nav-item" href="#" title="Visível apenas para administradores">⚙️ Ajustes</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">❓ Ajuda</a>
+</aside>
+<main class="main">
+
+  <div class="page-h">
+    <h1>Escolas</h1>
+    <div class="user-pill"><div class="av">F</div>Fernando</div>
+  </div>
+  <div class="page-sub">A memória do time: toda escola, sua etapa e quem cuida dela</div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <span class="chip on" id="tab-lista" onclick="showTab('lista')">Lista</span>
+    <span class="chip" id="tab-pessoas" onclick="showTab('pessoas')">👥 Pessoas (249)</span>
+  </div>
+
+  <!-- ====== TAB: LISTA ====== -->
+  <div class="tab-panel active" id="panel-lista">
+
+    <!-- Barra de filtros padrão -->
+    <div class="card filters">
+      <div class="f-row">
+        <div class="f-field"><label>UF</label><select><option>RS ▾</option></select></div>
+        <div class="f-field"><label>Cidade</label><select><option>Todas ▾</option></select></div>
+        <div class="f-field"><label>Tipo</label><select><option>Privada ▾</option></select></div>
+        <div class="f-field"><label>Etapa</label><select><option>Todas ▾</option></select></div>
+        <div class="f-field"><label>Prioridade</label><select><option>Todas ▾</option></select></div>
+        <div class="f-field"><label>Dono</label><select><option>Todos ▾</option></select></div>
+      </div>
+      <div class="f-row">
+        <label class="f-check"><input type="checkbox" checked> Fund. anos finais</label>
+        <label class="f-check"><input type="checkbox" checked> Ensino Médio</label>
+        <div class="f-range">Alunos: <input type="text" value="de 400"> – <input type="text" value="até 1000"></div>
+        <div class="f-field"><label>Agrupar por</label><select><option>Nenhum ▾</option><option>Rede</option><option>Cidade</option></select></div>
+        <div class="f-spacer"></div>
+        <button class="btn btn-o" title="Exporta exatamente o que está filtrado">📥 Exportar (XLSX)</button>
+      </div>
+      <div class="f-caption">119 escolas na base · <b>47 com os filtros atuais</b></div>
+    </div>
+
+    <!-- Barra de ação em lote -->
+    <div class="bulkbar">
+      <span>2 selecionadas ·</span>
+      <div class="pop-wrap">
+        <button class="btn btn-o btn-sm" onclick="togglePop()">Transferir para ▾</button>
+        <div class="popover" id="pop-transfer">
+          <div class="ph">Transferir dono</div>
+          <div class="pi"><span class="av-s av-f">F</span> Fernando</div>
+          <div class="pi"><span class="av-s av-l">L</span> Lizianne</div>
+          <div class="pi"><span class="av-s av-f2">F2</span> Felipe</div>
+          <div class="pnote">Disponível apenas para administradores</div>
+        </div>
+      </div>
+      <button class="btn btn-o btn-sm">📥 Exportar seleção</button>
+      <span class="clear">limpar</span>
+    </div>
+
+    <!-- Tabela -->
+    <div class="card tbl-card">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th><input type="checkbox"></th>
+            <th>Escola</th>
+            <th>Cidade/UF</th>
+            <th>Etapa</th>
+            <th>Prioridade</th>
+            <th>Alunos-alvo</th>
+            <th>Potencial R$/mês</th>
+            <th>Dono</th>
+            <th>Último contato</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="sel">
+            <td><input type="checkbox" checked></td>
+            <td><a class="school lnk" href="escola-ficha.html" title="abrir ficha" style="text-decoration:none">Colégio Santa Cecília</a></td>
+            <td>Porto Alegre/RS</td>
+            <td><span class="pill st-resp">Respondeu</span></td>
+            <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 82/100">🟠 Quente</span></td>
+            <td>612</td>
+            <td class="money">R$ 4.890</td>
+            <td><span class="av-s av-f" title="Fernando">F</span></td>
+            <td class="last">ontem</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox"></td>
+            <td><span class="school" title="abrir ficha">Colégio Horizonte Sul</span></td>
+            <td>Porto Alegre/RS</td>
+            <td><span class="pill st-cont">Contatada</span></td>
+            <td><span class="prio p-morno" title="Por que? Engajamento ▰▰▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 64/100">🟡 Morno</span></td>
+            <td>480</td>
+            <td class="money">R$ 3.835</td>
+            <td><span class="av-s av-f" title="Fernando">F</span></td>
+            <td class="last">3d</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox"></td>
+            <td><span class="school" title="abrir ficha">Instituto Monte Alverne</span></td>
+            <td>Caxias do Sul/RS</td>
+            <td><span class="pill st-reun">Em reunião</span></td>
+            <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▱▱ · Avaliação da IA 71/100">🟠 Quente</span></td>
+            <td>350</td>
+            <td class="money">R$ 2.797</td>
+            <td><span class="av-s av-l" title="Lizianne">L</span></td>
+            <td class="last">2d</td>
+          </tr>
+          <tr class="sel">
+            <td><input type="checkbox" checked></td>
+            <td><span class="school" title="abrir ficha">Colégio Atlântico</span></td>
+            <td>Fortaleza/CE</td>
+            <td><span class="pill st-reun">Em reunião</span></td>
+            <td><span class="prio p-agir" title="Por que? Engajamento ▰▰▰▰ · Potencial ▰▰▰▰ · Avaliação da IA 91/100">🔴 Agir agora</span></td>
+            <td>890</td>
+            <td class="money">R$ 7.111</td>
+            <td><span class="av-s av-f" title="Fernando">F</span></td>
+            <td class="last">hoje</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox"></td>
+            <td><span class="school" title="abrir ficha">Escola Nova Geração</span></td>
+            <td>Porto Alegre/RS</td>
+            <td><span class="pill st-pronta">Pronta para contato</span></td>
+            <td><span class="prio p-frio" title="Por que? Engajamento ▱▱▱▱ · Potencial ▰▰▱▱ · Avaliação da IA 48/100">⚪ Frio</span></td>
+            <td>295</td>
+            <td class="money">R$ 2.357</td>
+            <td><span class="av-s av-l" title="Lizianne">L</span></td>
+            <td class="last">—</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox"></td>
+            <td><span class="school" title="abrir ficha">Colégio Dom Pedro II</span></td>
+            <td>Fortaleza/CE</td>
+            <td><span class="pill st-cont">Contatada</span></td>
+            <td><span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▱ · Avaliação da IA 74/100">🟠 Quente</span></td>
+            <td>540</td>
+            <td class="money">R$ 4.315</td>
+            <td><span class="av-s av-f2" title="Felipe">F2</span></td>
+            <td class="last">5d</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox"></td>
+            <td><span class="school" title="abrir ficha">Instituto Educar Mais</span></td>
+            <td>Caxias do Sul/RS</td>
+            <td><span class="pill st-aval">Avaliada</span></td>
+            <td><span class="prio p-frio" title="Por que? Engajamento ▱▱▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 55/100">⚪ Frio</span></td>
+            <td>640</td>
+            <td class="money">R$ 5.114</td>
+            <td><span class="muted" title="Sem dono — escola ainda não distribuída">—</span></td>
+            <td class="last">—</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox"></td>
+            <td><span class="school" title="abrir ficha">Colégio Sol Nascente</span></td>
+            <td>Porto Alegre/RS</td>
+            <td><span class="pill st-nova">Nova</span></td>
+            <td><span class="prio p-frio" title="Por que? Engajamento ▱▱▱▱ · Potencial ▰▰▰▰ · Avaliação da IA ainda não feita">⚪ Frio</span></td>
+            <td>820</td>
+            <td class="money">R$ 6.552</td>
+            <td><span class="muted" title="Sem dono — escola ainda não distribuída">—</span></td>
+            <td class="last">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Rodapé -->
+    <div class="foot-notes">
+      💰 Potencial R$/mês = alunos-alvo × ticket por aluno (R$ 7,99 — configure em Ajustes).<br>
+      Agrupar por Rede junta unidades da mesma mantenedora (✏️ para corrigir o nome da rede).
+    </div>
+
+  </div>
+
+  <!-- ====== TAB: PESSOAS (placeholder) ====== -->
+  <div class="tab-panel" id="panel-pessoas">
+    <div class="card pessoas-ph">
+      <div class="big">👥</div>
+      <b>Pessoas — 249 contatos de decisores</b><br>
+      Diretores, coordenadores e mantenedores ligados às escolas da base.<br>
+      <span style="font-size:12.5px;color:#94A3B8">Mesmos filtros da Lista (UF · Cidade · Tipo · Etapa · Dono) + cargo. Mockup detalhado nesta rodada apenas para a aba Lista.</span>
+    </div>
+  </div>
+
+</main>
+</div>
+<script>
+function showTab(name){
+  document.getElementById('tab-lista').classList.toggle('on', name==='lista');
+  document.getElementById('tab-pessoas').classList.toggle('on', name==='pessoas');
+  document.getElementById('panel-lista').classList.toggle('active', name==='lista');
+  document.getElementById('panel-pessoas').classList.toggle('active', name==='pessoas');
+}
+function togglePop(){
+  var p=document.getElementById('pop-transfer');
+  p.style.display=(p.style.display==='none')?'block':'none';
+}
+</script>
+</body>
+</html>

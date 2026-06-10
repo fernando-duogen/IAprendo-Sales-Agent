@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAprendo v2 — Ficha da Escola</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7FB;color:#1A202C}
+.mockup-banner{background:#1A237E;color:#fff;text-align:center;padding:8px 16px;font-size:12.5px;letter-spacing:.3px}
+.mockup-banner a{color:#90CAF9}
+.app{display:flex;min-height:calc(100vh - 36px)}
+.sidebar{width:240px;background:#fff;border-right:1px solid #E3E8EF;padding:20px 12px;flex-shrink:0}
+.logo{text-align:center;padding:4px 0 16px;border-bottom:1px solid #EEF2F7;margin-bottom:14px}
+.logo .t{font-size:19px;font-weight:700;color:#1976D2}
+.logo .s{font-size:11px;color:#94A3B8}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;color:#475569;text-decoration:none;font-size:14px;margin-bottom:2px;border-left:3px solid transparent}
+.nav-item:hover{background:#F1F5F9}
+.nav-item.active{background:#E3F2FD;color:#1565C0;font-weight:600;border-left:3px solid #1976D2}
+.nav-item .badge{margin-left:auto;background:#1976D2;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
+.nav-sep{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;margin:14px 12px 6px}
+.main{flex:1;padding:28px 36px;max-width:1280px}
+.page-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.page-h h1{font-size:23px;font-weight:700}
+.user-pill{display:flex;align-items:center;gap:8px;font-size:13px;color:#475569}
+.user-pill .av{width:30px;height:30px;border-radius:50%;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.page-sub{color:#64748B;font-size:13.5px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:18px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:9px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+.btn-p{background:#1976D2;color:#fff}
+.btn-g{background:#2E7D32;color:#fff}
+.btn-o{background:#fff;color:#334155;border:1px solid #CBD5E1}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:7px}
+.pill{display:inline-block;border-radius:99px;padding:3px 11px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:4px 12px;font-size:12.5px;font-weight:600;border:1.5px solid #CBD5E1;background:#fff;color:#475569;cursor:pointer}
+.chip.on{border-color:#1976D2;color:#1565C0;background:#E3F2FD}
+.st-nova{background:#90A4AE}.st-aval{background:#7E57C2}.st-pronta{background:#26A69A}.st-cont{background:#1E88E5}.st-resp{background:#F9A825;color:#3E2723}.st-reun{background:#FB8C00}.st-prop{background:#8E24AA}.st-cli{background:#2E7D32}.st-perd{background:#B0BEC5;color:#37474F}
+.prio{font-size:12.5px;font-weight:700;white-space:nowrap;cursor:help}
+.p-agir{color:#C62828}.p-quente{color:#E65100}.p-morno{color:#F9A825}.p-frio{color:#90A4AE}
+</style>
+<style>
+/* ===== específico da Ficha da Escola ===== */
+.bc{font-size:12.5px;color:#64748B;margin-bottom:10px}
+.bc a{color:#1976D2;text-decoration:none}
+.bc a:hover{text-decoration:underline}
+
+/* header da escola */
+.school-h{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px}
+.school-h .nm{font-size:24px;font-weight:700;margin-bottom:3px}
+.school-h .meta{font-size:13.5px;color:#64748B;margin-bottom:10px}
+.school-h .tags{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.owner{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#475569}
+.owner .av{width:26px;height:26px;border-radius:50%;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+.school-h .acts{display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
+
+/* tabs */
+.tabs{display:flex;gap:4px;border-bottom:2px solid #E3E8EF;margin-bottom:20px}
+.tab{background:none;border:none;border-bottom:3px solid transparent;padding:10px 16px;font-size:14px;font-weight:600;color:#64748B;cursor:pointer;margin-bottom:-2px}
+.tab:hover{color:#1565C0}
+.tab.on{color:#1565C0;border-bottom-color:#1976D2}
+.tab-panel{display:none}
+.tab-panel.on{display:block}
+
+/* visão geral */
+.vg-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:18px;align-items:start}
+.vg-col{display:flex;flex-direction:column;gap:18px}
+.card-arg{border-left:4px solid #1976D2;background:#F8FBFF}
+.card h3{font-size:14.5px;font-weight:700;margin-bottom:12px}
+.arg{display:flex;gap:10px;font-size:13.5px;line-height:1.5;margin-bottom:12px}
+.arg .ic{font-size:17px;flex-shrink:0}
+.arg .dado{color:#64748B;font-size:12.5px}
+.arg-foot{font-size:11.5px;color:#94A3B8;border-top:1px solid #E3E8EF;padding-top:10px;margin-top:2px}
+.dados-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px}
+.dado-item .l{font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px}
+.dado-item .v{font-size:13.5px;font-weight:600;color:#334155}
+.card-money{background:#E8F5E9;border-color:#A5D6A7}
+.card-money .big{font-size:22px;font-weight:800;color:#1B5E20}
+.card-money .sub{font-size:12px;color:#558B2F;margin-top:3px}
+.atv{font-size:13.5px;font-weight:600;margin-bottom:4px}
+.atv-when{font-size:12.5px;color:#C62828;font-weight:700;margin-bottom:10px}
+.mini-tl{list-style:none}
+.mini-tl li{font-size:13px;color:#475569;padding:6px 0;border-bottom:1px dashed #EEF2F7;display:flex;gap:8px}
+.mini-tl li:last-child{border-bottom:none}
+.mini-tl .when{margin-left:auto;font-size:11.5px;color:#94A3B8;white-space:nowrap}
+.lnk{font-size:12.5px;color:#1976D2;cursor:pointer;text-decoration:none;font-weight:600}
+.lnk:hover{text-decoration:underline}
+
+/* desempenho */
+.ok-banner{background:#E8F5E9;border:1px solid #A5D6A7;color:#1B5E20;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;margin-bottom:18px}
+.des-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;align-items:start}
+.des-col{display:flex;flex-direction:column;gap:18px}
+.enem-row{margin-bottom:14px}
+.enem-row .lbl{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px}
+.enem-row .lbl b{color:#334155}
+.gap-neg{color:#C62828;font-weight:700}
+.gap-pos{color:#2E7D32;font-weight:700}
+.barwrap{height:9px;background:#F1F5F9;border-radius:99px;overflow:hidden;margin-bottom:3px}
+.bar-esc{height:100%;background:#1976D2;border-radius:99px}
+.bar-grp{height:100%;background:#B0BEC5;border-radius:99px}
+.bar-vals{display:flex;justify-content:flex-start;gap:14px;font-size:11px;color:#94A3B8}
+.legend{display:flex;gap:16px;font-size:11.5px;color:#64748B;margin-bottom:14px}
+.legend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.mat-chart{display:flex;align-items:flex-end;gap:10px;height:120px;margin:8px 0 4px}
+.mat-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
+.mat-bar .col{width:100%;background:#64B5F6;border-radius:6px 6px 0 0}
+.mat-bar.last .col{background:#1976D2}
+.mat-bar .yv{font-size:10.5px;color:#94A3B8;margin-top:4px}
+.mat-bar .nv{font-size:10.5px;font-weight:700;color:#334155;margin-bottom:3px}
+.nota-verde{font-size:12.5px;color:#2E7D32;font-weight:700;margin-top:6px}
+.infra-list{list-style:none;font-size:13.5px}
+.infra-list li{padding:7px 0;border-bottom:1px dashed #EEF2F7;display:flex;justify-content:space-between;gap:10px}
+.infra-list li:last-child{border-bottom:none}
+.infra-list .iv{font-weight:600;color:#334155}
+.infra-warn{color:#E65100;font-weight:600}
+
+/* pessoas */
+.pes-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.pes-head h3{margin-bottom:0}
+table.pessoas{width:100%;border-collapse:collapse;font-size:13.5px}
+table.pessoas th{text-align:left;font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px;border-bottom:1px solid #E3E8EF}
+table.pessoas td{padding:11px 10px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
+.role{display:inline-block;border-radius:99px;padding:2px 10px;font-size:11.5px;font-weight:700}
+.role-decide{background:#FDE8E8;color:#C62828}
+.role-inf{background:#FFF4E5;color:#E65100}
+.role-apoio{background:#F1F5F9;color:#64748B}
+.mail-ok{color:#2E7D32;font-weight:700;cursor:help}
+.mail-warn{cursor:help}
+.muted{color:#94A3B8}
+
+/* conversas */
+.tl{list-style:none;margin-top:14px;position:relative;padding-left:30px}
+.tl::before{content:"";position:absolute;left:10px;top:6px;bottom:6px;width:2px;background:#E3E8EF}
+.tl li{position:relative;padding:0 0 20px}
+.tl li::before{content:"";position:absolute;left:-26px;top:4px;width:12px;height:12px;border-radius:50%;background:#fff;border:3px solid #1976D2}
+.tl li.gray::before{border-color:#B0BEC5}
+.tl .ev{font-size:13.5px;font-weight:600}
+.tl .ev .q{font-weight:500;color:#334155}
+.tl .sub{font-size:12px;color:#94A3B8;margin-top:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tl .chip{cursor:default;padding:2px 9px;font-size:11px}
+
+/* dialog */
+.overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50}
+.overlay.on{display:flex}
+.dlg{background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(16,24,40,.25);width:480px;max-width:92vw;padding:22px 24px}
+.dlg h3{font-size:16px;font-weight:700;margin-bottom:14px}
+.dlg label{display:block;font-size:12px;font-weight:700;color:#475569;margin:12px 0 4px}
+.dlg select,.dlg textarea,.dlg input{width:100%;border:1px solid #CBD5E1;border-radius:8px;padding:8px 10px;font-size:13.5px;font-family:inherit;background:#fff;color:#1A202C}
+.dlg textarea{min-height:74px;resize:vertical}
+.dlg-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dlg-note{font-size:12px;color:#64748B;background:#F8FAFC;border:1px solid #EEF2F7;border-radius:8px;padding:8px 11px;margin-top:14px}
+.dlg-acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="mockup-banner">🧪 MOCKUP — proposta de redesign v2 "Dia de Venda" · dados ilustrativos · <a href="index.html">← voltar ao índice</a></div>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="t">🎓 IAprendo</div><div class="s">Plataforma de Vendas</div></div>
+  <a class="nav-item" href="hoje.html">🏠 Hoje</a>
+  <a class="nav-item" href="#" title="Página mantida da v1 — sem mockup nesta rodada">🤖 IAlex</a>
+  <div class="nav-sep">Vender</div>
+  <a class="nav-item" href="prospectar.html">🔍 Prospectar</a>
+  <a class="nav-item active" href="escolas.html">🏫 Escolas</a>
+  <a class="nav-item" href="mensagens.html">✉️ Mensagens <span class="badge">12</span></a>
+  <a class="nav-item" href="negocios.html">💼 Negócios</a>
+  <div class="nav-sep">Acompanhar</div>
+  <a class="nav-item" href="resultados.html">📊 Resultados</a>
+  <div class="nav-sep">Sistema</div>
+  <a class="nav-item" href="#" title="Visível apenas para administradores">⚙️ Ajustes</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">❓ Ajuda</a>
+</aside>
+<main class="main">
+
+  <div class="bc">🏫 <a href="escolas.html">Escolas</a> › Colégio Santa Cecília</div>
+  <div class="page-h">
+    <h1>Ficha da Escola</h1>
+    <div class="user-pill"><div class="av">F</div>Fernando</div>
+  </div>
+  <div class="page-sub">Tudo sobre a escola num lugar só: argumentos, desempenho, pessoas e conversas.</div>
+
+  <!-- HEADER DA ESCOLA -->
+  <div class="card school-h">
+    <div>
+      <div class="nm">Colégio Santa Cecília</div>
+      <div class="meta">Porto Alegre/RS · Privada · Fund. anos finais + Ensino Médio</div>
+      <div class="tags">
+        <span class="pill st-resp">Respondeu</span>
+        <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 68/100">🟠 Quente</span>
+        <span class="owner"><span class="av">F</span>Fernando</span>
+      </div>
+    </div>
+    <div class="acts">
+      <button class="btn btn-o" title="One Page Report em HTML — pronto pra enviar ou estudar">📄 Relatório da escola</button>
+      <button class="btn btn-o" onclick="dlg(true)">+ Registrar contato</button>
+      <button class="btn btn-p">✉️ Gerar mensagem</button>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab on" data-t="tab-vg" onclick="showTab('tab-vg',this)">Visão Geral</button>
+    <button class="tab" data-t="tab-des" onclick="showTab('tab-des',this)">Desempenho</button>
+    <button class="tab" data-t="tab-pes" onclick="showTab('tab-pes',this)">Pessoas</button>
+    <button class="tab" data-t="tab-conv" onclick="showTab('tab-conv',this)">Conversas</button>
+  </div>
+
+  <!-- ===== TAB VISÃO GERAL ===== -->
+  <div class="tab-panel on" id="tab-vg">
+    <div class="vg-grid">
+      <div class="vg-col">
+        <div class="card card-arg">
+          <h3>💡 Argumentos de venda</h3>
+          <div class="arg"><span class="ic">📉</span><span>Matemática está <b>23 pontos abaixo</b> de escolas semelhantes — dor clara que o IAprendo resolve <span class="dado">(ENEM 2024: 512 vs 535 do grupo)</span></span></div>
+          <div class="arg"><span class="ic">📈</span><span>Matrículas <b>cresceram 18% em 2 anos</b> (520 → 612) — orçamento em expansão</span></div>
+          <div class="arg"><span class="ic">👩‍💼</span><span><b>Não há coordenador de tecnologia</b> — a decisão está centralizada na diretora Maria Helena</span></div>
+          <div class="arg-foot">Gerados dos dados ENEM 2024 + Censo 2025 · no WhatsApp: "IAlex, argumentos do Santa Cecília"</div>
+        </div>
+        <div class="card">
+          <h3>Dados da escola</h3>
+          <div class="dados-grid">
+            <div class="dado-item"><div class="l">Cidade</div><div class="v">Porto Alegre/RS</div></div>
+            <div class="dado-item"><div class="l">Tipo</div><div class="v">Privada</div></div>
+            <div class="dado-item"><div class="l">Níveis de ensino</div><div class="v">Fund. anos finais + Ensino Médio</div></div>
+            <div class="dado-item"><div class="l">Alunos-alvo</div><div class="v">612</div></div>
+            <div class="dado-item"><div class="l">Docentes</div><div class="v">38</div></div>
+            <div class="dado-item"><div class="l">Código da escola (MEC)</div><div class="v">43012345</div></div>
+            <div class="dado-item"><div class="l">Telefone</div><div class="v">(51) 3232-4150</div></div>
+            <div class="dado-item"><div class="l">Site</div><div class="v">santacecilia.com.br</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="vg-col">
+        <div class="card card-money">
+          <h3>💰 Potencial: <span class="big">R$ 4.890/mês</span></h3>
+          <div class="sub">612 alunos-alvo × R$ 7,99 (ticket em Ajustes)</div>
+        </div>
+        <div class="card">
+          <h3>📌 Próxima atividade</h3>
+          <div class="atv">Responder e-mail da diretora</div>
+          <div class="atv-when">hoje · 14h</div>
+          <button class="btn btn-g btn-sm">✓ Concluir</button>
+          <button class="btn btn-o btn-sm">⏰ Adiar</button>
+        </div>
+        <div class="card">
+          <h3>Últimos contatos</h3>
+          <ul class="mini-tl">
+            <li>💬 Respondeu <span class="when">ontem</span></li>
+            <li>👁 Abriu e-mail 2× <span class="when">há 2d</span></li>
+            <li>📤 E-mail enviado <span class="when">há 3d</span></li>
+          </ul>
+          <div style="margin-top:10px"><a class="lnk" onclick="goTab('tab-conv')">ver tudo em Conversas →</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB DESEMPENHO ===== -->
+  <div class="tab-panel" id="tab-des">
+    <div class="ok-banner">✓ 89 alunos fizeram ENEM 2024 — dados confiáveis</div>
+    <div class="des-grid">
+      <div class="card">
+        <h3>ENEM 2024 vs escolas semelhantes</h3>
+        <div class="legend"><span><span class="sw" style="background:#1976D2"></span>Colégio Santa Cecília</span><span><span class="sw" style="background:#B0BEC5"></span>Escolas semelhantes</span></div>
+
+        <div class="enem-row">
+          <div class="lbl"><b>Matemática</b><span class="gap-neg">gap −23</span></div>
+          <div class="barwrap"><div class="bar-esc" style="width:45%"></div></div>
+          <div class="barwrap"><div class="bar-grp" style="width:54%"></div></div>
+          <div class="bar-vals"><span>escola 512</span><span>grupo 535</span></div>
+        </div>
+
+        <div class="enem-row">
+          <div class="lbl"><b>Linguagens</b><span class="gap-pos">+7</span></div>
+          <div class="barwrap"><div class="bar-esc" style="width:59%"></div></div>
+          <div class="barwrap"><div class="bar-grp" style="width:56%"></div></div>
+          <div class="bar-vals"><span>escola 548</span><span>grupo 541</span></div>
+        </div>
+
+        <div class="enem-row">
+          <div class="lbl"><b>C. Humanas</b><span class="gap-pos">+8</span></div>
+          <div class="barwrap"><div class="bar-esc" style="width:55%"></div></div>
+          <div class="barwrap"><div class="bar-grp" style="width:52%"></div></div>
+          <div class="bar-vals"><span>escola 538</span><span>grupo 530</span></div>
+        </div>
+
+        <div class="enem-row">
+          <div class="lbl"><b>C. Natureza</b><span class="gap-neg">gap −12</span></div>
+          <div class="barwrap"><div class="bar-esc" style="width:41%"></div></div>
+          <div class="barwrap"><div class="bar-grp" style="width:46%"></div></div>
+          <div class="bar-vals"><span>escola 502</span><span>grupo 514</span></div>
+        </div>
+
+        <div class="enem-row" style="margin-bottom:0">
+          <div class="lbl"><b>Redação</b><span class="gap-pos">+24</span></div>
+          <div class="barwrap"><div class="bar-esc" style="width:85%"></div></div>
+          <div class="barwrap"><div class="bar-grp" style="width:75%"></div></div>
+          <div class="bar-vals"><span>escola 612</span><span>grupo 588</span></div>
+        </div>
+      </div>
+
+      <div class="des-col">
+        <div class="card">
+          <h3>Matrículas 2020 → 2025</h3>
+          <div class="mat-chart">
+            <div class="mat-bar"><div class="nv">520</div><div class="col" style="height:38%"></div><div class="yv">2020</div></div>
+            <div class="mat-bar"><div class="nv">535</div><div class="col" style="height:46%"></div><div class="yv">2021</div></div>
+            <div class="mat-bar"><div class="nv">548</div><div class="col" style="height:53%"></div><div class="yv">2022</div></div>
+            <div class="mat-bar"><div class="nv">570</div><div class="col" style="height:65%"></div><div class="yv">2023</div></div>
+            <div class="mat-bar"><div class="nv">598</div><div class="col" style="height:81%"></div><div class="yv">2024</div></div>
+            <div class="mat-bar last"><div class="nv">612</div><div class="col" style="height:89%"></div><div class="yv">2025</div></div>
+          </div>
+          <div class="nota-verde">📈 +18% em 2 anos</div>
+        </div>
+        <div class="card">
+          <h3>Infra &amp; Tecnologia (Censo 2025)</h3>
+          <ul class="infra-list">
+            <li>Nível tecnológico <span class="iv">Médio</span></li>
+            <li>Turmas <span class="iv">14</span></li>
+            <li>Coordenador de tecnologia <span class="iv infra-warn">não há</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB PESSOAS ===== -->
+  <div class="tab-panel" id="tab-pes">
+    <div class="card">
+      <div class="pes-head">
+        <h3>Decisores e contatos</h3>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-o btn-sm">📥 Exportar (XLSX)</button>
+          <button class="btn btn-o btn-sm" onclick="dlg(true)">+ Registrar contato</button>
+        </div>
+      </div>
+      <table class="pessoas">
+        <thead><tr><th>Nome</th><th>Cargo</th><th>Papel</th><th>E-mail</th><th>Telefone</th><th>WhatsApp</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Maria Helena Souza</b></td>
+            <td>Diretora</td>
+            <td><span class="role role-decide">decide</span></td>
+            <td>mhelena@santacecilia.com.br <span class="mail-ok" title="E-mail confirmado">✓</span></td>
+            <td>(51) 3232-4150</td>
+            <td>✓</td>
+          </tr>
+          <tr>
+            <td><b>Paulo Andrade</b></td>
+            <td>Coord. Pedagógico</td>
+            <td><span class="role role-inf">influencia</span></td>
+            <td>paulo.andrade@santacecilia.com.br <span class="mail-warn" title="E-mail provável (não confirmado) — deduzido do padrão da escola">⚠️</span></td>
+            <td><span class="muted">—</span></td>
+            <td><span class="muted">—</span></td>
+          </tr>
+          <tr>
+            <td><b>Carla Lima</b></td>
+            <td>Secretaria</td>
+            <td><span class="role role-apoio">apoio</span></td>
+            <td><span class="muted">—</span></td>
+            <td>(51) 3232-4151</td>
+            <td><span class="muted">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== TAB CONVERSAS ===== -->
+  <div class="tab-panel" id="tab-conv">
+    <div class="card">
+      <div class="pes-head">
+        <h3>Histórico de conversas</h3>
+        <button class="btn btn-o btn-sm" onclick="dlg(true)">+ Registrar interação</button>
+      </div>
+      <ul class="tl">
+        <li>
+          <div class="ev">💬 Respondeu: <span class="q">"Temos interesse, pode me ligar quinta?"</span></div>
+          <div class="sub">ontem · 16h <span class="chip on">💬 Respondida</span></div>
+        </li>
+        <li>
+          <div class="ev">👁 Abriu o e-mail 2×</div>
+          <div class="sub">há 2 dias <span class="chip">👁 Aberta</span></div>
+        </li>
+        <li>
+          <div class="ev">📤 E-mail enviado: <span class="q">"Resultados de Matemática..."</span></div>
+          <div class="sub">há 3 dias · por Fernando <span class="chip">📤 Enviada</span></div>
+        </li>
+        <li class="gray">
+          <div class="ev">✍️ Ligação registrada: <span class="q">"secretária pediu retorno semana que vem"</span></div>
+          <div class="sub">há 8 dias · registro manual · por Fernando</div>
+        </li>
+        <li class="gray">
+          <div class="ev">🤖 Mensagem gerada e aprovada</div>
+          <div class="sub">há 9 dias</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- DIALOG REGISTRAR CONTATO -->
+<div class="overlay" id="dlg" onclick="if(event.target===this)dlg(false)">
+  <div class="dlg">
+    <h3>✍️ Registrar contato</h3>
+    <div class="dlg-row">
+      <div>
+        <label>Tipo</label>
+        <select><option>Ligação</option><option>WhatsApp</option><option>E-mail</option><option>Reunião</option><option>Outro</option></select>
+      </div>
+      <div>
+        <label>Com quem</label>
+        <select><option>Maria Helena Souza</option><option>Paulo Andrade</option><option>Carla Lima</option><option>—</option></select>
+      </div>
+    </div>
+    <div class="dlg-row">
+      <div>
+        <label>Resultado</label>
+        <select><option>Positivo</option><option>Neutro</option><option>Sem resposta</option><option>Negativo</option></select>
+      </div>
+      <div>
+        <label>Data</label>
+        <input type="date" value="2026-06-10">
+      </div>
+    </div>
+    <label>Notas</label>
+    <textarea placeholder="Ex.: diretora pediu proposta por e-mail até sexta..."></textarea>
+    <div class="dlg-note">💡 Vai aparecer em Conversas e conta nos seus indicadores.</div>
+    <div class="dlg-acts">
+      <button class="btn btn-o" onclick="dlg(false)">Cancelar</button>
+      <button class="btn btn-p" onclick="dlg(false)">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(id, btn){
+  document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('on')});
+  document.getElementById(id).classList.add('on');
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on')});
+  btn.classList.add('on');
+}
+function goTab(id){
+  showTab(id, document.querySelector('.tab[data-t="'+id+'"]'));
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function dlg(open){
+  document.getElementById('dlg').classList.toggle('on', open);
+}
+</script>
+</body>
+</html>

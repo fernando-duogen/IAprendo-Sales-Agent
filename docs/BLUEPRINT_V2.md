@@ -3,9 +3,12 @@
 > Redesign da plataforma IAprendo Sales Agent: de 11 paginas organizadas pelo
 > fluxo tecnico dos dados para 8 espacos organizados pelo dia do vendedor.
 >
-> **Status**: PROPOSTA — para validacao com o time antes de qualquer codigo.
-> **Data**: 2026-06-10 | **Base**: tag `v1-prod` | **Branch de trabalho**: `redesign-v2`
+> **Status**: PROPOSTA v1.1 — para validacao com o time antes de qualquer codigo.
+> **Data**: 2026-06-10 (v1.1: incorpora feedback do dono + 3 auditorias adversariais
+> — 12 jornadas de uso simulado + auditoria de paridade v1->v2 sobre as 11 paginas)
+> **Base**: tag `v1-prod` | **Branch de trabalho**: `redesign-v2`
 > **Mockups navegaveis**: `docs/mockups/index.html` (abra no navegador)
+> **Teste com o time**: `docs/mockups/TESTE_NOVATO.md` (roteiro de 15 min)
 
 ---
 
@@ -39,11 +42,38 @@ Sintomas medidos:
    coracao da nova Home; metas dao a visao do gestor.
 4. **Blueprint validado antes de codar** (este documento + mockups).
 
-## 3. Principio organizador
+## 3. Principios organizadores
 
 > **A navegacao segue o dia do vendedor, nao o pipeline de dados.**
 > Cada pagina responde a uma pergunta que o vendedor faria em voz alta.
 > A primeira pagina responde: "o que eu faco agora?"
+
+### 3.1 Conjunto padrao de filtros (v1.1 — feedback do dono)
+
+Os filtros da v1 existem por motivo comercial e NAO somem na simplificacao.
+TODA lista de escolas (Prospectar>Recomendadas, Prospectar>resultado da busca,
+Escolas, e o export) oferece o MESMO conjunto padrao:
+
+| Filtro | Detalhe |
+|---|---|
+| UF / Cidade | cascata (RPC ja existente) |
+| Tipo de escola | Privada / Publica (+ dependencia: municipal/estadual/federal) |
+| Niveis de ensino | Fundamental anos finais / Ensino Medio (checkboxes) |
+| **Faixa de alunos** | **range numerico (ex: 400–1000)** — nao apenas porte fixo |
+| Etapa | pill (Nova ... Cliente) — so em listas do CRM |
+| Prioridade / Dono | so em listas do CRM |
+
+Implementacao: componente unico `school_filters()` (futuro `dashboard/filters.py`)
+usado por todas as paginas — fim da reimplementacao por pagina (raiz dos bugs de
+filtro da v1).
+
+### 3.2 Receita potencial — "Potencial R$/mes" (v1.1 — NOVO)
+
+`receita_potencial = alunos_alvo x ticket_por_aluno` (ticket configuravel em
+Ajustes; default unico, evolui para ticket por porte). Calculada ao vivo (sem
+mudanca de banco). Aparece como **coluna em toda lista**, card na ficha da escola
+e no export — transforma a faixa de alunos em leitura comercial direta (MRR
+potencial do prospecto), do jeito que o time ja pensa.
 
 ---
 
@@ -78,20 +108,45 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
 ### 🔍 PROSPECTAR (funde Importar + Descoberta + Ranking + Mapa + Pipeline-Execucao)
 
 - **Recomendadas**: ex-Ranking P1/P2/P3, rebatizado "Potencial ★★★/★★/★".
-  Botao por linha: **"Trabalhar esta escola"** (importa + prepara + atribui dono).
+  Com o **conjunto padrao de filtros** (§3.1) + coluna **Potencial R$/mes** +
+  botao **Exportar**. Botao por linha: **"Trabalhar esta escola"** (importa +
+  prepara + atribui dono; apos clicar, a escola aparece em Escolas com etapa
+  "Pronta para contato" e toast com link).
 - **Buscar no Brasil**: ex-Importar como wizard de 3 passos
-  (*Escolher regiao → Revisar lista → Adicionar a minha carteira*).
+  (*Escolher regiao → Revisar lista → Adicionar a minha carteira*). O passo 2 e
+  uma TELA DE RESULTADO real: tabela com as escolas filtradas (Escola, Cidade,
+  Niveis, Alunos, Potencial R$/mes) + Exportar — atende "me pediram uma planilha"
+  mesmo sem importar nada.
 - **Toggle Lista/Mapa**: o Mapa (PyDeck) vira visualizacao alternativa do mesmo
-  filtro — deixa de ser pagina propria.
-- **Preparar lote**: ex-Pipeline-Execucao como wizard guiado
-  (*Selecionar → Buscar contatos → Gerar mensagens → vao para Mensagens*).
-  Modos avancados ("Forcar" etc.) atras de "Opcoes avancadas".
+  filtro — deixa de ser pagina propria (2 modos de visual mantidos).
+- **Preparar escolas** (v1.1 — decisao sobre o pipeline em etapas): UI default =
+  **1 acao composta** com barra de progresso por etapa (avaliar → buscar contatos
+  → gerar mensagens). As etapas sao restricao tecnica (rate limits/custos), nao
+  decisao do vendedor — por isso somem da UI default. Etapas individuais +
+  "Refazer mesmo se ja feito" ficam em "Opcoes avancadas" (power users). O motor
+  (workflows/) nao muda. Feedback da etapa de contatos mostra o resultado
+  concreto: "encontramos X pessoas, Y telefones, Z e-mails (W deduzidos ⚠️)".
+- **Sinais de compra** (ex-Descoberta — orfao resolvido): secao propria dentro de
+  Prospectar listando escolas com sinais detectados (noticias, premios, cliques).
 
 ### 🏫 ESCOLAS (funde Escolas + Contatos)
 
 - Lista unica com colunas enxutas: Escola, Cidade, **Etapa** (pill), **Prioridade**,
-  Dono, Ultimo contato. "Redes" vira filtro/agrupamento (nao aba).
-- **Aba "Pessoas"**: a pagina Contatos inteira entra aqui (decisores + export).
+  **Potencial R$/mes**, Dono, Ultimo contato. **Conjunto padrao de filtros** (§3.1)
+  + **Exportar** 1-clique. "Redes" vira filtro/agrupamento (nao aba; override de
+  nome da rede via dialog ✏️ no agrupamento).
+- **Acao em lote (admin)**: selecionar N escolas → "Transferir para ▸ {vendedor}"
+  (resolve ferias/redistribuicao; com registro de quem fez).
+- **Aba "Pessoas"**: a pagina Contatos inteira entra aqui (decisores + export;
+  e-mails deduzidos marcados ⚠️ "provavel, nao confirmado").
+- **Ficha da escola — "Argumentos de venda"** (v1.1 — ENEM/Censo de forma
+  inteligente): bloco na Visao Geral com os top 3-5 argumentos em linguagem de
+  vendedor, gerados dos dados (ex: "Matematica 23 pts abaixo de escolas
+  semelhantes — dor clara"; "matriculas +18% em 2 anos — orcamento crescendo";
+  "sem coordenador de tecnologia — decisao centralizada na direcao"). Mesmos
+  dados, virando municao de conversa no momento do contato. Header da ficha:
+  botoes **"Relatorio da escola"** (One Page Report — casa fixa), **"+ Registrar
+  contato"** e **"Gerar mensagem"**.
 - **Detalhe da escola: 7 → 4 abas**:
 
 | Sub-aba atual (7) | Destino (4) |
@@ -108,10 +163,14 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
 - **Fila unica** com chips de filtro de estado (*Aguardando aprovacao / Aprovadas /
   Enviadas / Recebidas / Follow-ups*) e de canal (*Todos / E-mail / WhatsApp*).
   Estados deixam de ficar escondidos em sub-abas.
-- **"Aprovar e proxima"** para revisar em serie (botao verde grande).
-- **Recebidas**: respostas com "Responder com IA" e "Marcar tratada".
+- **"Aprovar e proxima"** para revisar em serie (botao verde grande). No painel de
+  revisao: **agendar envio** (opcional, data/hora) e **"Enviar como"** (admin) —
+  explicitados na v1.1 (existiam na v1, ficavam implicitos no blueprint).
+- **Recebidas**: respostas com "Responder com IA" (**com escolha de canal**:
+  e-mail ou WhatsApp) e "Marcar tratada".
 - **Aba "Modelos"** (ex-Templates) com banner permanente:
   *"Modelos sao a base que a IA personaliza por escola. Voce sempre revisa antes de sair."*
+  Modelos tem **canal** (e-mail / WhatsApp) — fim da aba WhatsApp separada.
 - Metricas de envio SAEM daqui → Resultados (fim da triplicacao).
 
 ### 💼 NEGOCIOS (kanban comercial promovido a pagina propria)
@@ -126,13 +185,18 @@ O vendedor abre de manha e sai com a lista do dia — sem decidir nada, so execu
 
 - **Metas** (nova tabela `goals`): vendedor ve as proprias barras de progresso;
   admin ve grade time × metrica e define metas em dialog.
-- **Funil** (ex-Analytics), **Envios** (ex-Comunicacao>Metricas — o UNICO lugar de
-  metricas de envio), **Explorar dados** (ex-Inteligencia>Explorador, admin).
+- **Funil** (ex-Analytics) com header de "numeros do pipeline" (contagem por
+  etapa) e **filtros por cidade / tipo / porte** (v1.1 — gestor decide onde focar:
+  "que segmento converte melhor?"). **Envios** (ex-Comunicacao>Metricas — o UNICO
+  lugar de metricas de envio), **Explorar dados** (ex-Inteligencia>Explorador,
+  admin, para analises ad-hoc alem da desagregacao simples do Funil).
 
 ### ⚙️ AJUSTES (admin-only) e ❓ AJUDA
 
-- Ajustes = Configuracoes + config de follow-ups + matriz de templates. Oculta
-  para nao-admin.
+- Ajustes = Configuracoes + config de follow-ups + matriz de templates + (v1.1)
+  **aba Diagnostico** (uso de APIs/creditos dos ultimos 7 dias + health check +
+  build stamp — orfaos da Home v1 resolvidos), **ticket por aluno** (da Receita
+  potencial §3.2) e deducao de e-mails (modo avancado). Oculta para nao-admin.
 - Ajuda = Manual REESCRITO no vocabulario novo: 12 tabs → 5 ("Comece aqui",
   "O dia a dia", "Trabalhando com o IAlex", "Entendendo a Prioridade", "FAQ")
   + tour de 1o login + botoes "?" contextuais nas paginas.
@@ -250,10 +314,24 @@ Idempotente (dedupe_key). Roda no scheduler local (30min) **e** no load da Home
 (cache 5min) — cobre o caso do PC local desligado. Teto anti-spam: 25 atividades
 auto abertas por dono.
 
-### IAlex (4 tools novas)
-`minha_agenda(periodo)` · `criar_atividade(titulo, escola?, quando)` ("me lembra
-de ligar pro Colegio Alfa sexta") · `concluir_atividade(ref)` · `adiar_atividade(ref, quando)`.
-Digest 8:15 passa a abrir com "Sua agenda de hoje: N atividades (X atrasadas)".
+### IAlex — cobertura completa das funcionalidades novas (v1.1)
+
+Auditoria de cobertura: das necessidades novas, ~50% ja e atendido pelas ~105
+tools existentes do brain.py (mover etapa, registrar proposta/cliente/perdido,
+exportar planilha por voz, dados da escola). Faltam **16 tools novas/estendidas**:
+
+| Grupo | Tools |
+|---|---|
+| Agenda (5) | `minha_agenda(periodo)` · `criar_atividade(titulo, escola?, quando)` · `concluir_atividade(ref)` · `adiar_atividade(ref, quando)` · `atividades_atrasadas()` |
+| Metas (3) | `definir_meta(usuario, metrica, periodo, alvo)` (admin) · `minha_meta(periodo)` · `metas_time(periodo)` (admin) |
+| Gestao (2) | `reatribuir_leads_lote(origem, destino)` (admin, com auditoria) · `kpi_periodo(inicio, fim, vendedor?)` |
+| Inteligencia (2) | `argumentos_venda(escola)` (sintese dos dados ENEM/Censo em municao de conversa) · `preparar_reuniao(escola, data?)` (orquestra: agenda + relatorio + ultimas interacoes + argumentos) |
+| Extensoes (4) | `tracking_emails`/`funil_vendas`/`ver_agenda` ganham filtro por vendedor (admin) · `exportar_escolas_xlsx` ganha filtros de data de contato e faixa de alunos |
+
+Digest 8:15 passa a abrir com "Sua agenda de hoje: N atividades (X atrasadas)" +
+progresso da meta. Exemplos de uso: "como estou na meta?", "passa os leads do
+Felipe pra Lizianne", "o que preciso saber pra reuniao de amanha?", "planilha das
+escolas contatadas em maio".
 
 ---
 
@@ -280,13 +358,13 @@ Streamlit Cloud apontando pro branch; **main (v1) intocada ate a F7**.
 
 | Fase | Escopo | Aceitacao |
 |---|---|---|
-| **F1 Fundacoes** | Migration activities/goals (additive); activity_engine + job; 4 tools IAlex; labels.py; componentes theme.py | v1 segue identica; engine roda 2x sem duplicar; "IAlex, minha agenda" responde |
-| **F2 Hoje+Metas** | Home nova (agenda+numeros+busca acionavel+checklist novato); Resultados c/ Metas | concluir/adiar em ≤2 cliques; meta com progresso real; Home <3s |
-| **F3 Mensagens** | Fila unica + chips; Recebidas; Modelos; labels em TODOS os badges | aprovar→enviar ponta-a-ponta no preview; zero status hardcoded |
-| **F4 Prospectar+Escolas** | Recomendadas + wizards + toggle Mapa; detalhe 7→4; Pessoas | novato importa e gera 1a mensagem so pelo wizard; ENEM em exatamente 2 lugares |
-| **F5 Negocios** | Kanban pagina propria + popover mover + valores + Reunioes; spike drag-drop | mover card reflete no IAlex; reuniao sem resultado gera atividade |
-| **F6 Polimento+Ajuda** | Estados vazios; Ajuda 5 tabs; tour 1o login; Ajustes admin-only | **teste do novato**: pessoa externa completa o roteiro sem ajuda, <15min |
-| **F7 Cutover** | Merge na main; stubs de redirect 30 dias; Manual+prompt IAlex atualizados; treinamento 1h | time opera 1 semana sem abrir a v1; rollback = revert; pytest verde |
+| **F1 Fundacoes** | Migration activities/goals (additive); activity_engine + job; **16 tools IAlex** (agenda+metas+gestao+inteligencia+extensoes); labels.py; componentes theme.py + `school_filters()` + `export_button()`; config ticket por aluno | v1 segue identica; engine roda 2x sem duplicar; "IAlex, minha agenda" e "como estou na meta?" respondem |
+| **F2 Hoje+Metas** | Home nova (agenda+numeros+busca acionavel+checklist novato); Resultados c/ Metas + Funil com filtros cidade/tipo/porte | concluir/adiar em ≤2 cliques; meta com progresso real; Home <3s |
+| **F3 Mensagens** | Fila unica + chips; Recebidas (responder c/ canal); Modelos c/ canal; agendar envio + "Enviar como" no painel; labels em TODOS os badges | aprovar→enviar ponta-a-ponta no preview; zero status hardcoded |
+| **F4 Prospectar+Escolas** | Recomendadas + wizards (resultado da busca com export) + toggle Mapa + Sinais de compra; detalhe 7→4 c/ Argumentos de venda + Relatorio no header; Pessoas (⚠️ deduzidos); filtros padrao + Potencial R$/mes + export em todas as listas | novato importa e gera 1a mensagem so pelo wizard; ENEM em exatamente 2 lugares; "planilha" em 1 clique de qualquer lista; checklist de paridade da fase 100% |
+| **F5 Negocios** | Kanban pagina propria + popover mover + valores + Reunioes; **transferencia de leads em lote (admin)**; spike drag-drop | mover card reflete no IAlex; reuniao sem resultado gera atividade; redistribuir N leads em <2min |
+| **F6 Polimento+Ajuda** | Estados vazios; Ajuda 5 tabs; tour 1o login; Ajustes admin-only (+Diagnostico: APIs/health/build) | **teste do novato**: pessoa externa completa o roteiro sem ajuda, <15min |
+| **F7 Cutover** | Merge na main; stubs de redirect 30 dias; Manual+prompt IAlex atualizados; treinamento 1h | time opera 1 semana sem abrir a v1; rollback = revert; pytest verde; checklist de paridade (apendice A) 100% |
 
 ## 10. Riscos e mitigacoes (top 8)
 
@@ -309,7 +387,61 @@ Streamlit Cloud apontando pro branch; **main (v1) intocada ate a F7**.
 - Pendentes do dono: copia de `.env`+`users.yaml` em nuvem privada; teste manual
   do workflow de backup (Actions → Backup CRM → Run workflow).
 
-## 12. Criterios de sucesso da v2
+## 12. Estrategia de testes (v1.1 — "imagine se voce fosse utilizar")
+
+Tres camadas, cada uma barata em relacao ao erro que evita:
+
+**Camada A — Testes de DESIGN (agora, antes de qualquer codigo)**
+- 12 jornadas de uso simulado (7 vendedor + 5 gestor) re-executadas contra cada
+  versao do blueprint/mockups. Criterio: **0 travas** (atritos viram backlog).
+  Rodada 1 achou: ficha da escola sem desenho, export invisivel, resultado da
+  busca ausente, reatribuicao em massa inexistente — corrigidos na v1.1.
+- **Teste do novato em mockup** (`docs/mockups/TESTE_NOVATO.md`): Lizianne e
+  Felipe executam 6 tarefas apontando onde clicariam, sem ajuda verbal, <15 min.
+  Mede: travou? hesitou >10s? interpretou errado o nome?
+
+**Camada B — Testes de CODIGO (durante o desenvolvimento, por fase)**
+- Regra de arquitetura: logica fora das paginas (helpers/modulos testaveis).
+- pytest para os motores novos: activity_engine (6 regras + dedupe idempotente),
+  labels.py (todo mapeamento banco->UI), calculo de metas (realizado ao vivo) e
+  receita potencial, school_filters (montagem de query).
+- **Streamlit AppTest** (`st.testing.v1`) como smoke de TODA pagina nova: renderiza
+  sem excecao + elementos-chave presentes. Roda no pytest normal (sem browser).
+- A tabela de paridade (Apendice A) vira checklist de aceitacao por fase: a fase
+  so fecha quando os itens dela estao na UI.
+
+**Camada C — Testes de PRODUTO (antes do cutover F7)**
+- Teste do novato REAL na preview (pessoa externa, roteiro da camada A, <15 min).
+- 1 semana de uso paralelo (v1 na main + v2 na preview) com feedback diario.
+- Suite pytest 100% verde (incl. os 75 testes atuais da v1 — nada regride).
+
+## 13. Apendice A — Paridade v1->v2 (auditoria de 2026-06-10)
+
+Auditoria sistematica das 11 paginas da v1: **~85% com casa explicita** no
+blueprint. Itens que exigiram decisao (todas tomadas na v1.1):
+
+**Orfaos resolvidos**
+| Item da v1 | Casa na v2 |
+|---|---|
+| Uso de APIs/creditos (Home) | Ajustes > Diagnostico |
+| Health check + build stamp (Home) | Ajustes > Diagnostico |
+| Descoberta / sinais de compra (Pipeline) | Prospectar > Sinais de compra |
+| One Page Report + graficos de insight | Ficha da escola > header "Relatorio da escola" |
+| Deducao de e-mails | Feedback de "Buscar contatos" (+ avancado em Ajustes) |
+| Override de nome de rede | Dialog ✏️ no agrupamento Redes (Escolas) |
+
+**Implicitos explicitados** (existiam na v1; agora nomeados na v2): agendar envio
+(painel de Aprovar) · "Enviar como" admin (painel de Aprovar) · modelos com canal
+e-mail/WhatsApp · responder com escolha de canal · e-mails deduzidos ⚠️ (Pessoas)
+· numeros do pipeline (header do Funil) · registro manual de interacao (botao na
+ficha e na Home) · % de sucesso de geocodificacao/telefones (feedback do Preparar).
+
+**Descontinuar de proposito** (decisao do dono na validacao): notificacoes in-app
+inacabadas da v1 · morning_panel (absorvido pela agenda) · metricas duplicadas em
+Comunicacao (movidas para Resultados) · edicao inline AgGrid-style (substituida
+por dialogs — mais estavel no Streamlit).
+
+## 14. Criterios de sucesso da v2
 
 1. Um vendedor novo executa o ciclo (achar escola → aprovar mensagem → registrar
    contato → concluir atividade) **sozinho, sem treinamento, em <15 minutos**.
