@@ -1,4 +1,8 @@
-"""IAprendo Sales Agent - Central de Comando (Material Design)."""
+"""IAprendo Sales Agent — Home "Hoje" (redesign v2 F2).
+
+A pagina responde: "o que eu faco agora?" — agenda do dia + numeros que importam
++ meta. Logica em dashboard/helpers/home_v2.py (testavel); aqui so render.
+"""
 import os
 import streamlit as st
 import sys
@@ -18,8 +22,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dashboard.theme import (
-    apply_theme, metric_card, metric_card_clickable, action_tile, section_header, alert_banner,
-    COLORS, STATUS_COLORS, timeline_item,
+    apply_theme, metric_card, section_header, alert_banner, COLORS,
+    activity_row, goal_progress, priority_badge, stage_pill, empty_state,
 )
 
 apply_theme()
@@ -27,21 +31,14 @@ apply_theme()
 # =========================================================================
 # AUTENTICACAO (streamlit-authenticator) — gate de TODAS as paginas
 # =========================================================================
-# config/users.yaml e gitignored. Localmente vem do arquivo.
-# No Streamlit Cloud: copiar secao "auth" do users.yaml para Secrets (TOML).
 import yaml  # usado na persistencia da troca de senha (sidebar)
 from dashboard._auth import ensure_auth, AUTH_PATH as _AUTH_PATH
 
-# Re-loga pelo COOKIE (manter logado) e renderiza o form so quando necessario.
-# Toda a logica (incl. re-login silencioso via cookie) esta em dashboard/_auth.py
-# e e reusada por TODAS as paginas (via _auth_gate.require_auth) — sem isto, F5
-# numa pagina ou reabrir o navegador pediria login de novo.
 _auth = ensure_auth(render_form=True)
 authenticator = _auth["authenticator"]
 _auth_config = _auth["config"]
 _current_user = _auth["user"]
 
-# Sidebar: identidade + logout + trocar senha
 with st.sidebar:
     st.markdown(
         f'<div style="padding:12px 8px;border-bottom:1px solid #E0E0E0;margin-bottom:8px">'
@@ -57,7 +54,6 @@ with st.sidebar:
             if authenticator.reset_password(
                 st.session_state.get("username"), location="main"
             ):
-                # Persistir nova senha no users.yaml
                 with _AUTH_PATH.open("w", encoding="utf-8") as _f:
                     yaml.safe_dump(_auth_config, _f, allow_unicode=True, sort_keys=False)
                 st.success("Senha atualizada. Use no proximo login.")
@@ -65,303 +61,338 @@ with st.sidebar:
             st.error(f"Erro ao trocar senha: {_e}")
 
 # =========================================================================
-# HEADER
+# DADOS (helpers testaveis) + ENGINE no load (cache 5min — SPEC §0)
 # =========================================================================
+from database.supabase_client import db
+from dashboard.helpers import home_v2 as hv
+from dashboard.labels import goal_metric_label
+from utils.sender_profile import is_admin as _is_admin_fn
+from workflows.activity_engine import parse_ts, to_brt, now_utc, all_usernames
+
+_username = st.session_state.get("username", "fernando")
+_first_name = (_current_user.get("name") or _username).split()[0]
+_admin = bool(_is_admin_fn(_username))
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _engine_tick() -> dict:
+    """Roda o motor da agenda no load (idempotente; cobre PC local desligado)."""
+    try:
+        from workflows.activity_engine import run_engine
+        return run_engine()
+    except Exception:
+        return {}
+
+
+_engine_tick()
+_now = now_utc()
+
+# =========================================================================
+# HEADER + BUSCA GLOBAL ACIONAVEL
+# =========================================================================
+_hora = to_brt(_now).hour
+_saud = "Bom dia" if _hora < 12 else ("Boa tarde" if _hora < 18 else "Boa noite")
+try:
+    from utils.date_pt import format_pt
+    _data_pt = format_pt(to_brt(_now), "%A, %d de %B")
+except Exception:
+    _data_pt = to_brt(_now).strftime("%d/%m/%Y")
+
 st.markdown(
-    '<h1 style="margin-bottom:0">IAprendo Sales Agent</h1>'
-    '<p style="color:#757575;margin-top:4px;font-size:15px">'
-    'Central de comando &mdash; prospeccao B2B para escolas</p>',
+    f'<h1 style="margin-bottom:0">{_saud}, {_first_name}! ☀️</h1>'
+    f'<p style="color:#757575;margin-top:4px;font-size:15px">{_data_pt} — '
+    f'sua lista do dia esta pronta</p>',
     unsafe_allow_html=True,
 )
 
-# =========================================================================
-# BUSCA GLOBAL
-# =========================================================================
-search_query = st.text_input(
-    "Busca rapida",
-    placeholder="Digite nome de escola, contato ou email...",
-    key="global_search",
-    label_visibility="collapsed",
-)
+_q = st.text_input("Busca", placeholder="Buscar escola, contato ou e-mail…",
+                   key="global_search", label_visibility="collapsed")
+if _q and len(_q.strip()) >= 2:
+    _res = hv.busca_global(_q.strip())
+    if not _res["escolas"] and not _res["contatos"]:
+        st.caption("Nada encontrado.")
+    for _e in _res["escolas"]:
+        _c1, _c2, _c3 = st.columns([5, 3, 1.4])
+        _c1.markdown(f"**🏫 {_e.get('name')}** — {_e.get('city') or '?'}")
+        _c2.markdown(stage_pill(_e.get("status"), _e.get("commercial_stage")),
+                     unsafe_allow_html=True)
+        if _c3.button("Abrir →", key=f"open_{_e['id']}"):
+            st.switch_page("pages/2_🏫_Escolas.py")
+    for _ct in _res["contatos"]:
+        st.markdown(f"👤 **{_ct.get('full_name')}** — {_ct.get('role') or ''} · "
+                    f"{_ct.get('email') or 'sem e-mail'}")
 
-if search_query and len(search_query) >= 2:
+# =========================================================================
+# 3 NUMEROS DO DIA (AO VIVO, com alerta de SLA)
+# =========================================================================
+_nums = hv.day_numbers(_username, _now)
+_n1, _n2, _n3 = st.columns(3)
+with _n1:
+    _delta = (f"{_nums['atrasadas']} atrasadas" if _nums["atrasadas"] else "em dia")
+    metric_card("Minha agenda (hoje)", _nums["atividades_hoje"],
+                COLORS["error"] if _nums["atrasadas"] else COLORS["primary"],
+                delta=_delta, icon="event_available")
+with _n2:
+    _delta2 = (f"{_nums['aprovacoes_aging']} paradas ha +24h"
+               if _nums["aprovacoes_aging"] else "fila saudavel")
+    metric_card("Aguardando aprovacao", _nums["aprovacoes_pendentes"],
+                COLORS["warning"] if _nums["aprovacoes_aging"] else COLORS["secondary"],
+                delta=_delta2, icon="mark_email_unread")
+    st.page_link("pages/6_✉️_Comunicacao.py", label="abrir mensagens →")
+with _n3:
+    _sla_ok = _nums["resposta_mais_antiga_h"] <= 4
+    _delta3 = ("nenhuma esperando" if not _nums["respostas_novas"] else
+               (f"esperando ha {_nums['resposta_mais_antiga_h']:.0f}h ⚠️"
+                if not _sla_ok else "dentro do SLA (4h)"))
+    metric_card("Respostas a tratar", _nums["respostas_novas"],
+                COLORS["error"] if (_nums["respostas_novas"] and not _sla_ok)
+                else COLORS["success"], delta=_delta3, icon="forum")
+
+_conv = hv.em_conversa(_username)
+try:
+    from integrations.agenda_config import agenda_config
+    _teto = int(agenda_config.get_config().get("teto_em_conversa", 15))
+except Exception:
+    _teto = 15
+_conv_msg = f"💬 Em conversa: **{_conv}/{_teto}** leads ativos"
+if _conv > _teto:
+    _conv_msg += " — acima do teto de foco: feche antes de abrir novos"
+st.caption(_conv_msg)
+if _nums.get("sobrecarga"):
+    alert_banner("Dia cheio (12+ atividades) — ataque so as de prioridade maxima 🔴.",
+                 "warning")
+
+# =========================================================================
+# TOGGLE MINHA AGENDA / EQUIPE (gestor)
+# =========================================================================
+_view = "Minha agenda"
+if _admin:
     try:
-        from database.supabase_client import db
-        term = f"%{search_query}%"
-
-        schools = db.client.table("companies").select(
-            "id,name,city,status,qualification_score"
-        ).ilike("name", term).limit(10).execute().data or []
-
-        contacts_name = db.client.table("contacts").select(
-            "id,full_name,email,role,company_id,companies(name)"
-        ).ilike("full_name", term).limit(10).execute().data or []
-
-        contacts_email = db.client.table("contacts").select(
-            "id,full_name,email,role,company_id,companies(name)"
-        ).ilike("email", term).limit(10).execute().data or []
-
-        contacts_all = {c["id"]: c for c in contacts_name + contacts_email}.values()
-        total_results = len(schools) + len(list(contacts_all))
-
-        if total_results > 0:
-            st.caption(f"{total_results} resultado(s) encontrado(s)")
-            if schools:
-                section_header("Escolas", "school")
-                for s in schools:
-                    score = s.get("qualification_score") or 0
-                    st.markdown(
-                        f'<div class="data-card">'
-                        f'<strong>{s["name"]}</strong> &mdash; {s.get("city", "?")}'
-                        f'<br><span style="color:#757575;font-size:13px">'
-                        f'Status: {s.get("status", "?")} &bull; Score: {score}</span></div>',
-                        unsafe_allow_html=True,
-                    )
-            contacts_list = list(contacts_all)
-            if contacts_list:
-                section_header("Contatos", "person")
-                for c in contacts_list:
-                    comp = c.get("companies") or {}
-                    st.markdown(
-                        f'<div class="data-card">'
-                        f'<strong>{c.get("full_name", "?")}</strong> ({c.get("role", "?")})'
-                        f'<br><span style="color:#757575;font-size:13px">'
-                        f'{c.get("email", "&mdash;")} &bull; Escola: {comp.get("name", "?")}</span></div>',
-                        unsafe_allow_html=True,
-                    )
-        else:
-            st.caption(f"Nenhum resultado para '{search_query}'")
-    except Exception as e:
-        st.warning(f"Erro na busca: {e}")
+        _view = st.segmented_control(
+            "Visao", ["Minha agenda", "Equipe"], default="Minha agenda",
+            label_visibility="collapsed") or "Minha agenda"
+    except Exception:  # fallback p/ versoes sem segmented_control
+        _view = st.radio("Visao", ["Minha agenda", "Equipe"], horizontal=True,
+                         label_visibility="collapsed")
 
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
+
 # =========================================================================
-# CENTRAL DE COMANDO - KPIs
+# DIALOG: + Nova atividade
 # =========================================================================
-try:
-    from database.supabase_client import db
-    from approval_queue import queue_manager
-
-    # .limit() defensivo: este select carrega todas as companies so pra contar por
-    # status (linhas abaixo). companies cresce devagar (leads importados), mas o
-    # limite evita uma resposta gigante / 400 do Cloudflare se um dia escalar muito.
-    all_companies = db.client.table("companies").select(
-        "id,status,qualification_score"
-    ).limit(20000).execute().data or []
-    stats = queue_manager.get_stats()
-
-    total = len(all_companies)
-    raw = len([c for c in all_companies if c.get("status") == "raw"])
-    qualified = len([c for c in all_companies if c.get("status") == "qualified"])
-    enriched = len([c for c in all_companies if c.get("status") == "enriched"])
-    pending = stats.get("pending", 0)
-    approved = stats.get("approved", 0)
-    sent = stats.get("sent", 0)
-
-    sent_items = db.client.table("approval_queue").select(
-        "id,sent_at,opened_at,clicked_at,replied_at,bounced_at,follow_up_number"
-    ).eq("status", "sent").limit(5000).execute().data or []
-
-    opened = len([s for s in sent_items if s.get("opened_at")])
-    clicked = len([s for s in sent_items if s.get("clicked_at")])
-    replied = len([s for s in sent_items if s.get("replied_at")])
-
-    try:
-        from workflows.follow_up_manager import get_due_follow_ups
-        due_fups = get_due_follow_ups(limit=50)
-        due_count = len(due_fups)
-    except Exception:
-        due_count = 0
-
-    try:
-        from tools.notification_manager import notification_manager
-        unread = notification_manager.get_unread_count()
-    except Exception:
-        unread = 0
-
-    # === FAIXA "HOJE" (1.2 Quick Win) ===
-    # Substitui os 4 alert_banners separados por uma faixa unica enxuta.
-    # Se tudo zero -> nao renderiza nada (dia tranquilo, zero ruido visual).
-    try:
-        from datetime import timezone, timedelta
-        _cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        _replies_24h = db.client.table("approval_queue").select("id", count="exact").gte(
-            "replied_at", _cutoff_24h
-        ).execute()
-        replies_24h = _replies_24h.count or 0
-    except Exception:
-        replies_24h = 0
-
-    _hoje_parts = []
-    if pending > 0:
-        _hoje_parts.append(
-            f'<a href="/Comunicacao" target="_self" style="text-decoration:none;color:inherit"><strong>{pending}</strong> aprovacoes pendentes</a>'
-        )
-    if approved > 0:
-        _hoje_parts.append(f'<strong>{approved}</strong> prontos pra envio')
-    if due_count > 0:
-        _hoje_parts.append(
-            f'<a href="/Comunicacao" target="_self" style="text-decoration:none;color:inherit"><strong>{due_count}</strong> follow-ups devidos</a>'
-        )
-    if replies_24h > 0:
-        _hoje_parts.append(f'<strong>{replies_24h}</strong> respostas (24h)')
-    if unread > 0:
-        _hoje_parts.append(f'<strong>{unread}</strong> notificacoes')
-
-    if _hoje_parts:
-        from utils.date_pt import dia_semana_pt
-        _hoje_label = f"{dia_semana_pt(datetime.now()).lower()} {datetime.now().strftime('%d/%m')}"
-        alert_banner(
-            f"&#9728; <strong>Hoje ({_hoje_label})</strong>: " + " &middot; ".join(_hoje_parts),
-            "info",
-        )
-
-    # === PAINEL (grid 4+3 tiles — sem redundancia com HubSpot futuro) ===
-    section_header("Painel", "dashboard")
-
-    row1 = st.columns(4)
-    with row1[0]:
-        if action_tile("school", "Escolas", f"{total} cadastradas",
-                       color=COLORS["primary"], key="tile_escolas"):
-            st.switch_page("pages/2_🏫_Escolas.py")
-    with row1[1]:
-        if action_tile("contacts", "Contatos", "Gerenciar decisores",
-                       color=COLORS["success"], key="tile_contatos"):
-            st.switch_page("pages/3_👥_Contatos.py")
-    with row1[2]:
-        if action_tile("rocket_launch", "Pipeline", "Execucao + pipeline comercial",
-                       color=COLORS["primary"], key="tile_pipeline"):
-            st.switch_page("pages/5_📊_Pipeline.py")
-    with row1[3]:
-        # Tile Comunicacao — consolida aprovacao + follow-ups + emails
-        comm_parts = []
-        if pending > 0:
-            comm_parts.append(f"{pending} pendente(s)")
-        if due_count > 0:
-            comm_parts.append(f"{due_count} follow-up(s)")
-        sub_comm = " · ".join(comm_parts) if comm_parts else f"{sent} enviados"
-        color_comm = COLORS["warning"] if pending > 0 else (COLORS["accent"] if due_count > 0 else COLORS["info"])
-        if action_tile("mail", "Comunicacao", sub_comm, color=color_comm,
-                       key="tile_comunicacao", highlight=pending > 0 or due_count > 0):
-            st.switch_page("pages/6_✉️_Comunicacao.py")
-
-    row2 = st.columns(4)
-    with row2[0]:
-        if action_tile("insights", "Inteligencia", "ENEM + Radar + Analytics",
-                       color=COLORS["info"], key="tile_inteligencia"):
-            st.switch_page("pages/7_🎯_Inteligencia.py")
-    with row2[1]:
-        sub_emails = f"{sent} enviados · {opened} abertos" if sent else "Nenhum enviado"
-        if action_tile("bar_chart", "Analytics", sub_emails, color=COLORS["primary"],
-                       key="tile_analytics"):
-            st.switch_page("pages/8_📈_Analytics.py")
-    with row2[2]:
-        if action_tile("map", "Mapa", "Visualizacao geografica",
-                       color=COLORS["primary"], key="tile_mapa"):
-            st.switch_page("pages/4_🗺️_Mapa.py")
-    with row2[3]:
-        # Tile Diagnostico — health check com cor dinamica
-        @st.cache_data(ttl=30, show_spinner=False)
-        def _cached_health_summary() -> dict:
+@st.dialog("Nova atividade")
+def _dlg_nova_atividade():
+    _t = st.text_input("O que fazer?", placeholder="ex: Ligar pro Colegio Alfa")
+    _dc1, _dc2 = st.columns(2)
+    _d = _dc1.date_input("Quando", value=to_brt(_now).date() + timedelta(days=1))
+    _h = _dc2.time_input("Hora", value=datetime.strptime("09:00", "%H:%M").time())
+    _p = st.selectbox("Prioridade", [2, 1, 3],
+                      format_func=lambda x: {1: "1 — alta", 2: "2 — normal",
+                                             3: "3 — baixa"}[x])
+    _esc = st.text_input("Escola (opcional)", placeholder="nome da escola no CRM")
+    if st.button("Salvar", type="primary"):
+        if not _t.strip():
+            st.error("Informe o titulo.")
+            return
+        _cid = None
+        if _esc.strip():
             try:
-                from tools.health_check import run_health_check
-                return run_health_check()
-            except Exception as _e:
-                return {"overall": "unknown", "summary": f"falha: {str(_e)[:40]}"}
+                _rows = db.client.table("companies").select("id").ilike(
+                    "name", f"%{_esc.strip()}%").limit(1).execute().data or []
+                _cid = _rows[0]["id"] if _rows else None
+            except Exception:
+                pass
+        _due = datetime.combine(_d, _h).replace(tzinfo=to_brt(_now).tzinfo)
+        db.create_activity({
+            "owner_username": _username, "type": "tarefa",
+            "title": _t.strip()[:300], "due_at": _due.isoformat(),
+            "priority": int(_p), "source": "manual",
+            "created_by": _username, "company_id": _cid,
+        })
+        st.rerun()
 
-        health = _cached_health_summary()
-        overall = health.get("overall", "unknown")
-        overall_color = {
-            "healthy": COLORS["success"],
-            "degraded": COLORS["warning"],
-            "critical": COLORS["error"],
-            "unknown": COLORS["primary"],
-        }[overall]
-        health_sub = health.get("summary", "verificando...")
-        is_hot = overall in ("degraded", "critical")
-        if action_tile("health_and_safety", "Diagnostico", health_sub,
-                       color=overall_color, key="tile_diagnostico",
-                       highlight=is_hot):
-            st.switch_page("pages/9_⚙️_Configuracoes.py")
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+def _render_activity(a: dict, overdue: bool):
+    """Linha da agenda com ✓ / ⏰ / → (concluir-adiar em <=2 cliques)."""
+    _c0, _c1, _c2, _c3 = st.columns([8, 0.8, 0.8, 0.8])
+    with _c0:
+        st.markdown(activity_row(a, overdue=overdue), unsafe_allow_html=True)
+    if _c1.button("✓", key=f"done_{a['id']}", help="Concluir"):
+        db.complete_activity(a["id"], _username, "manual")
+        st.rerun()
+    with _c2.popover("⏰", help="Adiar"):
+        if st.button("+2 horas", key=f"snz2h_{a['id']}"):
+            _r = db.snooze_activity(a["id"], (_now + timedelta(hours=2)).isoformat())
+            st.error(_r.get("erro")) if not _r.get("ok") else st.rerun()
+        if st.button("Amanha 9h", key=f"snzam_{a['id']}"):
+            _b = to_brt(_now).date() + timedelta(days=1)
+            _until = datetime.combine(_b, datetime.min.time().replace(hour=9),
+                                      tzinfo=to_brt(_now).tzinfo)
+            _r = db.snooze_activity(a["id"], _until.isoformat())
+            st.error(_r.get("erro")) if not _r.get("ok") else st.rerun()
+        if st.button("Segunda 9h", key=f"snzseg_{a['id']}"):
+            _b = to_brt(_now).date() + timedelta(days=1)
+            while _b.weekday() != 0:
+                _b += timedelta(days=1)
+            _until = datetime.combine(_b, datetime.min.time().replace(hour=9),
+                                      tzinfo=to_brt(_now).tzinfo)
+            _r = db.snooze_activity(a["id"], _until.isoformat())
+            st.error(_r.get("erro")) if not _r.get("ok") else st.rerun()
+    if a.get("company_id"):
+        if _c3.button("→", key=f"go_{a['id']}", help="Abrir escola"):
+            st.switch_page("pages/2_🏫_Escolas.py")
 
-    # === PAINEL DIARIO ACIONAVEL (F7 - Action Panel) ===
-    try:
-        from dashboard.helpers.morning_panel import render_action_panel
-        render_action_panel()
-    except Exception as e:
-        st.caption(f"Painel diario indisponivel: {e}")
-        # Fallback: widget antigo de hot leads
+
+# =========================================================================
+# CONTEUDO: PAINEL EQUIPE (gestor) ou MINHA AGENDA + LATERAL
+# =========================================================================
+if _view == "Equipe" and _admin:
+    section_header("Equipe — semana e gargalos", "groups")
+    _panel = hv.team_panel(all_usernames(), _now)
+    _vend_cols = st.columns(max(1, len(_panel["por_vendedor"])))
+    for _i, (_u, _d) in enumerate(_panel["por_vendedor"].items()):
+        with _vend_cols[_i % len(_vend_cols)]:
+            _alert = (f'<span style="color:#C62828;font-weight:700">'
+                      f'{_d["respostas_atrasadas"]} resposta(s) atrasada(s)!</span><br/>'
+                      if _d["respostas_atrasadas"] else "")
+            st.markdown(
+                f'<div class="data-card"><strong>{_u.capitalize()}</strong><br/>'
+                f'{_alert}{_d["atrasadas"]} atrasadas · {_d["hoje"]} hoje</div>',
+                unsafe_allow_html=True)
+
+    _cl, _cr = st.columns(2)
+    with _cl:
+        section_header("Leads sem dono", "person_off")
+        if not _panel["sem_dono"]:
+            st.caption("Nenhum — todo lead tem dono. ✓")
+        for _l in _panel["sem_dono"][:8]:
+            _x1, _x2, _x3 = st.columns([4, 2, 1.6])
+            _x1.markdown(f"**{_l.get('name')}** — {_l.get('city') or ''}")
+            _novo = _x2.selectbox("dono", all_usernames(), key=f"own_{_l['id']}",
+                                  label_visibility="collapsed")
+            if _x3.button("Atribuir", key=f"att_{_l['id']}"):
+                db.client.table("companies").update(
+                    {"owner_username": _novo}).eq("id", _l["id"]).execute()
+                st.rerun()
+    with _cr:
+        section_header("Parados ha 7+ dias", "hourglass_bottom")
+        if not _panel["parados_7d"]:
+            st.caption("Nenhum lead parado. ✓")
+        for _l in _panel["parados_7d"][:8]:
+            _lc = parse_ts(_l.get("last_contacted_at"))
+            _dias = (_now - _lc).days if _lc else "?"
+            _y1, _y2, _y3 = st.columns([4, 2, 1.8])
+            _y1.markdown(f"**{_l.get('name')}** — {_dias}d "
+                         f"({_l.get('owner_username') or 'sem dono'})")
+            _novo = _y2.selectbox("p/", all_usernames(), key=f"re_{_l['id']}",
+                                  label_visibility="collapsed")
+            if _y3.button("Reatribuir", key=f"reb_{_l['id']}"):
+                db.client.table("companies").update(
+                    {"owner_username": _novo}).eq("id", _l["id"]).execute()
+                db.reassign_company_activities(
+                    _l["id"], _novo, note=f"reatribuida por {_username}")
+                st.rerun()
+
+    if _panel["fila_aging"]:
+        section_header("Fila de aprovacao envelhecendo (+24h)", "schedule")
+        for _o, _n in _panel["fila_aging"].items():
+            st.markdown(f"- **{_o}**: {_n} mensagens paradas")
+
+else:
+    _col_main, _col_side = st.columns([2.1, 1])
+
+    with _col_main:
+        _hl, _hr = st.columns([3, 1.4])
+        with _hl:
+            section_header("Minha Agenda", "event_note")
+        with _hr:
+            if st.button("+ Nova atividade"):
+                _dlg_nova_atividade()
+
+        _g = hv.agenda_groups(_username, _now)
+        _total_aberta = sum(len(v) for v in _g.values())
+
+        if _total_aberta == 0:
+            try:
+                _n_escolas = int(db.client.table("companies").select(
+                    "id", count="exact").limit(1).execute().count or 0)
+            except Exception:
+                _n_escolas = 0
+            if _n_escolas < 5:
+                empty_state("🧭", "Primeiro dia? Siga o roteiro",
+                            "1) Conheca as escolas da base · 2) Pergunte algo ao "
+                            "IAlex · 3) Aprove sua primeira mensagem · 4) Registre "
+                            "seu primeiro contato")
+                st.page_link("pages/2_🏫_Escolas.py", label="1 · Conhecer as escolas →")
+                st.page_link("pages/0_💬_Chat_IAlex.py", label="2 · Perguntar ao IAlex →")
+                st.page_link("pages/6_✉️_Comunicacao.py", label="3 · Aprovar mensagens →")
+            else:
+                empty_state("🎉", "Tudo em dia!",
+                            "Nenhuma atividade pendente. Que tal buscar escolas novas?")
+                st.page_link("pages/5_📊_Pipeline.py",
+                             label="Prospectar escolas novas →")
+        else:
+            if _g["atrasadas"]:
+                st.markdown(f"**⚠️ Atrasadas ({len(_g['atrasadas'])})**")
+                for _a in _g["atrasadas"][:10]:
+                    _render_activity(_a, overdue=True)
+            st.markdown(f"**Hoje ({len(_g['hoje'])})**")
+            if not _g["hoje"]:
+                st.caption("Nada mais para hoje.")
+            for _a in _g["hoje"][:10]:
+                _render_activity(_a, overdue=False)
+            if _g["amanha"]:
+                with st.expander(f"Amanha ({len(_g['amanha'])})"):
+                    for _a in _g["amanha"][:10]:
+                        st.markdown(activity_row(_a), unsafe_allow_html=True)
+            if _g["proximas"]:
+                with st.expander(f"Proximas ({len(_g['proximas'])})"):
+                    for _a in _g["proximas"][:10]:
+                        st.markdown(activity_row(_a), unsafe_allow_html=True)
+
+        # contador de concluidas hoje (reforco positivo barato — SPEC §1.8)
         try:
-            from dashboard.helpers.urgency_widgets import hot_leads_widget
-            section_header("Leads Quentes", "local_fire_department")
-            hot_leads_widget()
+            _start_day = to_brt(_now).replace(hour=0, minute=0, second=0,
+                                              microsecond=0)
+            _done_today = int(db.client.table("activities").select(
+                "id", count="exact").eq("owner_username", _username)
+                .eq("status", "done")
+                .gte("completed_at", _start_day.isoformat())
+                .execute().count or 0)
+            if _done_today:
+                st.caption(f"✓ {_done_today} concluida(s) hoje")
         except Exception:
             pass
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    with _col_side:
+        section_header("Agir agora", "local_fire_department")
+        _hot = hv.hot_leads(3)
+        if not _hot:
+            st.caption("Nenhum lead quente no momento.")
+        for _l in _hot:
+            st.markdown(
+                f'<div class="data-card">{priority_badge(_l.get("urgency_tier"))} '
+                f'<strong>{_l.get("name")}</strong></div>', unsafe_allow_html=True)
 
-    # === ATIVIDADE RECENTE ===
-    section_header("Atividade Recente", "history")
-    try:
-        recent_sent = db.client.table("approval_queue").select(
-            "subject,sent_at,companies(name),contacts(full_name)"
-        ).eq("status", "sent").order("sent_at", desc=True).limit(5).execute().data or []
+        section_header("Proximas 24h", "calendar_month")
+        _meets = hv.reunioes_24h(None if _admin else _username, _now)
+        if not _meets:
+            st.caption("Nenhuma reuniao nas proximas 24h.")
+        for _m in _meets:
+            _dt = parse_ts(_m.get("scheduled_at"))
+            _quando = to_brt(_dt).strftime("%d/%m %Hh%M") if _dt else "?"
+            st.markdown(f"📅 **{_quando}** — {_m.get('title') or 'Reuniao'}")
 
-        if recent_sent:
-            timeline_html = ""
-            for item in recent_sent:
-                comp = item.get("companies") or {}
-                ct = item.get("contacts") or {}
-                sent_at = (item.get("sent_at") or "")[:16].replace("T", " ")
-                timeline_html += timeline_item(
-                    date=sent_at,
-                    title=f'{comp.get("name", "?")} \u2192 {ct.get("full_name", "?")}',
-                    detail=item.get("subject", "")[:60],
-                    color=COLORS["primary"],
-                )
-            st.markdown(timeline_html, unsafe_allow_html=True)
-        else:
-            st.caption("Nenhuma atividade recente.")
-    except Exception:
-        st.caption("Nenhuma atividade recente.")
-
-    # === API USAGE ===
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    section_header("Uso de APIs (ultimos 7 dias)", "api")
-    try:
-        seven_days_ago = (datetime.now() - timedelta(days=7)).isoformat()
-        api_usage = db.client.table("api_usage").select(
-            "api_name,credits_used"
-        ).gte("created_at", seven_days_ago).execute().data or []
-
-        if api_usage:
-            api_costs = {}
-            for u in api_usage:
-                name = u.get("api_name", "?")
-                api_costs[name] = api_costs.get(name, 0) + (u.get("credits_used") or 1)
-
-            api_icons = {
-                "anthropic": "smart_toy", "apollo": "search", "hunter": "mail",
-                "snov": "contact_mail", "brevo": "send", "google": "cloud",
-            }
-            cost_cols = st.columns(min(len(api_costs), 5))
-            for i, (api_name, count) in enumerate(sorted(api_costs.items(), key=lambda x: -x[1])):
-                with cost_cols[i % len(cost_cols)]:
-                    icon = api_icons.get(api_name.lower(), "memory")
-                    metric_card(api_name.capitalize(), f"{count}", icon=icon,
-                                color=COLORS["secondary"])
-        else:
-            st.caption("Nenhum uso de API registrado nos ultimos 7 dias.")
-    except Exception:
-        st.caption("Tabela api_usage nao disponivel.")
-
-except Exception as e:
-    st.warning(f"Nao foi possivel carregar dados: {e}")
-    section_header("Como usar", "help")
-    st.markdown("Use o **menu lateral** para navegar entre as paginas.")
-
-st.markdown('<hr class="divider">', unsafe_allow_html=True)
-st.caption("Fluxo: Importar \u2192 Pipeline \u2192 Aprovar \u2192 Enviar \u2192 Acompanhar via pipeline comercial + IAlex")
+        section_header("Minha meta — " +
+                       to_brt(_now).strftime("%B").capitalize(), "flag")
+        _metas = hv.minhas_metas(_username, _now)
+        if not _metas:
+            st.caption("Sem metas definidas para o mes." +
+                       (" Defina em Resultados →" if _admin else
+                        " Fale com o gestor."))
+        for _mt in _metas[:3]:
+            st.markdown(goal_progress(goal_metric_label(_mt["metric"]),
+                                      _mt["realized"], _mt["target"]),
+                        unsafe_allow_html=True)
+        st.page_link("pages/8_📈_Analytics.py", label="ver Resultados →")
