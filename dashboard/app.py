@@ -24,9 +24,11 @@ if str(ROOT) not in sys.path:
 from dashboard.theme import (
     apply_theme, metric_card, section_header, alert_banner, COLORS,
     activity_row, goal_progress, priority_badge, stage_pill, empty_state,
+    ACTIVITY_CSS,
 )
 
 apply_theme()
+st.markdown(ACTIVITY_CSS, unsafe_allow_html=True)
 
 # =========================================================================
 # AUTENTICACAO (streamlit-authenticator) — gate de TODAS as paginas
@@ -213,11 +215,30 @@ def _dlg_nova_atividade():
         st.rerun()
 
 
+def _when_txt(a: dict, overdue: bool) -> str:
+    """'vence 14h30' / 'venceu ha 2d' (visual do mockup)."""
+    _due = parse_ts(a.get("due_at"))
+    if not _due:
+        return ""
+    if overdue:
+        _delta = _now - _due
+        if _delta.days >= 1:
+            return f"venceu ha {_delta.days}d"
+        _h = int(_delta.total_seconds() // 3600)
+        return f"venceu ha {_h}h" if _h else "venceu agora"
+    _local = to_brt(_due)
+    if _local.date() == to_brt(_now).date():
+        return f"vence {_local.strftime('%Hh%M')}"
+    return f"vence {_local.strftime('%d/%m %Hh%M')}"
+
+
 def _render_activity(a: dict, overdue: bool):
     """Linha da agenda com ✓ / ⏰ / → (concluir-adiar em <=2 cliques)."""
     _c0, _c1, _c2, _c3 = st.columns([8, 0.8, 0.8, 0.8])
     with _c0:
-        st.markdown(activity_row(a, overdue=overdue), unsafe_allow_html=True)
+        st.markdown(activity_row(a, overdue=overdue,
+                                 when_txt=_when_txt(a, overdue)),
+                    unsafe_allow_html=True)
     if _c1.button("✓", key=f"done_{a['id']}", help="Concluir"):
         db.complete_activity(a["id"], _username, "manual")
         st.rerun()
@@ -343,13 +364,18 @@ else:
             for _a in _g["hoje"][:10]:
                 _render_activity(_a, overdue=False)
             if _g["amanha"]:
-                with st.expander(f"Amanha ({len(_g['amanha'])})"):
+                # aberto quando ha poucas — atividade criada "pra amanha" deve
+                # ser VISIVEL na hora (aprendizado do teste do dono)
+                with st.expander(f"Amanha ({len(_g['amanha'])})",
+                                 expanded=len(_g["amanha"]) <= 3):
                     for _a in _g["amanha"][:10]:
-                        st.markdown(activity_row(_a), unsafe_allow_html=True)
+                        st.markdown(activity_row(_a, when_txt=_when_txt(_a, False)),
+                                    unsafe_allow_html=True)
             if _g["proximas"]:
                 with st.expander(f"Proximas ({len(_g['proximas'])})"):
                     for _a in _g["proximas"][:10]:
-                        st.markdown(activity_row(_a), unsafe_allow_html=True)
+                        st.markdown(activity_row(_a, when_txt=_when_txt(_a, False)),
+                                    unsafe_allow_html=True)
 
         # contador de concluidas hoje (reforco positivo barato — SPEC §1.8)
         try:
@@ -371,9 +397,15 @@ else:
         if not _hot:
             st.caption("Nenhum lead quente no momento.")
         for _l in _hot:
+            _lc = parse_ts(_l.get("last_contacted_at"))
+            _motivo = (f"sem contato ha {(_now - _lc).days}d" if _lc
+                       else "ainda sem contato")
             st.markdown(
-                f'<div class="data-card">{priority_badge(_l.get("urgency_tier"))} '
-                f'<strong>{_l.get("name")}</strong></div>', unsafe_allow_html=True)
+                f'<div class="v2-side">{priority_badge(_l.get("urgency_tier"))}<br/>'
+                f'<strong style="font-size:13.5px">{_l.get("name")}</strong><br/>'
+                f'<span style="font-size:11.5px;color:#94A3B8">score '
+                f'{int(_l.get("urgency_score") or 0)} · {_motivo}</span></div>',
+                unsafe_allow_html=True)
 
         section_header("Proximas 24h", "calendar_month")
         _meets = hv.reunioes_24h(None if _admin else _username, _now)

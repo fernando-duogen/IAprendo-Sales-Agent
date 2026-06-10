@@ -1095,23 +1095,60 @@ def message_chip(status, scheduled_hint=None) -> str:
             f'white-space:nowrap">{message_status_label(status, scheduled_hint)}</span>')
 
 
-def activity_row(activity: dict, overdue: bool = False) -> str:
-    """Linha de atividade da agenda (Home v2). Retorna HTML (botoes ficam por
-    conta da pagina via st.button ao lado)."""
-    from dashboard.labels import ACTIVITY_SOURCE_BADGE, activity_label
-    bg = "#FFF5F5" if overdue else "#fff"
-    pr = '<span style="color:#C62828;font-weight:700">🔴</span> ' \
-        if activity.get("priority") == 1 else ""
+# Cores por tipo de atividade (icone em circulo — visual do mockup hoje.html)
+_ACTIVITY_COLORS = {
+    "responder": "#C62828", "follow_up": "#E65100", "ligar": "#1976D2",
+    "preparar_reuniao": "#FB8C00", "registrar_resultado": "#8E24AA",
+    "aprovar_mensagens": "#2E7D32", "tarefa": "#607D8B",
+}
+
+ACTIVITY_CSS = """
+<style>
+.v2-act{display:flex;align-items:center;gap:12px;background:#fff;
+  border:1px solid #E3E8EF;border-radius:12px;padding:11px 16px;
+  margin-bottom:8px;transition:box-shadow .15s ease, transform .12s ease}
+.v2-act:hover{box-shadow:0 4px 14px rgba(16,24,40,.10);transform:translateY(-1px)}
+.v2-act.overdue{background:#FFF5F5;border-left:4px solid #C62828}
+.v2-act-ico{width:38px;height:38px;border-radius:10px;display:flex;
+  align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.v2-act-body{flex:1;min-width:0}
+.v2-act-title{font-weight:600;font-size:14px;color:#1A202C;line-height:1.3}
+.v2-act-sub{font-size:12px;color:#94A3B8;margin-top:2px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.v2-act-when{font-size:11.5px;color:#64748B;white-space:nowrap;font-weight:600;
+  flex-shrink:0;text-align:right}
+.v2-act-when.late{color:#C62828}
+.v2-side{background:#fff;border:1px solid #E3E8EF;border-radius:12px;
+  padding:13px 16px;margin-bottom:10px;transition:box-shadow .15s ease}
+.v2-side:hover{box-shadow:0 3px 10px rgba(16,24,40,.08)}
+</style>
+"""
+
+
+def activity_row(activity: dict, overdue: bool = False,
+                 when_txt: str = "") -> str:
+    """Card de atividade da agenda (Home v2 — visual do mockup hoje.html):
+    icone em circulo colorido por tipo + titulo + subtitulo + prazo a direita.
+    Botoes (✓/⏰/→) ficam por conta da pagina via st.button ao lado.
+    Requer ACTIVITY_CSS injetado 1x na pagina."""
+    from dashboard.labels import ACTIVITY_SOURCE_BADGE, ACTIVITY_TYPES
+    a_type = (activity.get("type") or "tarefa").lower()
+    cor = _ACTIVITY_COLORS.get(a_type, "#607D8B")
+    emoji = ACTIVITY_TYPES.get(a_type, {}).get("emoji", "✍️")
+    pr = ('<span style="color:#C62828;font-weight:700" title="Prioridade maxima">'
+          '🔴</span> ' if activity.get("priority") == 1 else "")
     src = ACTIVITY_SOURCE_BADGE.get(activity.get("source", "manual"), "")
-    details = (activity.get("details") or "")[:90]
+    details = (activity.get("details") or "").replace("\n", " ")[:80]
+    sub = " · ".join(x for x in (details, src) if x)
+    when_html = (f'<div class="v2-act-when{" late" if overdue else ""}">'
+                 f'{when_txt}</div>') if when_txt else ""
     return (
-        f'<div style="background:{bg};border:1px solid #E3E8EF;border-radius:10px;'
-        f'padding:10px 14px;margin-bottom:6px">'
-        f'{pr}<strong style="font-size:13.5px">{activity_label(activity.get("type"))} — '
-        f'{activity.get("title", "")}</strong> '
-        f'<span style="font-size:11px;color:#94A3B8">{src}</span>'
-        + (f'<br/><span style="font-size:12px;color:#64748B">{details}</span>' if details else "")
-        + '</div>'
+        f'<div class="v2-act{" overdue" if overdue else ""}">'
+        f'<div class="v2-act-ico" style="background:{cor}1F;color:{cor}">{emoji}</div>'
+        f'<div class="v2-act-body">'
+        f'<div class="v2-act-title">{pr}{activity.get("title", "")}</div>'
+        + (f'<div class="v2-act-sub">{sub}</div>' if sub else "")
+        + f'</div>{when_html}</div>'
     )
 
 
