@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAprendo v2 — Prospectar</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7FB;color:#1A202C}
+.mockup-banner{background:#1A237E;color:#fff;text-align:center;padding:8px 16px;font-size:12.5px;letter-spacing:.3px}
+.mockup-banner a{color:#90CAF9}
+.app{display:flex;min-height:calc(100vh - 36px)}
+.sidebar{width:240px;background:#fff;border-right:1px solid #E3E8EF;padding:20px 12px;flex-shrink:0}
+.logo{text-align:center;padding:4px 0 16px;border-bottom:1px solid #EEF2F7;margin-bottom:14px}
+.logo .t{font-size:19px;font-weight:700;color:#1976D2}
+.logo .s{font-size:11px;color:#94A3B8}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;color:#475569;text-decoration:none;font-size:14px;margin-bottom:2px;border-left:3px solid transparent}
+.nav-item:hover{background:#F1F5F9}
+.nav-item.active{background:#E3F2FD;color:#1565C0;font-weight:600;border-left:3px solid #1976D2}
+.nav-item .badge{margin-left:auto;background:#1976D2;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
+.nav-sep{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;margin:14px 12px 6px}
+.main{flex:1;padding:28px 36px;max-width:1280px}
+.page-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.page-h h1{font-size:23px;font-weight:700}
+.user-pill{display:flex;align-items:center;gap:8px;font-size:13px;color:#475569}
+.user-pill .av{width:30px;height:30px;border-radius:50%;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.page-sub{color:#64748B;font-size:13.5px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:18px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:9px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+.btn-p{background:#1976D2;color:#fff}
+.btn-g{background:#2E7D32;color:#fff}
+.btn-o{background:#fff;color:#334155;border:1px solid #CBD5E1}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:7px}
+.pill{display:inline-block;border-radius:99px;padding:3px 11px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:4px 12px;font-size:12.5px;font-weight:600;border:1.5px solid #CBD5E1;background:#fff;color:#475569;cursor:pointer}
+.chip.on{border-color:#1976D2;color:#1565C0;background:#E3F2FD}
+/* pills de ETAPA da escola (preenchidas) */
+.st-nova{background:#90A4AE}.st-aval{background:#7E57C2}.st-pronta{background:#26A69A}.st-cont{background:#1E88E5}.st-resp{background:#F9A825;color:#3E2723}.st-reun{background:#FB8C00}.st-prop{background:#8E24AA}.st-cli{background:#2E7D32}.st-perd{background:#B0BEC5;color:#37474F}
+/* prioridade */
+.prio{font-size:12.5px;font-weight:700;white-space:nowrap;cursor:help}
+.p-agir{color:#C62828}.p-quente{color:#E65100}.p-morno{color:#F9A825}.p-frio{color:#90A4AE}
+</style>
+<style>
+/* ===== CSS especifico — Prospectar ===== */
+.tabs-row{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.tab-chip{font-size:14px;padding:8px 18px;border-width:2px}
+.tabs-spacer{flex:1}
+.view-toggle{display:inline-flex;border:1.5px solid #CBD5E1;border-radius:9px;overflow:hidden}
+.view-toggle button{border:none;background:#fff;color:#64748B;font-size:12.5px;font-weight:600;padding:6px 14px;cursor:pointer}
+.view-toggle button.on{background:#1976D2;color:#fff}
+.tab-panel{display:none}
+.tab-panel.show{display:block}
+
+/* filtros */
+.filters{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.filters label{font-size:12px;color:#64748B;font-weight:600;display:block;margin-bottom:3px}
+.sel{appearance:none;background:#fff url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="%2364748B" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>') no-repeat right 10px center;border:1px solid #CBD5E1;border-radius:9px;padding:7px 30px 7px 12px;font-size:13.5px;color:#1A202C;min-width:130px;cursor:pointer}
+.filters-note{font-size:13px;color:#94A3B8;margin-left:auto}
+
+/* tabela recomendadas */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;font-size:11.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;padding:8px 12px;border-bottom:1px solid #E3E8EF}
+.tbl td{padding:12px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:#F8FAFD}
+.stars{font-size:15px;color:#FBC02D;letter-spacing:1px;white-space:nowrap}
+.stars .off{color:#E2E8F0}
+.school-n{font-weight:600;color:#1A202C}
+.why{color:#475569;max-width:340px}
+.alunos{font-variant-numeric:tabular-nums;color:#334155}
+
+/* card explicativo */
+.hint-card{display:flex;align-items:flex-start;gap:10px;background:#FFFDE7;border:1px solid #F5E9A8;border-radius:12px;padding:12px 16px;font-size:13px;color:#5D4F12;margin-top:14px}
+.hint-card .ic{font-size:16px;line-height:1.3}
+.hint-card b{color:#3E3508}
+
+/* stepper */
+.stepper{display:flex;align-items:center;gap:0;margin-bottom:20px}
+.step{display:flex;align-items:center;gap:9px}
+.step .num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:#E2E8F0;color:#64748B;flex-shrink:0}
+.step .lbl{font-size:13.5px;color:#94A3B8;font-weight:600;white-space:nowrap}
+.step.act .num{background:#1976D2;color:#fff}
+.step.act .lbl{color:#1565C0}
+.step-line{flex:0 0 56px;height:2px;background:#E2E8F0;margin:0 14px}
+
+/* wizard buscar */
+.wiz-filters{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.checks{display:flex;gap:24px;margin-bottom:18px;font-size:13.5px;color:#334155}
+.checks label{display:flex;align-items:center;gap:7px;cursor:pointer}
+.checks input{width:16px;height:16px;accent-color:#1976D2}
+.mini-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.mini-card{background:#F8FAFD;border:1px solid #E3E8EF;border-radius:12px;padding:14px 16px;text-align:center}
+.mini-card .v{font-size:22px;font-weight:700;color:#1A202C;font-variant-numeric:tabular-nums}
+.mini-card .l{font-size:12px;color:#64748B;margin-top:2px}
+.mini-card.hl{background:#E8F5E9;border-color:#C8E6C9}
+.mini-card.hl .v{color:#2E7D32}
+
+/* preparar lote */
+.lote-tbl{width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:16px}
+.lote-tbl td{padding:11px 12px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+.lote-tbl tr:last-child td{border-bottom:none}
+.lote-tbl input{width:16px;height:16px;accent-color:#1976D2}
+.safe-note{display:flex;align-items:flex-start;gap:9px;background:#E8F5E9;border:1px solid #C8E6C9;border-radius:12px;padding:11px 15px;font-size:13px;color:#1B5E20;margin-top:14px}
+.adv-link{display:inline-block;margin-top:12px;font-size:12.5px;color:#94A3B8;text-decoration:none}
+.adv-link:hover{color:#64748B;text-decoration:underline}
+.tab-actions{display:flex;align-items:center;gap:14px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="mockup-banner">🧪 MOCKUP — proposta de redesign v2 "Dia de Venda" · dados ilustrativos · <a href="index.html">← voltar ao índice</a></div>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="t">🎓 IAprendo</div><div class="s">Plataforma de Vendas</div></div>
+  <a class="nav-item" href="hoje.html">🏠 Hoje</a>
+  <a class="nav-item" href="#" title="Página mantida da v1 — sem mockup nesta rodada">🤖 IAlex</a>
+  <div class="nav-sep">Vender</div>
+  <a class="nav-item active" href="prospectar.html">🔍 Prospectar</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">🏫 Escolas</a>
+  <a class="nav-item" href="mensagens.html">✉️ Mensagens <span class="badge">12</span></a>
+  <a class="nav-item" href="negocios.html">💼 Negócios</a>
+  <div class="nav-sep">Acompanhar</div>
+  <a class="nav-item" href="resultados.html">📊 Resultados</a>
+  <div class="nav-sep">Sistema</div>
+  <a class="nav-item" href="#" title="Visível apenas para administradores">⚙️ Ajustes</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">❓ Ajuda</a>
+</aside>
+<main class="main">
+
+  <div class="page-h">
+    <h1>Prospectar</h1>
+    <div class="user-pill"><div class="av">F</div>Fernando</div>
+  </div>
+  <div class="page-sub">Encontre escolas novas e deixe-as prontas para a primeira mensagem</div>
+
+  <!-- TABS -->
+  <div class="tabs-row">
+    <button class="chip tab-chip on" data-tab="rec" onclick="showTab('rec',this)">⭐ Recomendadas</button>
+    <button class="chip tab-chip" data-tab="buscar" onclick="showTab('buscar',this)">🗺️ Buscar no Brasil</button>
+    <button class="chip tab-chip" data-tab="lote" onclick="showTab('lote',this)">📦 Preparar lote</button>
+    <div class="tabs-spacer"></div>
+    <div class="view-toggle">
+      <button class="on">Lista</button>
+      <button title="mesmos filtros, visualização no mapa">Mapa</button>
+    </div>
+  </div>
+
+  <!-- ===== TAB RECOMENDADAS ===== -->
+  <section id="tab-rec" class="tab-panel show">
+    <div class="card">
+      <div class="filters">
+        <div>
+          <label>UF</label>
+          <select class="sel"><option>RS</option><option>CE</option><option>SP</option><option>Todas</option></select>
+        </div>
+        <div>
+          <label>Cidade</label>
+          <select class="sel"><option>Todas</option><option>Porto Alegre</option><option>Caxias do Sul</option></select>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select class="sel"><option>Privada</option><option>Pública</option><option>Todas</option></select>
+        </div>
+        <div class="filters-note">8 escolas com alto potencial ainda não trabalhadas</div>
+      </div>
+
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Potencial</th>
+            <th>Escola</th>
+            <th>Cidade/UF</th>
+            <th>Alunos-alvo</th>
+            <th>Por que recomendada</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="stars" title="Potencial mede o encaixe antes do contato">★★★</span></td>
+            <td class="school-n">Colégio Sol Nascente</td>
+            <td>Porto Alegre/RS</td>
+            <td class="alunos">820</td>
+            <td class="why">Resultado em Matemática abaixo de escolas semelhantes — dor clara</td>
+            <td><button class="btn btn-p btn-sm" title="importa, busca contatos e atribui a você">Trabalhar esta escola</button></td>
+          </tr>
+          <tr>
+            <td><span class="stars" title="Potencial mede o encaixe antes do contato">★★★</span></td>
+            <td class="school-n">Instituto Educar Mais</td>
+            <td>Caxias do Sul/RS</td>
+            <td class="alunos">640</td>
+            <td class="why">Cresceu 18% em matrículas, investe em tecnologia</td>
+            <td><button class="btn btn-p btn-sm" title="importa, busca contatos e atribui a você">Trabalhar esta escola</button></td>
+          </tr>
+          <tr>
+            <td><span class="stars" title="Potencial mede o encaixe antes do contato">★★<span class="off">★</span></span></td>
+            <td class="school-n">Colégio Horizonte Sul</td>
+            <td>Porto Alegre/RS</td>
+            <td class="alunos">540</td>
+            <td class="why">Redação abaixo da média da cidade — oportunidade de evolução visível</td>
+            <td><button class="btn btn-p btn-sm" title="importa, busca contatos e atribui a você">Trabalhar esta escola</button></td>
+          </tr>
+          <tr>
+            <td><span class="stars" title="Potencial mede o encaixe antes do contato">★★<span class="off">★</span></span></td>
+            <td class="school-n">Colégio Atlântico</td>
+            <td>Fortaleza/CE</td>
+            <td class="alunos">710</td>
+            <td class="why">Porte grande e nota estagnada há 3 anos — espaço para crescer em Ciências</td>
+            <td><button class="btn btn-p btn-sm" title="importa, busca contatos e atribui a você">Trabalhar esta escola</button></td>
+          </tr>
+          <tr>
+            <td><span class="stars" title="Potencial mede o encaixe antes do contato">★★<span class="off">★</span></span></td>
+            <td class="school-n">Colégio Dom Pedro II</td>
+            <td>Fortaleza/CE</td>
+            <td class="alunos">480</td>
+            <td class="why">Escolas vizinhas de perfil parecido já responderam bem à abordagem</td>
+            <td><button class="btn btn-p btn-sm" title="importa, busca contatos e atribui a você">Trabalhar esta escola</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="hint-card">
+      <div class="ic">★</div>
+      <div><b>Potencial</b> mede o encaixe <b>ANTES</b> do contato. Depois do 1º contato, quem manda é a <b>Prioridade</b> (<span class="prio p-agir" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 68/100">🔴</span><span class="prio p-quente">🟠</span><span class="prio p-morno">🟡</span><span class="prio p-frio">⚪</span>) — veja em <b>Hoje</b>.</div>
+    </div>
+  </section>
+
+  <!-- ===== TAB BUSCAR NO BRASIL ===== -->
+  <section id="tab-buscar" class="tab-panel">
+    <div class="card">
+      <div class="stepper">
+        <div class="step act"><div class="num">1</div><div class="lbl">Escolher região</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="num">2</div><div class="lbl">Revisar lista</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="num">3</div><div class="lbl">Adicionar à carteira</div></div>
+      </div>
+
+      <div class="wiz-filters">
+        <div>
+          <label style="font-size:12px;color:#64748B;font-weight:600;display:block;margin-bottom:3px">UF</label>
+          <select class="sel" style="width:100%"><option>RS</option><option>CE</option><option>SP</option><option>Todas</option></select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#64748B;font-weight:600;display:block;margin-bottom:3px">Cidade</label>
+          <select class="sel" style="width:100%"><option>Porto Alegre</option><option>Caxias do Sul</option><option>Todas</option></select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#64748B;font-weight:600;display:block;margin-bottom:3px">Tipo</label>
+          <select class="sel" style="width:100%"><option>Privada</option><option>Pública</option><option>Todas</option></select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#64748B;font-weight:600;display:block;margin-bottom:3px">Porte</label>
+          <select class="sel" style="width:100%"><option>Todos</option><option>Até 200 alunos</option><option>201 a 500</option><option>Mais de 500</option></select>
+        </div>
+      </div>
+
+      <div class="checks">
+        <label><input type="checkbox" checked> Fundamental — anos finais</label>
+        <label><input type="checkbox" checked> Ensino Médio</label>
+      </div>
+
+      <div class="mini-cards">
+        <div class="mini-card"><div class="v">185.234</div><div class="l">Total na base</div></div>
+        <div class="mini-card"><div class="v">312</div><div class="l">Com seus filtros</div></div>
+        <div class="mini-card"><div class="v">119</div><div class="l">Já na sua carteira</div></div>
+        <div class="mini-card hl"><div class="v">193</div><div class="l">Novas</div></div>
+      </div>
+
+      <button class="btn btn-p">Ver as 193 escolas →</button>
+    </div>
+  </section>
+
+  <!-- ===== TAB PREPARAR LOTE ===== -->
+  <section id="tab-lote" class="tab-panel">
+    <div class="card">
+      <div class="stepper">
+        <div class="step act"><div class="num">1</div><div class="lbl">Selecionar escolas</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="num">2</div><div class="lbl">Buscar contatos</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="num">3</div><div class="lbl">Gerar mensagens</div></div>
+      </div>
+
+      <table class="lote-tbl">
+        <tbody>
+          <tr>
+            <td style="width:36px"><input type="checkbox" checked></td>
+            <td class="school-n">Colégio Santa Cecília <span style="font-weight:400;color:#94A3B8;font-size:12.5px">· Porto Alegre/RS</span></td>
+            <td style="text-align:right"><span class="pill st-pronta">Pronta para contato</span></td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" checked></td>
+            <td class="school-n">Instituto Monte Alverne <span style="font-weight:400;color:#94A3B8;font-size:12.5px">· Caxias do Sul/RS</span></td>
+            <td style="text-align:right"><span class="pill st-aval">Avaliada</span></td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" checked></td>
+            <td class="school-n">Escola Nova Geração <span style="font-weight:400;color:#94A3B8;font-size:12.5px">· Porto Alegre/RS</span></td>
+            <td style="text-align:right"><span class="pill st-pronta">Pronta para contato</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <button class="btn btn-p">Buscar contatos das 3 selecionadas</button>
+
+      <div class="safe-note">
+        <div>🔒</div>
+        <div>Ao final, as mensagens vão para <b>✉️ Mensagens</b> aguardando <b>SUA aprovação</b> — nada sai sem você revisar.</div>
+      </div>
+
+      <a class="adv-link" href="#">Opções avançadas ▾</a>
+    </div>
+  </section>
+
+</main>
+</div>
+<script>
+function showTab(id, chip){
+  document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('show'); });
+  document.getElementById('tab-' + id).classList.add('show');
+  document.querySelectorAll('.tab-chip').forEach(function(c){ c.classList.remove('on'); });
+  chip.classList.add('on');
+}
+</script>
+</body>
+</html>

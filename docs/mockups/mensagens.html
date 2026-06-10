@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAprendo v2 — Mensagens</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7FB;color:#1A202C}
+.mockup-banner{background:#1A237E;color:#fff;text-align:center;padding:8px 16px;font-size:12.5px;letter-spacing:.3px}
+.mockup-banner a{color:#90CAF9}
+.app{display:flex;min-height:calc(100vh - 36px)}
+.sidebar{width:240px;background:#fff;border-right:1px solid #E3E8EF;padding:20px 12px;flex-shrink:0}
+.logo{text-align:center;padding:4px 0 16px;border-bottom:1px solid #EEF2F7;margin-bottom:14px}
+.logo .t{font-size:19px;font-weight:700;color:#1976D2}
+.logo .s{font-size:11px;color:#94A3B8}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;color:#475569;text-decoration:none;font-size:14px;margin-bottom:2px;border-left:3px solid transparent}
+.nav-item:hover{background:#F1F5F9}
+.nav-item.active{background:#E3F2FD;color:#1565C0;font-weight:600;border-left:3px solid #1976D2}
+.nav-item .badge{margin-left:auto;background:#1976D2;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
+.nav-sep{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;margin:14px 12px 6px}
+.main{flex:1;padding:28px 36px;max-width:1280px}
+.page-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.page-h h1{font-size:23px;font-weight:700}
+.user-pill{display:flex;align-items:center;gap:8px;font-size:13px;color:#475569}
+.user-pill .av{width:30px;height:30px;border-radius:50%;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.page-sub{color:#64748B;font-size:13.5px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:18px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:9px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+.btn-p{background:#1976D2;color:#fff}
+.btn-g{background:#2E7D32;color:#fff}
+.btn-o{background:#fff;color:#334155;border:1px solid #CBD5E1}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:7px}
+.pill{display:inline-block;border-radius:99px;padding:3px 11px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:4px 12px;font-size:12.5px;font-weight:600;border:1.5px solid #CBD5E1;background:#fff;color:#475569;cursor:pointer}
+.chip.on{border-color:#1976D2;color:#1565C0;background:#E3F2FD}
+/* pills de ETAPA da escola (preenchidas) */
+.st-nova{background:#90A4AE}.st-aval{background:#7E57C2}.st-pronta{background:#26A69A}.st-cont{background:#1E88E5}.st-resp{background:#F9A825;color:#3E2723}.st-reun{background:#FB8C00}.st-prop{background:#8E24AA}.st-cli{background:#2E7D32}.st-perd{background:#B0BEC5;color:#37474F}
+/* prioridade */
+.prio{font-size:12.5px;font-weight:700;white-space:nowrap;cursor:help}
+.p-agir{color:#C62828}.p-quente{color:#E65100}.p-morno{color:#F9A825}.p-frio{color:#90A4AE}
+</style>
+<style>
+/* CSS especifico — Mensagens */
+.chips-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.chips-row2{display:flex;align-items:center;gap:7px;margin-bottom:20px}
+.chips-row2 .chip{padding:3px 10px;font-size:11.5px}
+.dot-g{display:inline-block;width:7px;height:7px;border-radius:50%;background:#2E7D32;margin-left:2px}
+.modelos-link{margin-left:auto;font-size:12.5px;color:#64748B;text-decoration:none;border-bottom:1px dashed #CBD5E1;padding-bottom:1px}
+.modelos-link:hover{color:#1565C0;border-color:#1976D2}
+/* layout 2 colunas */
+.msg-layout{display:grid;grid-template-columns:1.1fr 1.6fr;gap:18px;align-items:start}
+.col-title{font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.msg-item{background:#fff;border:1px solid #E3E8EF;border-radius:12px;padding:12px 14px;margin-bottom:10px;cursor:pointer;box-shadow:0 1px 2px rgba(16,24,40,.05)}
+.msg-item:hover{border-color:#90CAF9}
+.msg-item.sel{border:2px solid #1976D2;box-shadow:0 2px 8px rgba(25,118,210,.15)}
+.msg-item .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.msg-item .esc{font-weight:700;font-size:13.5px}
+.msg-item .canal-ic{font-size:14px;flex-shrink:0}
+.msg-item .who{font-size:12px;color:#64748B;margin:1px 0 5px}
+.msg-item .subj{font-size:12.5px;font-weight:600;color:#334155;margin-bottom:3px}
+.msg-item .prev{font-size:12px;color:#94A3B8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px}
+/* chips de status de mensagem (contornados) */
+.stchip{display:inline-flex;align-items:center;gap:4px;border-radius:99px;padding:2px 10px;font-size:11px;font-weight:600;border:1.5px solid;background:#fff;white-space:nowrap}
+.sc-wait{border-color:#F9A825;color:#B7791F}
+.sc-appr{border-color:#2E7D32;color:#2E7D32}
+.sc-sent{border-color:#1976D2;color:#1565C0}
+.sc-open{border-color:#7E57C2;color:#6A4FB0}
+.sc-click{border-color:#00897B;color:#00796B}
+.sc-resp{border-color:#43A047;color:#2E7D32}
+.sc-fail{border-color:#E53935;color:#C62828}
+/* card de revisao */
+.review-card{padding:0;overflow:hidden}
+.review-card .rv-label{background:#F8FAFC;border-bottom:1px solid #EEF2F7;padding:9px 20px;font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:1px}
+.review-card .rv-head{padding:14px 20px 10px;border-bottom:1px solid #EEF2F7;font-size:12.5px;color:#475569;line-height:1.7}
+.review-card .rv-head b{color:#1A202C}
+.review-card .rv-subj{padding:14px 20px 0;font-size:15.5px;font-weight:700}
+.review-card .rv-body{padding:10px 20px 18px;font-size:13.5px;color:#334155;line-height:1.65}
+.review-card .rv-body p{margin-bottom:12px}
+.rv-chart{background:#F1F8FE;border:1px dashed #90CAF9;border-radius:9px;padding:8px 12px;font-size:12.5px;color:#1565C0;display:inline-block;margin-bottom:12px}
+.rv-sign{color:#64748B;font-size:13px}
+.rv-foot{border-top:1px solid #EEF2F7;background:#FAFBFD;padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rv-foot .btn-g{padding:10px 22px;font-size:14px}
+.rv-send{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;color:#475569}
+.rv-send select{border:1px solid #CBD5E1;border-radius:7px;padding:5px 8px;font-size:12.5px;color:#334155;background:#fff;font-family:inherit}
+.rv-note{padding:0 20px 14px;font-size:11.5px;color:#94A3B8;background:#FAFBFD}
+/* paineis alternativos */
+.state-panel{margin-bottom:24px}
+.row-line{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid #F1F5F9;font-size:13px}
+.row-line:last-child{border-bottom:none}
+.row-line .esc{font-weight:700;min-width:200px}
+.row-line .det{color:#64748B;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-line .stchip{flex-shrink:0}
+.panel-more{font-size:12px;color:#94A3B8;padding-top:10px;text-align:center}
+/* recebidas */
+.rec-block{margin-top:24px}
+.rec-title{font-size:15px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.rec-card{display:flex;align-items:flex-start;gap:14px}
+.rec-card .av2{width:38px;height:38px;border-radius:50%;background:#26A69A;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+.rec-card .quote{background:#F1F5F9;border-radius:0 12px 12px 12px;padding:10px 14px;font-size:13.5px;color:#334155;margin:6px 0 10px;display:inline-block}
+.rec-card .meta{font-size:12px;color:#64748B}
+.rec-acts{display:flex;gap:8px;align-items:center;margin-top:4px}
+/* banner rodape */
+.foot-banner{margin-top:26px;background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:10px 16px;font-size:12.5px;color:#5D4037}
+.foot-banner a{color:#1565C0;font-weight:600;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="mockup-banner">🧪 MOCKUP — proposta de redesign v2 "Dia de Venda" · dados ilustrativos · <a href="index.html">← voltar ao índice</a></div>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="t">🎓 IAprendo</div><div class="s">Plataforma de Vendas</div></div>
+  <a class="nav-item" href="hoje.html">🏠 Hoje</a>
+  <a class="nav-item" href="#" title="Página mantida da v1 — sem mockup nesta rodada">🤖 IAlex</a>
+  <div class="nav-sep">Vender</div>
+  <a class="nav-item" href="prospectar.html">🔍 Prospectar</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">🏫 Escolas</a>
+  <a class="nav-item active" href="mensagens.html">✉️ Mensagens <span class="badge">12</span></a>
+  <a class="nav-item" href="negocios.html">💼 Negócios</a>
+  <div class="nav-sep">Acompanhar</div>
+  <a class="nav-item" href="resultados.html">📊 Resultados</a>
+  <div class="nav-sep">Sistema</div>
+  <a class="nav-item" href="#" title="Visível apenas para administradores">⚙️ Ajustes</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">❓ Ajuda</a>
+</aside>
+<main class="main">
+
+  <div class="page-h">
+    <h1>Mensagens</h1>
+    <div class="user-pill"><div class="av">F</div>Fernando</div>
+  </div>
+  <div class="page-sub">Revise, aprove e acompanhe tudo que entra e sai — e-mail e WhatsApp num lugar só</div>
+
+  <!-- chips de estado -->
+  <div class="chips-row">
+    <span class="chip state-chip on" onclick="showState(this,'panel-aguardando')">⏳ Aguardando aprovação (12)</span>
+    <span class="chip state-chip" onclick="showState(this,'panel-aprovadas')">✅ Aprovadas (5)</span>
+    <span class="chip state-chip" onclick="showState(this,'panel-enviadas')">📤 Enviadas (134)</span>
+    <span class="chip state-chip" onclick="showState(this,'panel-recebidas')">💬 Recebidas (3) <span class="dot-g"></span></span>
+    <span class="chip state-chip" onclick="showState(this,'panel-followups')">🔁 Follow-ups (7)</span>
+  </div>
+  <div class="chips-row2">
+    <span class="chip canal-chip on" onclick="setCanal(this,'todos')">Todos</span>
+    <span class="chip canal-chip" onclick="setCanal(this,'email')">✉️ E-mail</span>
+    <span class="chip canal-chip" onclick="setCanal(this,'whats')">📱 WhatsApp</span>
+    <a class="modelos-link" href="#" title="Gerencie os modelos de mensagem que a IA usa como base">📄 Modelos</a>
+  </div>
+
+  <!-- PAINEL: AGUARDANDO (padrão) -->
+  <section class="state-panel" id="panel-aguardando">
+    <div class="msg-layout">
+
+      <!-- esquerda: fila -->
+      <div>
+        <div class="col-title">Fila de aprovação — 12 mensagens</div>
+        <div id="lista-aguardando">
+
+          <div class="msg-item sel" data-canal="email" onclick="selectMsg(this)">
+            <div class="top"><span class="esc">Colégio Santa Cecília</span><span class="canal-ic" title="E-mail">✉️</span></div>
+            <div class="who">Maria Helena · Diretora · Porto Alegre/RS</div>
+            <div class="subj">Resultados de Matemática: uma análise do Santa Cecília</div>
+            <div class="prev">Olá, Maria Helena, analisando os resultados mais recentes do ENEM, notei que o…</div>
+            <span class="stchip sc-wait">⏳ Aguardando sua aprovação</span>
+          </div>
+
+          <div class="msg-item" data-canal="email" onclick="selectMsg(this)">
+            <div class="top"><span class="esc">Colégio Horizonte Sul</span><span class="canal-ic" title="E-mail">✉️</span></div>
+            <div class="who">Paulo Andrade · Coordenador Pedagógico · Porto Alegre/RS</div>
+            <div class="subj">Follow-up: aquela análise de Redação que comentei</div>
+            <div class="prev">Paulo, na semana passada enviei uma comparação do Horizonte Sul com escolas…</div>
+            <span class="stchip sc-wait">⏳ Aguardando sua aprovação</span>
+          </div>
+
+          <div class="msg-item" data-canal="whats" onclick="selectMsg(this)">
+            <div class="top"><span class="esc">Colégio Atlântico</span><span class="canal-ic" title="WhatsApp">📱</span></div>
+            <div class="who">Renata Lima · Diretora · Fortaleza/CE</div>
+            <div class="subj">Mensagem de primeiro contato (WhatsApp)</div>
+            <div class="prev">Olá, Renata! Sou o Fernando, da IAprendo. Vi que o Colégio Atlântico teve um…</div>
+            <span class="stchip sc-wait">⏳ Aguardando sua aprovação</span>
+          </div>
+
+          <div class="msg-item" data-canal="email" onclick="selectMsg(this)">
+            <div class="top"><span class="esc">Escola Nova Geração</span><span class="canal-ic" title="E-mail">✉️</span></div>
+            <div class="who">Carlos Mendes · Diretor · Porto Alegre/RS</div>
+            <div class="subj">Como a Nova Geração se compara às escolas vizinhas</div>
+            <div class="prev">Carlos, preparei um panorama do desempenho da Escola Nova Geração em Ciências…</div>
+            <span class="stchip sc-wait">⏳ Aguardando sua aprovação</span>
+          </div>
+
+          <div class="msg-item" data-canal="whats" onclick="selectMsg(this)">
+            <div class="top"><span class="esc">Colégio Dom Pedro II</span><span class="canal-ic" title="WhatsApp">📱</span></div>
+            <div class="who">Ana Beatriz Castro · Coordenadora · Fortaleza/CE</div>
+            <div class="subj">Lembrete amigável (WhatsApp)</div>
+            <div class="prev">Ana, tudo bem? Só passando para saber se conseguiu ver o material que enviei…</div>
+            <span class="stchip sc-wait">⏳ Aguardando sua aprovação</span>
+          </div>
+
+        </div>
+        <div class="panel-more">mostrando 5 de 12 · role para ver as demais</div>
+      </div>
+
+      <!-- direita: revisao -->
+      <div class="card review-card">
+        <div class="rv-label">Revisão</div>
+        <div class="rv-head">
+          <b>Para:</b> Maria Helena &lt;mhelena@santacecilia.com.br&gt; &nbsp;·&nbsp; <b>De:</b> Fernando | DUOGEN &nbsp;·&nbsp; ✉️ E-mail
+        </div>
+        <div class="rv-subj">Resultados de Matemática: uma análise do Santa Cecília</div>
+        <div class="rv-body">
+          <p>Olá, Maria Helena,</p>
+          <p>Analisando os resultados mais recentes do ENEM, notei que o Colégio Santa Cecília alcançou média 612 em Matemática — 38 pontos acima da média de Porto Alegre. Um resultado que merece reconhecimento da equipe.</p>
+          <p>Ao mesmo tempo, vi que Redação ainda tem espaço para crescer frente a escolas de perfil semelhante na região. É exatamente nesse tipo de desafio que a IAprendo tem ajudado colégios como o de vocês, com trilhas de estudo personalizadas alinhadas à BNCC.</p>
+          <p>Teria 20 minutos na próxima semana para eu mostrar como isso funcionaria no Santa Cecília?</p>
+          <div class="rv-chart">[📊 gráfico comparativo anexado ao final]</div>
+          <div class="rv-sign">Abraço,<br>Fernando · DUOGEN</div>
+        </div>
+        <div class="rv-foot">
+          <button class="btn btn-g">✓ Aprovar e próxima</button>
+          <button class="btn btn-o">Editar</button>
+          <button class="btn btn-o">Descartar</button>
+          <div class="rv-send">Enviar:
+            <select>
+              <option>Agora ▾</option>
+              <option>Próximo ciclo (14h)</option>
+              <option>Amanhã às 9h</option>
+            </select>
+          </div>
+        </div>
+        <div class="rv-note">Aprovadas saem no próximo ciclo de envio (de hora em hora, horário comercial).</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- PAINEL: APROVADAS -->
+  <section class="state-panel" id="panel-aprovadas" style="display:none">
+    <div class="card">
+      <div class="col-title">Aprovadas — aguardando o próximo ciclo de envio</div>
+      <div class="row-line"><span class="esc">Instituto Educar Mais</span><span class="det">✉️ "Ciências da Natureza: o que os números mostram" · aprovada por você às 10h12</span><span class="stchip sc-appr">✅ Aprovada — sai às 14h</span></div>
+      <div class="row-line"><span class="esc">Colégio Sol Nascente</span><span class="det">✉️ "Um convite para conversar sobre Redação" · aprovada por Lizianne às 9h47</span><span class="stchip sc-appr">✅ Aprovada — sai às 14h</span></div>
+      <div class="row-line"><span class="esc">Colégio Dom Pedro II</span><span class="det">📱 Mensagem de primeiro contato · aprovada por Felipe às 9h30</span><span class="stchip sc-appr">✅ Aprovada — sai às 14h</span></div>
+      <div class="row-line"><span class="esc">Colégio Horizonte Sul</span><span class="det">✉️ Follow-up de proposta · aprovada por você às 8h55</span><span class="stchip sc-appr">✅ Aprovada — sai às 14h</span></div>
+      <div class="row-line"><span class="esc">Escola Nova Geração</span><span class="det">✉️ "Panorama de Linguagens da Nova Geração" · aprovada por você às 8h41</span><span class="stchip sc-appr">✅ Aprovada — sai às 14h</span></div>
+    </div>
+  </section>
+
+  <!-- PAINEL: ENVIADAS -->
+  <section class="state-panel" id="panel-enviadas" style="display:none">
+    <div class="card">
+      <div class="col-title">Enviadas — últimos 30 dias</div>
+      <div class="row-line"><span class="esc">Instituto Monte Alverne</span><span class="det">✉️ "Matemática em destaque em Caxias do Sul" · ontem 14h02</span><span class="stchip sc-resp">💬 Respondida</span></div>
+      <div class="row-line"><span class="esc">Colégio Santa Cecília</span><span class="det">✉️ "Convite: diagnóstico gratuito" · ontem 11h03</span><span class="stchip sc-click">🔗 Clicou no link</span></div>
+      <div class="row-line"><span class="esc">Colégio Atlântico</span><span class="det">📱 Primeiro contato · ontem 10h15</span><span class="stchip sc-open">👁 Aberta</span></div>
+      <div class="row-line"><span class="esc">Colégio Sol Nascente</span><span class="det">✉️ "Resultados de Redação na sua região" · seg 15h00</span><span class="stchip sc-open">👁 Aberta</span></div>
+      <div class="row-line"><span class="esc">Instituto Educar Mais</span><span class="det">✉️ Follow-up 2 · seg 14h01</span><span class="stchip sc-sent">📤 Enviada</span></div>
+      <div class="row-line"><span class="esc">Colégio Dom Pedro II</span><span class="det">✉️ "Uma análise do Dom Pedro II" · sex 16h00</span><span class="stchip sc-fail">⚠️ Não entregue</span></div>
+      <div class="panel-more">mostrando 6 de 134 · use os filtros de canal acima para refinar</div>
+    </div>
+  </section>
+
+  <!-- PAINEL: RECEBIDAS -->
+  <section class="state-panel" id="panel-recebidas" style="display:none">
+    <div class="card" style="margin-bottom:12px">
+      <div class="rec-card">
+        <div class="av2">JC</div>
+        <div>
+          <div style="font-weight:700;font-size:13.5px">Instituto Monte Alverne <span style="font-weight:400;color:#64748B">· José Carlos Fagundes (Diretor) · Caxias do Sul/RS · ✉️</span></div>
+          <div class="quote">"Temos interesse, pode me ligar quinta?"</div>
+          <div class="rec-acts">
+            <button class="btn btn-p btn-sm">Responder com IA</button>
+            <button class="btn btn-o btn-sm">Marcar tratada</button>
+            <span class="stchip sc-resp">💬 Respondida</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div class="rec-card">
+        <div class="av2" style="background:#7E57C2">RL</div>
+        <div>
+          <div style="font-weight:700;font-size:13.5px">Colégio Atlântico <span style="font-weight:400;color:#64748B">· Renata Lima (Diretora) · Fortaleza/CE · 📱</span></div>
+          <div class="quote">"Pode mandar mais detalhes sobre os preços?"</div>
+          <div class="rec-acts">
+            <button class="btn btn-p btn-sm">Responder com IA</button>
+            <button class="btn btn-o btn-sm">Marcar tratada</button>
+            <span class="stchip sc-resp">💬 Respondida</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="rec-card">
+        <div class="av2" style="background:#FB8C00">PA</div>
+        <div>
+          <div style="font-weight:700;font-size:13.5px">Colégio Horizonte Sul <span style="font-weight:400;color:#64748B">· Paulo Andrade (Coordenador) · Porto Alegre/RS · ✉️</span></div>
+          <div class="quote">"Vou encaminhar para a direção e retorno em breve."</div>
+          <div class="rec-acts">
+            <button class="btn btn-p btn-sm">Responder com IA</button>
+            <button class="btn btn-o btn-sm">Marcar tratada</button>
+            <span class="stchip sc-resp">💬 Respondida</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAINEL: FOLLOW-UPS -->
+  <section class="state-panel" id="panel-followups" style="display:none">
+    <div class="card">
+      <div class="col-title">Follow-ups programados pela IA — você aprova antes de sair</div>
+      <div class="row-line"><span class="esc">Colégio Santa Cecília</span><span class="det">Clicou no link e não respondeu → follow-up "interesse quente" sugerido para amanhã 9h</span><span class="stchip sc-wait">⏳ Aguardando sua aprovação</span></div>
+      <div class="row-line"><span class="esc">Colégio Sol Nascente</span><span class="det">Abriu 3x sem responder → follow-up "curiosidade" sugerido para quinta 10h</span><span class="stchip sc-wait">⏳ Aguardando sua aprovação</span></div>
+      <div class="row-line"><span class="esc">Instituto Educar Mais</span><span class="det">Sem abertura há 7 dias → reenvio com novo assunto sugerido para sexta 9h</span><span class="stchip sc-wait">⏳ Aguardando sua aprovação</span></div>
+      <div class="row-line"><span class="esc">Escola Nova Geração</span><span class="det">Follow-up 2 de 3 aprovado · sai amanhã às 10h</span><span class="stchip sc-appr">✅ Aprovada — sai às 14h</span></div>
+      <div class="panel-more">mostrando 4 de 7</div>
+    </div>
+  </section>
+
+  <!-- bloco recebidas (sempre visivel) -->
+  <div class="rec-block">
+    <div class="rec-title">💬 Recebidas <span style="font-size:12px;font-weight:400;color:#64748B">— respostas que chegaram e ainda não foram tratadas</span></div>
+    <div class="card">
+      <div class="rec-card">
+        <div class="av2">JC</div>
+        <div>
+          <div style="font-weight:700;font-size:13.5px">Instituto Monte Alverne <span style="font-weight:400;color:#64748B">· José Carlos Fagundes (Diretor) · Caxias do Sul/RS · ✉️ · há 2 horas</span></div>
+          <div class="quote">"Temos interesse, pode me ligar quinta?"</div>
+          <div class="rec-acts">
+            <button class="btn btn-p btn-sm">Responder com IA</button>
+            <button class="btn btn-o btn-sm">Marcar tratada</button>
+            <span class="stchip sc-resp">💬 Respondida</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- banner rodape -->
+  <div class="foot-banner">📄 Modelos são a base que a IA personaliza por escola. Você sempre revisa antes de sair. <a href="#">Gerencie em Modelos →</a></div>
+
+</main>
+</div>
+<script>
+function showState(el, id){
+  document.querySelectorAll('.state-chip').forEach(function(c){c.classList.remove('on')});
+  el.classList.add('on');
+  document.querySelectorAll('.state-panel').forEach(function(p){p.style.display='none'});
+  document.getElementById(id).style.display='';
+}
+function setCanal(el, canal){
+  document.querySelectorAll('.canal-chip').forEach(function(c){c.classList.remove('on')});
+  el.classList.add('on');
+  document.querySelectorAll('#lista-aguardando .msg-item').forEach(function(m){
+    m.style.display=(canal==='todos'||m.dataset.canal===canal)?'':'none';
+  });
+}
+function selectMsg(el){
+  document.querySelectorAll('#lista-aguardando .msg-item').forEach(function(m){m.classList.remove('sel')});
+  el.classList.add('sel');
+}
+</script>
+</body>
+</html>

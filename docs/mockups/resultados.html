@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAprendo v2 — Resultados</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7FB;color:#1A202C}
+.mockup-banner{background:#1A237E;color:#fff;text-align:center;padding:8px 16px;font-size:12.5px;letter-spacing:.3px}
+.mockup-banner a{color:#90CAF9}
+.app{display:flex;min-height:calc(100vh - 36px)}
+.sidebar{width:240px;background:#fff;border-right:1px solid #E3E8EF;padding:20px 12px;flex-shrink:0}
+.logo{text-align:center;padding:4px 0 16px;border-bottom:1px solid #EEF2F7;margin-bottom:14px}
+.logo .t{font-size:19px;font-weight:700;color:#1976D2}
+.logo .s{font-size:11px;color:#94A3B8}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;color:#475569;text-decoration:none;font-size:14px;margin-bottom:2px;border-left:3px solid transparent}
+.nav-item:hover{background:#F1F5F9}
+.nav-item.active{background:#E3F2FD;color:#1565C0;font-weight:600;border-left:3px solid #1976D2}
+.nav-item .badge{margin-left:auto;background:#1976D2;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
+.nav-sep{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;margin:14px 12px 6px}
+.main{flex:1;padding:28px 36px;max-width:1280px}
+.page-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.page-h h1{font-size:23px;font-weight:700}
+.user-pill{display:flex;align-items:center;gap:8px;font-size:13px;color:#475569}
+.user-pill .av{width:30px;height:30px;border-radius:50%;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.page-sub{color:#64748B;font-size:13.5px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:18px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:9px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+.btn-p{background:#1976D2;color:#fff}
+.btn-g{background:#2E7D32;color:#fff}
+.btn-o{background:#fff;color:#334155;border:1px solid #CBD5E1}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:7px}
+.pill{display:inline-block;border-radius:99px;padding:3px 11px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:4px 12px;font-size:12.5px;font-weight:600;border:1.5px solid #CBD5E1;background:#fff;color:#475569;cursor:pointer}
+.chip.on{border-color:#1976D2;color:#1565C0;background:#E3F2FD}
+/* pills de ETAPA da escola (preenchidas) */
+.st-nova{background:#90A4AE}.st-aval{background:#7E57C2}.st-pronta{background:#26A69A}.st-cont{background:#1E88E5}.st-resp{background:#F9A825;color:#3E2723}.st-reun{background:#FB8C00}.st-prop{background:#8E24AA}.st-cli{background:#2E7D32}.st-perd{background:#B0BEC5;color:#37474F}
+/* prioridade */
+.prio{font-size:12.5px;font-weight:700;white-space:nowrap;cursor:help}
+.p-agir{color:#C62828}.p-quente{color:#E65100}.p-morno{color:#F9A825}.p-frio{color:#90A4AE}
+</style>
+<style>
+/* ===== CSS especifico — Resultados ===== */
+.sub-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+.sub-row .page-sub{margin-bottom:0}
+.period-sel{border:1px solid #CBD5E1;background:#fff;border-radius:9px;padding:7px 14px;font-size:13px;font-weight:600;color:#334155;cursor:pointer;white-space:nowrap}
+.tabs-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.tabpane{display:none}
+.tabpane.show{display:block}
+
+/* --- Metas: cards-resumo --- */
+.sum-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}
+.sum-card .lbl{font-size:12px;color:#64748B;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.sum-card .val{font-size:21px;font-weight:700;margin-bottom:8px}
+.sum-card .tag{display:inline-block;border-radius:99px;padding:2px 10px;font-size:11.5px;font-weight:700}
+.tag-ok{background:#E8F5E9;color:#2E7D32}
+.tag-warn{background:#FFF8E1;color:#B26A00}
+.tag-bad{background:#FBE9E7;color:#C62828}
+.sum-bar{height:7px;border-radius:99px;background:#EEF2F7;margin-top:10px;overflow:hidden}
+.sum-bar>span{display:block;height:100%;border-radius:99px}
+
+/* --- Metas: grade time x metrica --- */
+.goal-table{width:100%;border-collapse:collapse;font-size:13px}
+.goal-table th{text-align:left;font-size:11.5px;color:#64748B;text-transform:uppercase;letter-spacing:.5px;font-weight:700;padding:10px 12px;border-bottom:1px solid #E3E8EF;white-space:nowrap}
+.goal-table td{padding:13px 12px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
+.goal-table tr:last-child td{border-bottom:none}
+.seller{display:flex;align-items:center;gap:10px;font-weight:600;white-space:nowrap}
+.seller .av{width:32px;height:32px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.av-f{background:#1976D2}.av-l{background:#7E57C2}.av-fe{background:#26A69A}
+.cell-num{font-weight:700;font-size:13.5px;white-space:nowrap}
+.cell-num small{font-weight:500;color:#94A3B8}
+.mini-bar{height:6px;width:90px;border-radius:99px;background:#EEF2F7;margin-top:5px;overflow:hidden}
+.mini-bar>span{display:block;height:100%;border-radius:99px}
+.bar-g{background:#2E7D32}.bar-y{background:#F9A825}.bar-r{background:#C62828}
+.goal-foot{display:flex;align-items:center;gap:14px;margin-top:18px;flex-wrap:wrap}
+.goal-note{font-size:12.5px;color:#94A3B8}
+
+/* --- Funil --- */
+.funnel-wrap{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.f-row{display:flex;align-items:center;gap:14px}
+.f-label{width:130px;font-size:13px;font-weight:600;color:#334155;text-align:right;flex-shrink:0}
+.f-track{flex:1}
+.f-bar{height:34px;border-radius:8px;display:flex;align-items:center;justify-content:flex-end;padding:0 12px;color:#fff;font-weight:700;font-size:13.5px;min-width:54px}
+.f-conv{display:flex;align-items:center;gap:14px;margin:1px 0}
+.f-conv .f-label{visibility:hidden}
+.f-conv .cv{font-size:11.5px;color:#64748B;font-weight:600;padding-left:12px}
+.cv b{color:#1565C0}
+.f-note{margin-top:16px;font-size:13px;background:#E8F5E9;color:#1B5E20;border:1px solid #C8E6C9;border-radius:10px;padding:10px 14px;display:inline-flex;align-items:center;gap:8px}
+
+/* --- Envios --- */
+.send-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.send-card{text-align:left}
+.send-card .ic{font-size:18px;margin-bottom:6px}
+.send-card .n{font-size:26px;font-weight:700;line-height:1.1}
+.send-card .n small{font-size:13px;font-weight:600;color:#64748B}
+.send-card .l{font-size:12.5px;color:#64748B;font-weight:600;margin-top:3px}
+.days-table{width:100%;border-collapse:collapse;font-size:13px}
+.days-table th{text-align:left;font-size:11.5px;color:#64748B;text-transform:uppercase;letter-spacing:.5px;font-weight:700;padding:8px 12px;border-bottom:1px solid #E3E8EF}
+.days-table td{padding:9px 12px;border-bottom:1px solid #EEF2F7}
+.days-table tr:last-child td{border-bottom:none}
+.envios-note{margin-top:14px;font-size:12.5px;color:#64748B;background:#F1F5F9;border:1px solid #E3E8EF;border-radius:10px;padding:10px 14px;display:inline-block}
+
+/* --- Explorar (admin) --- */
+.explore-box{border:1.5px dashed #CBD5E1;border-radius:14px;background:#fff;padding:34px 28px;text-align:center;color:#64748B}
+.explore-box .big{font-size:30px;margin-bottom:10px}
+.explore-box h3{font-size:16px;color:#334155;margin-bottom:6px}
+.explore-box p{font-size:13px;max-width:520px;margin:0 auto 14px;line-height:1.55}
+.admin-tag{display:inline-block;border-radius:99px;background:#EDE7F6;color:#5E35B1;font-size:11px;font-weight:700;padding:2px 10px;margin-left:6px;vertical-align:middle}
+
+.card+.card{margin-top:16px}
+.card h2{font-size:15px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card h2 small{font-weight:500;color:#94A3B8;font-size:12px}
+</style>
+</head>
+<body>
+<div class="mockup-banner">🧪 MOCKUP — proposta de redesign v2 "Dia de Venda" · dados ilustrativos · <a href="index.html">← voltar ao índice</a></div>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="t">🎓 IAprendo</div><div class="s">Plataforma de Vendas</div></div>
+  <a class="nav-item" href="hoje.html">🏠 Hoje</a>
+  <a class="nav-item" href="#" title="Página mantida da v1 — sem mockup nesta rodada">🤖 IAlex</a>
+  <div class="nav-sep">Vender</div>
+  <a class="nav-item" href="prospectar.html">🔍 Prospectar</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">🏫 Escolas</a>
+  <a class="nav-item" href="mensagens.html">✉️ Mensagens <span class="badge">12</span></a>
+  <a class="nav-item" href="negocios.html">💼 Negócios</a>
+  <div class="nav-sep">Acompanhar</div>
+  <a class="nav-item active" href="resultados.html">📊 Resultados</a>
+  <div class="nav-sep">Sistema</div>
+  <a class="nav-item" href="#" title="Visível apenas para administradores">⚙️ Ajustes</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">❓ Ajuda</a>
+</aside>
+<main class="main">
+
+  <div class="page-h">
+    <h1>Resultados</h1>
+    <div class="user-pill"><div class="av">F</div>Fernando</div>
+  </div>
+  <div class="sub-row">
+    <div class="page-sub">Metas do time, funil e desempenho dos envios — tudo num lugar só</div>
+    <button class="period-sel">📅 Junho 2026 ▾</button>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs-row">
+    <button class="chip on" data-tab="tab-metas" onclick="showTab(this)">🎯 Metas</button>
+    <button class="chip" data-tab="tab-funil" onclick="showTab(this)">🔻 Funil</button>
+    <button class="chip" data-tab="tab-envios" onclick="showTab(this)">✉️ Envios</button>
+    <button class="chip" data-tab="tab-explorar" onclick="showTab(this)">🔬 Explorar dados <span class="admin-tag">admin</span></button>
+  </div>
+
+  <!-- ============ TAB METAS ============ -->
+  <section id="tab-metas" class="tabpane show">
+
+    <div class="sum-grid">
+      <div class="card sum-card">
+        <div class="lbl">Meta do time · E-mails</div>
+        <div class="val">94 <small style="font-size:14px;color:#94A3B8;font-weight:600">de 120</small></div>
+        <span class="tag tag-ok">78% ✓ no ritmo</span>
+        <div class="sum-bar"><span class="bar-g" style="width:78%;background:#2E7D32"></span></div>
+      </div>
+      <div class="card sum-card">
+        <div class="lbl">Reuniões realizadas</div>
+        <div class="val">9 <small style="font-size:14px;color:#94A3B8;font-weight:600">de 15</small></div>
+        <span class="tag tag-warn">60% — atenção</span>
+        <div class="sum-bar"><span style="width:60%;background:#F9A825"></span></div>
+      </div>
+      <div class="card sum-card">
+        <div class="lbl">Novos clientes</div>
+        <div class="val">1 <small style="font-size:14px;color:#94A3B8;font-weight:600">de 3</small></div>
+        <span class="tag tag-bad">faltam 2 para a meta</span>
+        <div class="sum-bar"><span style="width:33%;background:#C62828"></span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Time × Metas <small>· Junho 2026 · realizado / meta</small></h2>
+      <table class="goal-table">
+        <thead>
+          <tr>
+            <th>Vendedor</th>
+            <th>E-mails enviados</th>
+            <th>Respostas</th>
+            <th>Reuniões realizadas</th>
+            <th>Propostas</th>
+            <th>Clientes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="seller"><div class="av av-f">F</div>Fernando</div></td>
+            <td><div class="cell-num">36<small>/40</small></div><div class="mini-bar"><span class="bar-g" style="width:90%"></span></div></td>
+            <td><div class="cell-num">8<small>/8</small></div><div class="mini-bar"><span class="bar-g" style="width:100%"></span></div></td>
+            <td><div class="cell-num">4<small>/5</small></div><div class="mini-bar"><span class="bar-g" style="width:80%"></span></div></td>
+            <td><div class="cell-num">2<small>/3</small></div><div class="mini-bar"><span class="bar-y" style="width:67%"></span></div></td>
+            <td><div class="cell-num">1<small>/1</small></div><div class="mini-bar"><span class="bar-g" style="width:100%"></span></div></td>
+          </tr>
+          <tr>
+            <td><div class="seller"><div class="av av-l">L</div>Lizianne</div></td>
+            <td><div class="cell-num">33<small>/40</small></div><div class="mini-bar"><span class="bar-g" style="width:82%"></span></div></td>
+            <td><div class="cell-num">10<small>/8</small> 🏆</div><div class="mini-bar"><span class="bar-g" style="width:100%"></span></div></td>
+            <td><div class="cell-num">3<small>/5</small></div><div class="mini-bar"><span class="bar-y" style="width:60%"></span></div></td>
+            <td><div class="cell-num">1<small>/3</small></div><div class="mini-bar"><span class="bar-r" style="width:33%"></span></div></td>
+            <td><div class="cell-num">0<small>/1</small></div><div class="mini-bar"><span class="bar-r" style="width:2%"></span></div></td>
+          </tr>
+          <tr>
+            <td><div class="seller"><div class="av av-fe">F</div>Felipe</div></td>
+            <td><div class="cell-num">25<small>/40</small></div><div class="mini-bar"><span class="bar-y" style="width:62%"></span></div></td>
+            <td><div class="cell-num">4<small>/8</small></div><div class="mini-bar"><span class="bar-y" style="width:50%"></span></div></td>
+            <td><div class="cell-num">2<small>/5</small></div><div class="mini-bar"><span class="bar-r" style="width:40%"></span></div></td>
+            <td><div class="cell-num">0<small>/3</small></div><div class="mini-bar"><span class="bar-r" style="width:2%"></span></div></td>
+            <td><div class="cell-num">0<small>/1</small></div><div class="mini-bar"><span class="bar-r" style="width:2%"></span></div></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="goal-foot">
+        <button class="btn btn-p">🎯 Definir metas de julho</button>
+        <span class="goal-note">O realizado é calculado ao vivo dos dados reais — nunca digitado à mão.</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ TAB FUNIL ============ -->
+  <section id="tab-funil" class="tabpane">
+    <div class="card">
+      <h2>Funil de vendas <small>· Junho 2026 · do primeiro contato ao fechamento</small></h2>
+      <div class="funnel-wrap">
+
+        <div class="f-row">
+          <div class="f-label">Novas</div>
+          <div class="f-track"><div class="f-bar" style="width:100%;background:#90A4AE">119</div></div>
+        </div>
+        <div class="f-conv"><div class="f-label">.</div><div class="cv">↓ <b>81%</b> foram avaliadas</div></div>
+
+        <div class="f-row">
+          <div class="f-label">Avaliadas</div>
+          <div class="f-track"><div class="f-bar" style="width:81%;background:#7E57C2">96</div></div>
+        </div>
+        <div class="f-conv"><div class="f-label">.</div><div class="cv">↓ <b>81%</b> receberam contato</div></div>
+
+        <div class="f-row">
+          <div class="f-label">Contatadas</div>
+          <div class="f-track"><div class="f-bar" style="width:66%;background:#1E88E5">78</div></div>
+        </div>
+        <div class="f-conv"><div class="f-label">.</div><div class="cv">↓ <b>28%</b> responderam</div></div>
+
+        <div class="f-row">
+          <div class="f-label">Responderam</div>
+          <div class="f-track"><div class="f-bar" style="width:28%;background:#F9A825;color:#3E2723">22</div></div>
+        </div>
+        <div class="f-conv"><div class="f-label">.</div><div class="cv">↓ <b>41%</b> viraram reunião</div></div>
+
+        <div class="f-row">
+          <div class="f-label">Reuniões</div>
+          <div class="f-track"><div class="f-bar" style="width:15%;background:#FB8C00">9</div></div>
+        </div>
+        <div class="f-conv"><div class="f-label">.</div><div class="cv">↓ <b>11%</b> fecharam</div></div>
+
+        <div class="f-row">
+          <div class="f-label">Clientes</div>
+          <div class="f-track"><div class="f-bar" style="width:8%;background:#2E7D32">1</div></div>
+        </div>
+
+      </div>
+      <div class="f-note">📈 Boa notícia: a conversão resposta → reunião subiu <b>&nbsp;12%&nbsp;</b> vs maio.</div>
+    </div>
+  </section>
+
+  <!-- ============ TAB ENVIOS ============ -->
+  <section id="tab-envios" class="tabpane">
+
+    <div class="send-grid">
+      <div class="card send-card">
+        <div class="ic">📤</div>
+        <div class="n">134</div>
+        <div class="l">Enviados</div>
+      </div>
+      <div class="card send-card">
+        <div class="ic">📬</div>
+        <div class="n">131 <small>(98%)</small></div>
+        <div class="l">Entregues</div>
+      </div>
+      <div class="card send-card">
+        <div class="ic">👁</div>
+        <div class="n">67 <small>(51%)</small></div>
+        <div class="l">Abertos</div>
+      </div>
+      <div class="card send-card">
+        <div class="ic">💬</div>
+        <div class="n">22 <small>(16%)</small></div>
+        <div class="l">Respondidos</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Últimos 7 dias <small>· envios por dia</small></h2>
+      <table class="days-table">
+        <thead>
+          <tr><th>Dia</th><th>Enviados</th><th>Abertos</th><th>Respondidos</th><th>Destaque</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Qua, 10/06</td><td>8</td><td>3</td><td>1</td><td>💬 Colégio Santa Cecília respondeu</td></tr>
+          <tr><td>Ter, 09/06</td><td>12</td><td>7</td><td>2</td><td>🔗 Instituto Monte Alverne clicou no link</td></tr>
+          <tr><td>Seg, 08/06</td><td>10</td><td>5</td><td>1</td><td>👁 Colégio Atlântico abriu 3×</td></tr>
+          <tr><td>Dom, 07/06</td><td>0</td><td>2</td><td>0</td><td>—</td></tr>
+          <tr><td>Sáb, 06/06</td><td>0</td><td>4</td><td>1</td><td>💬 Escola Nova Geração respondeu</td></tr>
+          <tr><td>Sex, 05/06</td><td>11</td><td>6</td><td>0</td><td>⚠️ 1 não entregue (Colégio Dom Pedro II)</td></tr>
+          <tr><td>Qui, 04/06</td><td>9</td><td>4</td><td>1</td><td>💬 Colégio Horizonte Sul respondeu</td></tr>
+        </tbody>
+      </table>
+      <div class="envios-note">ℹ️ Este é o <b>único</b> lugar de métricas de envio na v2 — nada de números repetidos em outras telas.</div>
+    </div>
+
+  </section>
+
+  <!-- ============ TAB EXPLORAR (ADMIN) ============ -->
+  <section id="tab-explorar" class="tabpane">
+    <div class="explore-box">
+      <div class="big">🔬</div>
+      <h3>Explorar dados <span class="admin-tag">admin</span></h3>
+      <p>Área avançada para o administrador: comparações livres entre escolas, redes e regiões, séries históricas e custos da operação. Os vendedores não veem esta aba — o dia a dia deles vive em <b>Hoje</b>, <b>Mensagens</b> e <b>Negócios</b>.</p>
+      <button class="btn btn-o">Abrir explorador avançado →</button>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<script>
+function showTab(chip){
+  document.querySelectorAll('.tabs-row .chip').forEach(function(c){c.classList.remove('on');});
+  chip.classList.add('on');
+  document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('show');});
+  document.getElementById(chip.getAttribute('data-tab')).classList.add('show');
+}
+</script>
+</body>
+</html>

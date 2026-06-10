@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAprendo v2 — Mockups do Redesign</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7FB;color:#1A202C;padding:40px 20px}
+.wrap{max-width:980px;margin:0 auto}
+.tag{display:inline-block;background:#1A237E;color:#fff;border-radius:99px;padding:4px 14px;font-size:12px;letter-spacing:.5px;margin-bottom:14px}
+h1{font-size:30px;margin-bottom:8px}
+.sub{color:#64748B;font-size:15px;margin-bottom:8px;max-width:760px}
+.note{color:#94A3B8;font-size:12.5px;margin-bottom:30px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px;margin-bottom:36px}
+a.card{display:block;background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:22px;text-decoration:none;color:inherit;transition:transform .12s, box-shadow .12s}
+a.card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(16,24,40,.10)}
+.card .em{font-size:30px;margin-bottom:10px}
+.card h2{font-size:17px;margin-bottom:6px;color:#1565C0}
+.card p{font-size:13px;color:#64748B;line-height:1.5}
+.card .q{display:block;margin-top:10px;font-size:12px;color:#94A3B8;font-style:italic}
+.map{background:#fff;border:1px solid #E3E8EF;border-radius:14px;padding:24px}
+.map h3{font-size:16px;margin-bottom:14px}
+.map table{width:100%;border-collapse:collapse;font-size:13px}
+.map th{text-align:left;color:#64748B;font-weight:600;padding:7px 10px;border-bottom:2px solid #E3E8EF}
+.map td{padding:7px 10px;border-bottom:1px solid #EEF2F7}
+.map td:first-child{color:#94A3B8}
+.foot{margin-top:26px;color:#94A3B8;font-size:12.5px}
+.foot a{color:#1976D2}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="tag">🧪 PROPOSTA PARA VALIDAÇÃO — nada disso está em produção</span>
+  <h1>IAprendo v2 — "Dia de Venda"</h1>
+  <p class="sub">Redesign da plataforma: de 11 páginas organizadas pelo fluxo técnico dos dados
+  para <strong>8 espaços organizados pelo dia do vendedor</strong>. Cada página responde a uma
+  pergunta que o vendedor faria em voz alta. Clique numa tela para navegar — as barras laterais
+  dos mockups são clicáveis entre si.</p>
+  <p class="note">Dados ilustrativos. Documento completo da proposta: <code>docs/BLUEPRINT_V2.md</code> no repositório.</p>
+
+  <div class="grid">
+    <a class="card" href="hoje.html"><div class="em">🏠</div><h2>Hoje</h2>
+      <p>A nova Home: agenda do dia com atividades automáticas, números que importam e a sua meta.</p>
+      <span class="q">"O que eu faço agora?"</span></a>
+    <a class="card" href="prospectar.html"><div class="em">🔍</div><h2>Prospectar</h2>
+      <p>Recomendadas por potencial + busca guiada na base do MEC + mapa + preparação de lote.</p>
+      <span class="q">"Onde encontro escolas novas?"</span></a>
+    <a class="card" href="mensagens.html"><div class="em">✉️</div><h2>Mensagens</h2>
+      <p>Fila única: aprovar, acompanhar e responder — e-mail e WhatsApp juntos, estados em chips.</p>
+      <span class="q">"O que sai hoje? O que chegou?"</span></a>
+    <a class="card" href="negocios.html"><div class="em">💼</div><h2>Negócios</h2>
+      <p>Kanban comercial com donos, valores e reuniões — da primeira conversa ao contrato.</p>
+      <span class="q">"Como estão minhas negociações?"</span></a>
+    <a class="card" href="resultados.html"><div class="em">📊</div><h2>Resultados</h2>
+      <p>Metas por vendedor com progresso real, funil e métricas de envio num lugar só.</p>
+      <span class="q">"Estou batendo a meta?"</span></a>
+  </div>
+
+  <div class="map">
+    <h3>De onde vem cada coisa (11 páginas → 8 espaços)</h3>
+    <table>
+      <tr><th>Hoje (v1)</th><th>Na v2 vira…</th></tr>
+      <tr><td>Home</td><td>🏠 Hoje — reconstruída em volta da agenda</td></tr>
+      <tr><td>Chat IAlex</td><td>🤖 IAlex — mantida</td></tr>
+      <tr><td>Importar</td><td>🔍 Prospectar → "Buscar no Brasil" (assistente em 3 passos)</td></tr>
+      <tr><td>Escolas + Contatos</td><td>🏫 Escolas — ficha 7→4 abas; Contatos vira a aba "Pessoas"</td></tr>
+      <tr><td>Mapa</td><td>🔍 Prospectar — botão Lista/Mapa</td></tr>
+      <tr><td>Pipeline</td><td>Execução/Descoberta → 🔍 Prospectar · Kanban → 💼 Negócios</td></tr>
+      <tr><td>Comunicação</td><td>✉️ Mensagens (fila única) · Métricas → 📊 Resultados</td></tr>
+      <tr><td>Inteligência</td><td>Ranking → Prospectar · Radar → ficha da Escola · Explorador → Resultados</td></tr>
+      <tr><td>Analytics</td><td>📊 Resultados (+ aba Metas, nova)</td></tr>
+      <tr><td>Configurações</td><td>⚙️ Ajustes — só administradores</td></tr>
+      <tr><td>Manual</td><td>❓ Ajuda — reescrito (12 abas → 5) + tour de primeiro login</td></tr>
+    </table>
+  </div>
+
+  <p class="foot">IAprendo Sales Agent · proposta v2 "Dia de Venda" · junho/2026 ·
+  produção atual preservada na tag <code>v1-prod</code> — este redesign vive no branch <code>redesign-v2</code>.</p>
+</div>
+</body>
+</html>

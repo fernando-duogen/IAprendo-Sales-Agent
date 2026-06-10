@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAprendo v2 — Negócios</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7FB;color:#1A202C}
+.mockup-banner{background:#1A237E;color:#fff;text-align:center;padding:8px 16px;font-size:12.5px;letter-spacing:.3px}
+.mockup-banner a{color:#90CAF9}
+.app{display:flex;min-height:calc(100vh - 36px)}
+.sidebar{width:240px;background:#fff;border-right:1px solid #E3E8EF;padding:20px 12px;flex-shrink:0}
+.logo{text-align:center;padding:4px 0 16px;border-bottom:1px solid #EEF2F7;margin-bottom:14px}
+.logo .t{font-size:19px;font-weight:700;color:#1976D2}
+.logo .s{font-size:11px;color:#94A3B8}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;color:#475569;text-decoration:none;font-size:14px;margin-bottom:2px;border-left:3px solid transparent}
+.nav-item:hover{background:#F1F5F9}
+.nav-item.active{background:#E3F2FD;color:#1565C0;font-weight:600;border-left:3px solid #1976D2}
+.nav-item .badge{margin-left:auto;background:#1976D2;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
+.nav-sep{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;margin:14px 12px 6px}
+.main{flex:1;padding:28px 36px;max-width:1280px}
+.page-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.page-h h1{font-size:23px;font-weight:700}
+.user-pill{display:flex;align-items:center;gap:8px;font-size:13px;color:#475569}
+.user-pill .av{width:30px;height:30px;border-radius:50%;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.page-sub{color:#64748B;font-size:13.5px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:18px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:9px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+.btn-p{background:#1976D2;color:#fff}
+.btn-g{background:#2E7D32;color:#fff}
+.btn-o{background:#fff;color:#334155;border:1px solid #CBD5E1}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:7px}
+.pill{display:inline-block;border-radius:99px;padding:3px 11px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:4px 12px;font-size:12.5px;font-weight:600;border:1.5px solid #CBD5E1;background:#fff;color:#475569;cursor:pointer}
+.chip.on{border-color:#1976D2;color:#1565C0;background:#E3F2FD}
+/* pills de ETAPA da escola (preenchidas) */
+.st-nova{background:#90A4AE}.st-aval{background:#7E57C2}.st-pronta{background:#26A69A}.st-cont{background:#1E88E5}.st-resp{background:#F9A825;color:#3E2723}.st-reun{background:#FB8C00}.st-prop{background:#8E24AA}.st-cli{background:#2E7D32}.st-perd{background:#B0BEC5;color:#37474F}
+/* prioridade */
+.prio{font-size:12.5px;font-weight:700;white-space:nowrap;cursor:help}
+.p-agir{color:#C62828}.p-quente{color:#E65100}.p-morno{color:#F9A825}.p-frio{color:#90A4AE}
+</style>
+<style>
+/* ===== CSS específico — Negócios ===== */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.toolbar .spacer{flex:1}
+.toolbar select{padding:6px 12px;border-radius:9px;border:1px solid #CBD5E1;background:#fff;font-size:13px;color:#334155;font-family:inherit;cursor:pointer}
+
+.board{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 14px;align-items:flex-start}
+.kcol{background:#EEF2F7;border-radius:12px;min-width:228px;width:228px;flex-shrink:0;padding:10px}
+.kcol-h{display:flex;align-items:baseline;gap:7px;padding:2px 4px 10px}
+.kcol-h .nm{font-size:13px;font-weight:700;color:#334155}
+.kcol-h .ct{font-size:12px;font-weight:700;color:#64748B;background:#fff;border-radius:99px;padding:0 8px}
+.kcol-h .sum{margin-left:auto;font-size:11.5px;font-weight:700;color:#2E7D32;white-space:nowrap}
+
+.kcard{position:relative;background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:10px 12px;margin-bottom:9px}
+.kcard:last-child{margin-bottom:0}
+.kname{font-size:13.5px;font-weight:700;line-height:1.25}
+.kcity{font-size:11.5px;color:#94A3B8;margin:1px 0 7px}
+.krow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.av-o{width:24px;height:24px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:10.5px;flex-shrink:0;cursor:help}
+.av-fer{background:#1976D2}.av-liz{background:#8E24AA}.av-fel{background:#00897B}
+.kfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding-top:7px;border-top:1px dashed #EEF2F7;font-size:11.5px;color:#475569;font-weight:600}
+.stale{color:#94A3B8;font-weight:600}
+.stale-bad{color:#C62828;font-weight:700}
+.kmeet{margin-top:8px;padding-top:7px;border-top:1px dashed #EEF2F7;font-size:11.5px;font-weight:700;color:#E65100}
+.more{display:block;text-align:center;font-size:12px;color:#64748B;font-weight:600;padding:7px 0 2px;cursor:pointer}
+.kcard.lost{opacity:.72}
+
+/* popover "Mover para" simulado aberto */
+.kcard.pop-open{border-color:#1976D2;box-shadow:0 0 0 2px #BBDEFB}
+.popover{position:absolute;top:46px;right:-58px;width:188px;background:#fff;border:1px solid #E3E8EF;border-radius:11px;box-shadow:0 12px 32px rgba(16,24,40,.28);padding:6px;z-index:60}
+.popover .pop-t{font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.6px;padding:6px 10px 4px}
+.popover a{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:13px;color:#334155;text-decoration:none;font-weight:600}
+.popover a:hover{background:#F1F5F9}
+.popover .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+
+/* card de reuniões sem resultado */
+.meet-card{margin-top:18px;padding:14px 18px}
+.meet-card h3{font-size:14.5px;font-weight:700;margin-bottom:10px}
+.meet-row{display:flex;align-items:center;gap:12px;padding:9px 2px;border-top:1px solid #EEF2F7;font-size:13.5px}
+.meet-row .esc{font-weight:700}
+.meet-row .when{color:#64748B;font-size:12.5px}
+.meet-row .spacer{flex:1}
+.meet-note{margin-top:10px;font-size:12px;color:#94A3B8}
+</style>
+</head>
+<body>
+<div class="mockup-banner">🧪 MOCKUP — proposta de redesign v2 "Dia de Venda" · dados ilustrativos · <a href="index.html">← voltar ao índice</a></div>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="t">🎓 IAprendo</div><div class="s">Plataforma de Vendas</div></div>
+  <a class="nav-item" href="hoje.html">🏠 Hoje</a>
+  <a class="nav-item" href="#" title="Página mantida da v1 — sem mockup nesta rodada">🤖 IAlex</a>
+  <div class="nav-sep">Vender</div>
+  <a class="nav-item" href="prospectar.html">🔍 Prospectar</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">🏫 Escolas</a>
+  <a class="nav-item" href="mensagens.html">✉️ Mensagens <span class="badge">12</span></a>
+  <a class="nav-item active" href="negocios.html">💼 Negócios</a>
+  <div class="nav-sep">Acompanhar</div>
+  <a class="nav-item" href="resultados.html">📊 Resultados</a>
+  <div class="nav-sep">Sistema</div>
+  <a class="nav-item" href="#" title="Visível apenas para administradores">⚙️ Ajustes</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">❓ Ajuda</a>
+</aside>
+<main class="main">
+
+  <div class="page-h">
+    <h1>Negócios</h1>
+    <div class="user-pill"><div class="av">F</div>Fernando</div>
+  </div>
+  <div class="page-sub">Acompanhe cada escola da primeira conversa ao contrato</div>
+
+  <div class="toolbar">
+    <span class="chip on" id="chip-kanban" onclick="showView('kanban')">Kanban</span>
+    <span class="chip" id="chip-meet" onclick="showView('meet')">📅 Reuniões (2 sem resultado)</span>
+    <span class="spacer"></span>
+    <select title="Filtrar negócios por dono">
+      <option>Dono: Todos ▾</option>
+      <option>Dono: Fernando</option>
+      <option>Dono: Lizianne</option>
+      <option>Dono: Felipe</option>
+    </select>
+  </div>
+
+  <div class="board" id="view-kanban">
+
+    <!-- A contatar -->
+    <div class="kcol">
+      <div class="kcol-h"><span class="nm">A contatar</span><span class="ct">3</span></div>
+      <div class="kcard">
+        <div class="kname">Colégio Sol Nascente</div>
+        <div class="kcity">Porto Alegre/RS</div>
+        <div class="krow">
+          <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 76/100">🟠 Quente</span>
+          <span class="av-o av-fer" title="Fernando">F</span>
+        </div>
+      </div>
+      <div class="kcard">
+        <div class="kname">Escola Nova Geração</div>
+        <div class="kcity">Porto Alegre/RS</div>
+        <div class="krow">
+          <span class="prio p-morno" title="Por que? Engajamento ▰▰▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 58/100">🟡 Morno</span>
+          <span class="av-o av-liz" title="Lizianne">L</span>
+        </div>
+      </div>
+      <div class="kcard">
+        <div class="kname">Instituto Educar Mais</div>
+        <div class="kcity">Caxias do Sul/RS</div>
+        <div class="krow">
+          <span class="prio p-frio" title="Por que? Engajamento ▰▱▱▱ · Potencial ▰▰▱▱ · Avaliação da IA 34/100">⚪ Frio</span>
+          <span class="av-o av-fel" title="Felipe">F2</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contatada -->
+    <div class="kcol">
+      <div class="kcol-h"><span class="nm">Contatada</span><span class="ct">8</span></div>
+      <div class="kcard">
+        <div class="kname">Colégio Horizonte Sul</div>
+        <div class="kcity">Porto Alegre/RS</div>
+        <div class="krow">
+          <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 74/100">🟠 Quente</span>
+          <span class="av-o av-fer" title="Fernando">F</span>
+        </div>
+        <div class="kfoot"><span></span><span class="stale-bad">⏱ 9d parado</span></div>
+      </div>
+      <div class="kcard">
+        <div class="kname">Colégio Estrela do Sul</div>
+        <div class="kcity">Porto Alegre/RS</div>
+        <div class="krow">
+          <span class="prio p-morno" title="Por que? Engajamento ▰▰▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 52/100">🟡 Morno</span>
+          <span class="av-o av-liz" title="Lizianne">L</span>
+        </div>
+        <div class="kfoot"><span></span><span class="stale">⏱ 4d parado</span></div>
+      </div>
+      <div class="kcard">
+        <div class="kname">Escola Bela Vista</div>
+        <div class="kcity">Fortaleza/CE</div>
+        <div class="krow">
+          <span class="prio p-frio" title="Por que? Engajamento ▰▱▱▱ · Potencial ▰▰▱▱ · Avaliação da IA 31/100">⚪ Frio</span>
+          <span class="av-o av-fel" title="Felipe">F2</span>
+        </div>
+        <div class="kfoot"><span></span><span class="stale-bad">⏱ 12d parado</span></div>
+      </div>
+      <span class="more">+ 5 outras escolas</span>
+    </div>
+
+    <!-- Respondeu -->
+    <div class="kcol">
+      <div class="kcol-h"><span class="nm">Respondeu</span><span class="ct">4</span></div>
+      <div class="kcard pop-open">
+        <div class="kname">Colégio Santa Cecília</div>
+        <div class="kcity">Porto Alegre/RS</div>
+        <div class="krow">
+          <span class="prio p-agir" title="Por que? Engajamento ▰▰▰▰ · Potencial ▰▰▰▰ · Avaliação da IA 91/100">🔴 Agir agora</span>
+          <span class="av-o av-fer" title="Fernando">F</span>
+        </div>
+        <div class="kfoot"><span></span><span class="stale">⏱ 2d parado</span></div>
+        <!-- popover simulado aberto: como mover sem arrastar -->
+        <div class="popover">
+          <div class="pop-t">Mover para ▸</div>
+          <a href="#"><span class="dot" style="background:#FB8C00"></span>Em reunião</a>
+          <a href="#"><span class="dot" style="background:#8E24AA"></span>Proposta enviada</a>
+          <a href="#"><span class="dot" style="background:#B0BEC5"></span>Perdida</a>
+        </div>
+      </div>
+      <div class="kcard">
+        <div class="kname">Escola Mar Azul</div>
+        <div class="kcity">Fortaleza/CE</div>
+        <div class="krow">
+          <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▱ · Avaliação da IA 71/100">🟠 Quente</span>
+          <span class="av-o av-fel" title="Felipe">F2</span>
+        </div>
+        <div class="kfoot"><span></span><span class="stale">⏱ 1d parado</span></div>
+      </div>
+      <div class="kcard">
+        <div class="kname">Instituto Caminho Novo</div>
+        <div class="kcity">Caxias do Sul/RS</div>
+        <div class="krow">
+          <span class="prio p-morno" title="Por que? Engajamento ▰▰▱▱ · Potencial ▰▰▰▱ · Avaliação da IA 56/100">🟡 Morno</span>
+          <span class="av-o av-liz" title="Lizianne">L</span>
+        </div>
+        <div class="kfoot"><span></span><span class="stale">⏱ 3d parado</span></div>
+      </div>
+      <span class="more">+ 1 outra escola</span>
+    </div>
+
+    <!-- Em reunião -->
+    <div class="kcol">
+      <div class="kcol-h"><span class="nm">Em reunião</span><span class="ct">2</span></div>
+      <div class="kcard">
+        <div class="kname">Colégio Atlântico</div>
+        <div class="kcity">Fortaleza/CE</div>
+        <div class="krow">
+          <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 79/100">🟠 Quente</span>
+          <span class="av-o av-fer" title="Fernando">F</span>
+        </div>
+        <div class="kmeet">📅 reunião amanhã 9h</div>
+      </div>
+      <div class="kcard">
+        <div class="kname">Instituto Monte Alverne</div>
+        <div class="kcity">Caxias do Sul/RS</div>
+        <div class="krow">
+          <span class="prio p-agir" title="Por que? Engajamento ▰▰▰▰ · Potencial ▰▰▰▱ · Avaliação da IA 87/100">🔴 Agir agora</span>
+          <span class="av-o av-liz" title="Lizianne">L</span>
+        </div>
+        <div class="kfoot"><span></span><span class="stale-bad">⚠ reunião ontem · sem resultado</span></div>
+      </div>
+    </div>
+
+    <!-- Proposta enviada -->
+    <div class="kcol">
+      <div class="kcol-h"><span class="nm">Proposta enviada</span><span class="ct">2</span><span class="sum">R$ 7.400/mês</span></div>
+      <div class="kcard">
+        <div class="kname">Colégio Dom Pedro II</div>
+        <div class="kcity">Fortaleza/CE</div>
+        <div class="krow">
+          <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 81/100">🟠 Quente</span>
+          <span class="av-o av-fel" title="Felipe">F2</span>
+        </div>
+        <div class="kfoot"><span>💰 R$ 3.800/mês</span><span class="stale-bad">⏱ 8d parado</span></div>
+      </div>
+      <div class="kcard">
+        <div class="kname">Colégio Primavera</div>
+        <div class="kcity">Porto Alegre/RS</div>
+        <div class="krow">
+          <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▱ · Avaliação da IA 73/100">🟠 Quente</span>
+          <span class="av-o av-fer" title="Fernando">F</span>
+        </div>
+        <div class="kfoot"><span>💰 R$ 3.600/mês</span><span class="stale">⏱ 3d parado</span></div>
+      </div>
+    </div>
+
+    <!-- Cliente -->
+    <div class="kcol">
+      <div class="kcol-h"><span class="nm">Cliente</span><span class="ct">1</span><span class="sum">R$ 3.200/mês</span></div>
+      <div class="kcard">
+        <div class="kname">Colégio Lago Azul</div>
+        <div class="kcity">Porto Alegre/RS</div>
+        <div class="krow">
+          <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▰ · Potencial ▰▰▰▰ · Avaliação da IA 88/100">🟠 Quente</span>
+          <span class="av-o av-fer" title="Fernando">F</span>
+        </div>
+        <div class="kfoot"><span>💰 R$ 3.200/mês</span><span class="stale">desde mai/26</span></div>
+      </div>
+    </div>
+
+    <!-- Perdida -->
+    <div class="kcol">
+      <div class="kcol-h"><span class="nm">Perdida</span><span class="ct">2</span></div>
+      <div class="kcard lost">
+        <div class="kname">Instituto Boa Esperança</div>
+        <div class="kcity">Fortaleza/CE</div>
+        <div class="krow">
+          <span class="prio p-frio" title="Por que? Engajamento ▰▱▱▱ · Potencial ▰▰▱▱ · Avaliação da IA 28/100">⚪ Frio</span>
+          <span class="av-o av-fel" title="Felipe">F2</span>
+        </div>
+      </div>
+      <div class="kcard lost">
+        <div class="kname">Colégio Pinheiros</div>
+        <div class="kcity">Porto Alegre/RS</div>
+        <div class="krow">
+          <span class="prio p-frio" title="Por que? Engajamento ▰▱▱▱ · Potencial ▰▰▱▱ · Avaliação da IA 25/100">⚪ Frio</span>
+          <span class="av-o av-liz" title="Lizianne">L</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Reuniões sem resultado -->
+  <div class="card meet-card" id="view-meet">
+    <h3>📅 Reuniões sem resultado registrado (2)</h3>
+    <div class="meet-row">
+      <span class="esc">Instituto Monte Alverne</span>
+      <span class="when">Caxias do Sul/RS · ontem 15h</span>
+      <span class="spacer"></span>
+      <button class="btn btn-p btn-sm">Registrar resultado</button>
+    </div>
+    <div class="meet-row">
+      <span class="esc">Colégio Dom Pedro II</span>
+      <span class="when">Fortaleza/CE · sexta passada</span>
+      <span class="spacer"></span>
+      <button class="btn btn-p btn-sm">Registrar resultado</button>
+    </div>
+    <div class="meet-note">Reuniões sem resultado geram atividade automática na sua agenda.</div>
+  </div>
+
+</main>
+</div>
+<script>
+function showView(v){
+  var k=document.getElementById('chip-kanban'),m=document.getElementById('chip-meet'),b=document.getElementById('view-kanban');
+  if(v==='kanban'){k.classList.add('on');m.classList.remove('on');b.style.display='flex';}
+  else{m.classList.add('on');k.classList.remove('on');b.style.display='none';}
+}
+</script>
+</body>
+</html>

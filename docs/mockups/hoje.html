@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IAprendo v2 — Hoje</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F4F7FB;color:#1A202C}
+.mockup-banner{background:#1A237E;color:#fff;text-align:center;padding:8px 16px;font-size:12.5px;letter-spacing:.3px}
+.mockup-banner a{color:#90CAF9}
+.app{display:flex;min-height:calc(100vh - 36px)}
+.sidebar{width:240px;background:#fff;border-right:1px solid #E3E8EF;padding:20px 12px;flex-shrink:0}
+.logo{text-align:center;padding:4px 0 16px;border-bottom:1px solid #EEF2F7;margin-bottom:14px}
+.logo .t{font-size:19px;font-weight:700;color:#1976D2}
+.logo .s{font-size:11px;color:#94A3B8}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;color:#475569;text-decoration:none;font-size:14px;margin-bottom:2px;border-left:3px solid transparent}
+.nav-item:hover{background:#F1F5F9}
+.nav-item.active{background:#E3F2FD;color:#1565C0;font-weight:600;border-left:3px solid #1976D2}
+.nav-item .badge{margin-left:auto;background:#1976D2;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
+.nav-sep{font-size:10.5px;color:#94A3B8;text-transform:uppercase;letter-spacing:.8px;margin:14px 12px 6px}
+.main{flex:1;padding:28px 36px;max-width:1280px}
+.page-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.page-h h1{font-size:23px;font-weight:700}
+.user-pill{display:flex;align-items:center;gap:8px;font-size:13px;color:#475569}
+.user-pill .av{width:30px;height:30px;border-radius:50%;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.page-sub{color:#64748B;font-size:13.5px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:18px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:9px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+.btn-p{background:#1976D2;color:#fff}
+.btn-g{background:#2E7D32;color:#fff}
+.btn-o{background:#fff;color:#334155;border:1px solid #CBD5E1}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:7px}
+.pill{display:inline-block;border-radius:99px;padding:3px 11px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:4px 12px;font-size:12.5px;font-weight:600;border:1.5px solid #CBD5E1;background:#fff;color:#475569;cursor:pointer}
+.chip.on{border-color:#1976D2;color:#1565C0;background:#E3F2FD}
+/* pills de ETAPA da escola (preenchidas) */
+.st-nova{background:#90A4AE}.st-aval{background:#7E57C2}.st-pronta{background:#26A69A}.st-cont{background:#1E88E5}.st-resp{background:#F9A825;color:#3E2723}.st-reun{background:#FB8C00}.st-prop{background:#8E24AA}.st-cli{background:#2E7D32}.st-perd{background:#B0BEC5;color:#37474F}
+/* prioridade */
+.prio{font-size:12.5px;font-weight:700;white-space:nowrap;cursor:help}
+.p-agir{color:#C62828}.p-quente{color:#E65100}.p-morno{color:#F9A825}.p-frio{color:#90A4AE}
+</style>
+<style>
+/* ===== CSS especifico — tela HOJE ===== */
+.search-wrap{margin-bottom:20px}
+.search-wrap input{width:100%;padding:13px 18px 13px 44px;border:1.5px solid #CBD5E1;border-radius:12px;font-size:14px;background:#fff url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="%2394A3B8" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>') no-repeat 14px center;outline:none}
+.search-wrap input:focus{border-color:#1976D2;box-shadow:0 0 0 3px rgba(25,118,210,.12)}
+.nums{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:22px}
+.num-card{background:#fff;border:1px solid #E3E8EF;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.06);padding:16px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:box-shadow .15s}
+.num-card:hover{box-shadow:0 4px 12px rgba(16,24,40,.12)}
+.num-card .n{font-size:34px;font-weight:800;line-height:1}
+.num-card .l{font-size:13px;color:#475569;flex:1;line-height:1.35}
+.num-card .l small{display:block;color:#94A3B8;font-size:11.5px}
+.num-card .arr{color:#94A3B8;font-size:18px}
+.n-blue{color:#1976D2}.n-orange{color:#E65100}.n-green{color:#2E7D32}
+.cols{display:grid;grid-template-columns:2fr 1fr;gap:20px;align-items:start}
+.agenda-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.agenda-h h2{font-size:16px;font-weight:700}
+.agenda-toggle{display:flex;gap:6px}
+.group-h{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#64748B;margin:14px 0 4px;padding:0 4px}
+.group-h.late{color:#C62828}
+.task{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid #F1F5F9;border-radius:8px}
+.task:last-child{border-bottom:none}
+.task.late{background:#FFF5F5}
+.cb{width:18px;height:18px;min-width:18px;border:2px solid #CBD5E1;border-radius:50%;cursor:pointer}
+.cb:hover{border-color:#2E7D32}
+.t-info{flex:1;min-width:0}
+.t-info .tt{font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.t-info .ts{font-size:12px;color:#94A3B8;margin-top:1px}
+.origin{font-size:10.5px;background:#F1F5F9;border:1px solid #E2E8F0;border-radius:6px;padding:1px 6px;color:#64748B;font-weight:600;white-space:nowrap;cursor:help}
+.due{font-size:12px;color:#64748B;white-space:nowrap;font-weight:600;min-width:64px;text-align:right}
+.due.late{color:#C62828}
+.t-acts{display:flex;gap:5px}
+.ico{border:1px solid #E2E8F0;background:#fff;border-radius:7px;width:27px;height:27px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;color:#475569}
+.ico:hover{background:#F1F5F9}
+.ico.done{color:#2E7D32;border-color:#A5D6A7}
+.ico.done:hover{background:#E8F5E9}
+.agenda-foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid #F1F5F9}
+.agenda-foot a{font-size:13px;font-weight:600;color:#1976D2;text-decoration:none}
+.agenda-foot .note{font-size:11.5px;color:#94A3B8}
+.more-link{font-size:12.5px;color:#1976D2;text-decoration:none;font-weight:600;display:inline-block;margin:6px 0 0 32px}
+.side{display:flex;flex-direction:column;gap:16px}
+.side .card h3{font-size:14.5px;font-weight:700;margin-bottom:10px}
+.lead{display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid #F1F5F9}
+.lead:last-child{border-bottom:none}
+.lead .li{flex:1;min-width:0}
+.lead .ln{font-size:13px;font-weight:700}
+.lead .lr{font-size:11.5px;color:#94A3B8;margin-top:1px}
+.meet{display:flex;align-items:center;gap:10px}
+.meet .mh{background:#E3F2FD;color:#1565C0;font-weight:800;font-size:13px;border-radius:10px;padding:8px 10px;text-align:center;line-height:1.2;white-space:nowrap}
+.meet .mi{flex:1}
+.meet .mn{font-size:13px;font-weight:700}
+.meet .md{font-size:11.5px;color:#94A3B8}
+.goal{margin-bottom:12px}
+.goal .gl{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}
+.goal .gl b{color:#334155}
+.goal .gl span{color:#64748B}
+.bar{height:8px;background:#EEF2F7;border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px}
+.b-blue{background:#1976D2}.b-green{background:#2E7D32}
+.goal-link{font-size:12.5px;font-weight:600;color:#1976D2;text-decoration:none}
+.onboard{margin-top:22px;background:#F8FAFF !important}
+.onboard .ot{font-size:13.5px;font-weight:700;margin-bottom:10px;color:#334155}
+.onboard .steps{display:flex;gap:8px;flex-wrap:wrap}
+.step-chip{display:inline-flex;align-items:center;gap:7px;border:1.5px solid #C5D6F0;background:#fff;border-radius:99px;padding:5px 14px 5px 6px;font-size:12.5px;font-weight:600;color:#475569;cursor:pointer}
+.step-chip .num{width:20px;height:20px;border-radius:50%;background:#1976D2;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.team-row{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid #F1F5F9}
+.team-row:last-child{border-bottom:none}
+.team-row .av2{width:30px;height:30px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+.team-row .ti{flex:1}
+.team-row .tn{font-size:13.5px;font-weight:700}
+.team-row .td{font-size:12px;color:#94A3B8}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="mockup-banner">🧪 MOCKUP — proposta de redesign v2 "Dia de Venda" · dados ilustrativos · <a href="index.html">← voltar ao índice</a></div>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="t">🎓 IAprendo</div><div class="s">Plataforma de Vendas</div></div>
+  <a class="nav-item active" href="hoje.html">🏠 Hoje</a>
+  <a class="nav-item" href="#" title="Página mantida da v1 — sem mockup nesta rodada">🤖 IAlex</a>
+  <div class="nav-sep">Vender</div>
+  <a class="nav-item" href="prospectar.html">🔍 Prospectar</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">🏫 Escolas</a>
+  <a class="nav-item" href="mensagens.html">✉️ Mensagens <span class="badge">12</span></a>
+  <a class="nav-item" href="negocios.html">💼 Negócios</a>
+  <div class="nav-sep">Acompanhar</div>
+  <a class="nav-item" href="resultados.html">📊 Resultados</a>
+  <div class="nav-sep">Sistema</div>
+  <a class="nav-item" href="#" title="Visível apenas para administradores">⚙️ Ajustes</a>
+  <a class="nav-item" href="#" title="Sem mockup nesta rodada">❓ Ajuda</a>
+</aside>
+<main class="main">
+
+  <div class="page-h">
+    <h1>Bom dia, Fernando! ☀️</h1>
+    <div class="user-pill"><div class="av">F</div>Fernando</div>
+  </div>
+  <div class="page-sub">Terça-feira, 10 de junho · sua lista do dia está pronta</div>
+
+  <!-- Busca global -->
+  <div class="search-wrap">
+    <input type="text" placeholder="Buscar escola, contato ou e-mail… (resultado abre direto a ficha)">
+  </div>
+
+  <!-- 3 numeros do dia -->
+  <div class="nums">
+    <div class="num-card" title="Abrir Minha Agenda">
+      <div class="n n-blue">7</div>
+      <div class="l"><b>atividades hoje</b><small>2 atrasadas</small></div>
+      <div class="arr">→</div>
+    </div>
+    <div class="num-card" title="Abrir Mensagens">
+      <div class="n n-orange">12</div>
+      <div class="l"><b>mensagens aguardando sua aprovação</b><small>nada sai sem o seu OK</small></div>
+      <div class="arr">→</div>
+    </div>
+    <div class="num-card" title="Abrir respostas">
+      <div class="n n-green">3</div>
+      <div class="l"><b>respostas novas para tratar</b><small>escolas que responderam você</small></div>
+      <div class="arr">→</div>
+    </div>
+  </div>
+
+  <div class="cols">
+
+    <!-- COLUNA PRINCIPAL: Minha Agenda -->
+    <div class="card">
+      <div class="agenda-h">
+        <h2>📋 Minha Agenda</h2>
+        <div class="agenda-toggle">
+          <span class="chip on" id="chip-minha" onclick="setAgenda('minha')">Minha agenda</span>
+          <span class="chip" id="chip-equipe" onclick="setAgenda('equipe')" title="visão do gestor">Equipe</span>
+        </div>
+      </div>
+
+      <!-- VISAO: MINHA AGENDA -->
+      <div id="view-minha">
+
+        <div class="group-h late">⚠️ Atrasadas (2)</div>
+        <div class="task late">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Responder Colégio Santa Cecília
+              <span class="origin" title="Criada automaticamente pelas regras da agenda">🤖 auto</span>
+              <span class="prio p-agir" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 68/100">🔴 Agir agora</span>
+            </div>
+            <div class="ts">respondeu seu e-mail ontem às 16h</div>
+          </div>
+          <span class="due late">ontem 17h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir escola">→</button>
+          </div>
+        </div>
+        <div class="task late">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Registrar resultado da reunião — Instituto Monte Alverne
+              <span class="origin" title="Criada automaticamente pelas regras da agenda">🤖 auto</span>
+            </div>
+            <div class="ts">reunião aconteceu ontem às 14h — anote como foi</div>
+          </div>
+          <span class="due late">ontem 18h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir escola">→</button>
+          </div>
+        </div>
+
+        <div class="group-h">Hoje (5)</div>
+        <div class="task">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Aprovar 12 mensagens paradas
+              <span class="origin" title="Criada automaticamente pelas regras da agenda">🤖 auto</span>
+            </div>
+            <div class="ts">na fila desde ontem</div>
+          </div>
+          <span class="due">9h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir Mensagens">→</button>
+          </div>
+        </div>
+        <div class="task">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Follow-up com Colégio Horizonte Sul
+              <span class="origin" title="Criada automaticamente pelas regras da agenda">🤖 auto</span>
+            </div>
+            <div class="ts">3º contato — abriu o último e-mail 2x</div>
+          </div>
+          <span class="due">10h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir escola">→</button>
+          </div>
+        </div>
+        <div class="task">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Ligar para Escola Nova Geração
+              <span class="origin" title="Criada por você via IAlex no WhatsApp">💬 IAlex</span>
+            </div>
+            <div class="ts">você pediu pelo WhatsApp: "me lembra de ligar sexta"</div>
+          </div>
+          <span class="due">11h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir escola">→</button>
+          </div>
+        </div>
+        <div class="task">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Retomar Colégio Dom Pedro II — esfriando
+              <span class="origin" title="Criada automaticamente pelas regras da agenda">🤖 auto</span>
+              <span class="prio p-agir" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▰ · Avaliação da IA 68/100">🔴 Agir agora</span>
+            </div>
+            <div class="ts">lead Quente sem contato há 6 dias</div>
+          </div>
+          <span class="due">14h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir escola">→</button>
+          </div>
+        </div>
+        <div class="task">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Preparar reunião com Colégio Atlântico
+              <span class="origin" title="Criada automaticamente pelas regras da agenda">🤖 auto</span>
+            </div>
+            <div class="ts">reunião amanhã 9h — relatório da escola pronto</div>
+          </div>
+          <span class="due">16h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir escola">→</button>
+          </div>
+        </div>
+
+        <div class="group-h">Amanhã (3)</div>
+        <div class="task">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Reunião online com Colégio Atlântico
+              <span class="origin" title="Criada automaticamente pelas regras da agenda">🤖 auto</span>
+            </div>
+            <div class="ts">diretora Mariana confirmou presença</div>
+          </div>
+          <span class="due">9h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir escola">→</button>
+          </div>
+        </div>
+        <div class="task">
+          <span class="cb"></span>
+          <div class="t-info">
+            <div class="tt">Follow-up com Instituto Educar Mais
+              <span class="origin" title="Criada automaticamente pelas regras da agenda">🤖 auto</span>
+            </div>
+            <div class="ts">2º contato — e-mail enviado há 4 dias sem abertura</div>
+          </div>
+          <span class="due">10h</span>
+          <div class="t-acts">
+            <button class="ico done" title="Concluir">✓</button>
+            <button class="ico" title="Adiar">⏰</button>
+            <button class="ico" title="Abrir escola">→</button>
+          </div>
+        </div>
+        <a class="more-link" href="#">ver mais 1 atividade de amanhã →</a>
+
+      </div>
+
+      <!-- VISAO: EQUIPE (gestor) -->
+      <div id="view-equipe" class="hide">
+        <div class="group-h">Visão do gestor — atividades por vendedor</div>
+        <div class="team-row">
+          <div class="av2" style="background:#1976D2">F</div>
+          <div class="ti">
+            <div class="tn">Fernando</div>
+            <div class="td">7 atividades hoje · 2 atrasadas · próxima: Responder Colégio Santa Cecília</div>
+          </div>
+          <span class="prio p-agir" title="Tem atividades atrasadas">2 atrasadas</span>
+          <button class="btn btn-o btn-sm">Ver agenda</button>
+        </div>
+        <div class="team-row">
+          <div class="av2" style="background:#7E57C2">L</div>
+          <div class="ti">
+            <div class="tn">Lizianne</div>
+            <div class="td">5 atividades hoje · em dia · próxima: Follow-up com Colégio Sol Nascente</div>
+          </div>
+          <span class="prio" style="color:#2E7D32">em dia</span>
+          <button class="btn btn-o btn-sm">Ver agenda</button>
+        </div>
+        <div class="team-row">
+          <div class="av2" style="background:#26A69A">FE</div>
+          <div class="ti">
+            <div class="tn">Felipe</div>
+            <div class="td">4 atividades hoje · 1 atrasada · próxima: Registrar contato — Colégio Dom Pedro II</div>
+          </div>
+          <span class="prio p-quente" title="Tem atividade atrasada">1 atrasada</span>
+          <button class="btn btn-o btn-sm">Ver agenda</button>
+        </div>
+      </div>
+
+      <div class="agenda-foot">
+        <a href="#">+ Nova atividade</a>
+        <span class="note">🤖 = criada automaticamente pelas regras da agenda</span>
+      </div>
+    </div>
+
+    <!-- COLUNA LATERAL -->
+    <div class="side">
+
+      <div class="card">
+        <h3>🔥 Agir agora</h3>
+        <div class="lead">
+          <div class="li">
+            <div class="ln">Colégio Santa Cecília</div>
+            <div class="lr">clicou na proposta 2x hoje</div>
+          </div>
+          <span class="prio p-agir" title="Por que? Engajamento ▰▰▰▰ · Potencial ▰▰▰▰ · Avaliação da IA 82/100">🔴 Agir agora</span>
+          <button class="btn btn-p btn-sm">Abrir</button>
+        </div>
+        <div class="lead">
+          <div class="li">
+            <div class="ln">Instituto Educar Mais</div>
+            <div class="lr">respondeu pedindo valores</div>
+          </div>
+          <span class="prio p-agir" title="Por que? Engajamento ▰▰▰▰ · Potencial ▰▰▰▱ · Avaliação da IA 75/100">🔴 Agir agora</span>
+          <button class="btn btn-p btn-sm">Abrir</button>
+        </div>
+        <div class="lead">
+          <div class="li">
+            <div class="ln">Colégio Sol Nascente</div>
+            <div class="lr">abriu seu e-mail 3x em 24h</div>
+          </div>
+          <span class="prio p-quente" title="Por que? Engajamento ▰▰▰▱ · Potencial ▰▰▰▱ · Avaliação da IA 68/100">🟠 Quente</span>
+          <button class="btn btn-p btn-sm">Abrir</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📅 Próximas 24h</h3>
+        <div class="meet">
+          <div class="mh">amanhã<br>9h</div>
+          <div class="mi">
+            <div class="mn">Colégio Atlântico</div>
+            <div class="md">reunião online · Fortaleza/CE</div>
+          </div>
+          <button class="btn btn-o btn-sm">Preparar</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>🎯 Minha meta — Junho</h3>
+        <div class="goal">
+          <div class="gl"><b>E-mails enviados</b><span>28/40 · 70%</span></div>
+          <div class="bar"><i class="b-blue" style="width:70%"></i></div>
+        </div>
+        <div class="goal">
+          <div class="gl"><b>Reuniões realizadas</b><span>3/5 · 60%</span></div>
+          <div class="bar"><i class="b-green" style="width:60%"></i></div>
+        </div>
+        <a class="goal-link" href="resultados.html">ver Resultados →</a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Estado-vazio / roteiro do novato -->
+  <div class="card onboard">
+    <div class="ot">💡 Primeiro dia? Siga o roteiro:</div>
+    <div class="steps">
+      <span class="step-chip"><span class="num">1</span>Conheça as escolas da base</span>
+      <span class="step-chip"><span class="num">2</span>Pergunte algo ao IAlex</span>
+      <span class="step-chip"><span class="num">3</span>Aprove sua primeira mensagem</span>
+      <span class="step-chip"><span class="num">4</span>Registre seu primeiro contato</span>
+    </div>
+  </div>
+
+</main>
+</div>
+<script>
+function setAgenda(which){
+  var minha = which === 'minha';
+  document.getElementById('chip-minha').classList.toggle('on', minha);
+  document.getElementById('chip-equipe').classList.toggle('on', !minha);
+  document.getElementById('view-minha').classList.toggle('hide', !minha);
+  document.getElementById('view-equipe').classList.toggle('hide', minha);
+}
+</script>
+</body>
+</html>
