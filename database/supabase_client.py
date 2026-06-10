@@ -31,7 +31,7 @@ Usage:
 """
 
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 from config.settings import settings
 from utils.logger import logger, log_database_operation
