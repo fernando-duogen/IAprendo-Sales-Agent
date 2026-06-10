@@ -2,7 +2,7 @@
 # Para Streamlit Cloud: apenas o necessario para o dashboard
 # Para desenvolvimento local completo: pip install -r requirements-full.txt
 
-streamlit>=1.35.0                # 1.35+ pra st.dataframe(selection_mode="multi-row")
+streamlit>=1.56,<1.57            # PINADO (blueprint v2 sec.8): CSS usa data-testid que muda entre versoes
 streamlit-authenticator==0.4.2   # Login multi-user + "manter logado" (cookie). Pin: comportamento do cookie varia entre versoes
 bcrypt>=4.0.0                    # Hash de senhas (dep do streamlit-authenticator)
 pyyaml>=6.0                      # Config users.yaml

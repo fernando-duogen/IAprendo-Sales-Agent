@@ -1056,3 +1056,91 @@ def breadcrumb(items: list):
     """Renderiza breadcrumb. items: ["Home", "Escolas", "Detalhe"]"""
     parts = " &rsaquo; ".join(items)
     st.markdown(f'<div class="breadcrumb">{parts}</div>', unsafe_allow_html=True)
+
+
+# ============================================================================
+# COMPONENTES v2 (redesign "Dia de Venda" — F1)
+# Vocabulario vem SEMPRE de dashboard/labels.py (fonte unica).
+# ============================================================================
+
+def stage_pill(status, commercial_stage=None) -> str:
+    """Pill PREENCHIDA da etapa da escola (blueprint §6). Retorna HTML."""
+    from dashboard.labels import school_stage
+    label, cor = school_stage(status, commercial_stage)
+    txt_color = "#3E2723" if label == "Respondeu" else "#fff"
+    return (f'<span style="display:inline-block;border-radius:99px;padding:3px 11px;'
+            f'font-size:12px;font-weight:600;color:{txt_color};background:{cor};'
+            f'white-space:nowrap">{label}</span>')
+
+
+def priority_badge(tier_or_score, breakdown: str = "") -> str:
+    """Badge de Prioridade (🔴🟠🟡⚪) — a UNICA prioridade em listas (§5).
+    breakdown vai no title (hover) como explicacao."""
+    from dashboard.labels import PRIORITY_TIERS, priority_of
+    tier = tier_or_score if isinstance(tier_or_score, str) else priority_of(tier_or_score)
+    t = PRIORITY_TIERS.get((tier or "COLD").upper(), PRIORITY_TIERS["COLD"])
+    title = breakdown or "Engajamento + Potencial + Avaliacao da IA"
+    return (f'<span title="{title}" style="font-size:12.5px;font-weight:700;'
+            f'color:{t["color"]};white-space:nowrap;cursor:help">'
+            f'{t["emoji"]} {t["label"]}</span>')
+
+
+def message_chip(status, scheduled_hint=None) -> str:
+    """Chip CONTORNADO de status de mensagem (familia visual distinta da pill)."""
+    from dashboard.labels import MESSAGE_STATUS, message_status_label
+    m = MESSAGE_STATUS.get((status or "pending").lower(), MESSAGE_STATUS["pending"])
+    return (f'<span style="display:inline-flex;align-items:center;gap:5px;'
+            f'border-radius:99px;padding:3px 11px;font-size:12px;font-weight:600;'
+            f'border:1.5px solid {m["color"]};color:{m["color"]};background:#fff;'
+            f'white-space:nowrap">{message_status_label(status, scheduled_hint)}</span>')
+
+
+def activity_row(activity: dict, overdue: bool = False) -> str:
+    """Linha de atividade da agenda (Home v2). Retorna HTML (botoes ficam por
+    conta da pagina via st.button ao lado)."""
+    from dashboard.labels import ACTIVITY_SOURCE_BADGE, activity_label
+    bg = "#FFF5F5" if overdue else "#fff"
+    pr = '<span style="color:#C62828;font-weight:700">🔴</span> ' \
+        if activity.get("priority") == 1 else ""
+    src = ACTIVITY_SOURCE_BADGE.get(activity.get("source", "manual"), "")
+    details = (activity.get("details") or "")[:90]
+    return (
+        f'<div style="background:{bg};border:1px solid #E3E8EF;border-radius:10px;'
+        f'padding:10px 14px;margin-bottom:6px">'
+        f'{pr}<strong style="font-size:13.5px">{activity_label(activity.get("type"))} — '
+        f'{activity.get("title", "")}</strong> '
+        f'<span style="font-size:11px;color:#94A3B8">{src}</span>'
+        + (f'<br/><span style="font-size:12px;color:#64748B">{details}</span>' if details else "")
+        + '</div>'
+    )
+
+
+def goal_progress(label: str, realized: float, target: float, color: str = None) -> str:
+    """Barra de progresso de meta (verde >=80% do ritmo, amarela 50-79, vermelha <50)."""
+    pct = min(100.0, (100.0 * realized / target) if target else 0.0)
+    if color is None:
+        color = "#2E7D32" if pct >= 80 else ("#F9A825" if pct >= 50 else "#C62828")
+    val = f"{realized:g}/{target:g}"
+    return (
+        f'<div style="margin-bottom:10px">'
+        f'<div style="display:flex;justify-content:space-between;font-size:12.5px;'
+        f'margin-bottom:3px"><span>{label}</span><strong>{val} ({pct:.0f}%)</strong></div>'
+        f'<div style="background:#EEF2F7;border-radius:99px;height:8px">'
+        f'<div style="background:{color};border-radius:99px;height:8px;width:{pct:.0f}%">'
+        f'</div></div></div>'
+    )
+
+
+def empty_state(emoji: str, titulo: str, texto: str, cta_label: str = "", cta_page: str = ""):
+    """Estado vazio que ENSINA (blueprint: novato opera sozinho). Renderiza."""
+    st.markdown(
+        f'<div style="text-align:center;padding:36px 20px;background:#F8FAFF;'
+        f'border:1px dashed #CBD5E1;border-radius:14px;margin:10px 0">'
+        f'<div style="font-size:34px;margin-bottom:8px">{emoji}</div>'
+        f'<div style="font-size:16px;font-weight:700;margin-bottom:6px">{titulo}</div>'
+        f'<div style="font-size:13px;color:#64748B">{texto}</div></div>',
+        unsafe_allow_html=True,
+    )
+    if cta_label and cta_page:
+        if st.button(cta_label, type="primary"):
+            st.switch_page(cta_page)

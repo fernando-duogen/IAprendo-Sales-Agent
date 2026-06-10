@@ -31,7 +31,7 @@ Usage:
 """
 
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 from config.settings import settings
 from utils.logger import logger, log_database_operation
@@ -563,6 +563,263 @@ class Database:
                 logger.warning("fetch_in_chunks: lote falhou",
                                extra={"table": table, "error": str(e)[:150]})
         return out
+
+    # =========================================================================
+    # AGENDA (activities) — F1 do redesign v2 · regras: docs/SPEC_AGENDA_METAS.md
+    # =========================================================================
+
+    def create_activity(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Cria atividade. Se dedupe_key ja existe (unique violation), retorna
+        None silenciosamente — e o contrato de idempotencia do engine (SPEC §1.3)."""
+        try:
+            if not data.get('owner_username') or not data.get('title') or not data.get('due_at'):
+                raise ValueError("Campos obrigatorios: owner_username, title, due_at")
+            res = self.client.table('activities').insert(data).execute()
+            return (res.data or [None])[0]
+        except Exception as e:
+            msg = str(e)
+            if '23505' in msg or 'duplicate' in msg.lower() or 'idx_activities_dedupe' in msg:
+                return None  # dedupe hit — comportamento esperado
+            logger.error("Erro ao criar atividade", extra={'error': msg[:200]})
+            return None
+
+    def list_activities(self, owner: Optional[str] = None, status: Optional[Any] = None,
+                        company_id: Optional[str] = None, due_before: Optional[str] = None,
+                        auto_only: bool = False, limit: int = 300) -> List[Dict[str, Any]]:
+        """Lista atividades (ordem da agenda: prioridade, due, criacao — SPEC §1.8)."""
+        try:
+            q = self.client.table('activities').select('*')
+            if owner:
+                q = q.eq('owner_username', owner)
+            if status:
+                q = q.in_('status', status if isinstance(status, list) else [status])
+            if company_id:
+                q = q.eq('company_id', company_id)
+            if due_before:
+                q = q.lte('due_at', due_before)
+            if auto_only:
+                q = q.eq('source', 'auto')
+            r = q.order('priority').order('due_at').order('created_at').limit(limit).execute()
+            return r.data or []
+        except Exception as e:
+            logger.error("Erro ao listar atividades", extra={'error': str(e)[:200]})
+            return []
+
+    def complete_activity(self, activity_id: str, by: str,
+                          resolution: str = 'manual') -> bool:
+        """Conclui (done). `by='system'` + resolution distinguem auto-resolucao."""
+        try:
+            self.client.table('activities').update({
+                'status': 'done',
+                'resolution': resolution,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'completed_by': by,
+            }).eq('id', activity_id).in_('status', ['open', 'snoozed']).execute()
+            return True
+        except Exception as e:
+            logger.error("Erro ao concluir atividade", extra={'id': activity_id, 'error': str(e)[:200]})
+            return False
+
+    def dismiss_activity(self, activity_id: str, by: str, resolution: str) -> bool:
+        """Dispensa (dismissed) com resolution obrigatoria (auditoria — SPEC §1.1)."""
+        try:
+            self.client.table('activities').update({
+                'status': 'dismissed',
+                'resolution': resolution,
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+                'completed_by': by,
+            }).eq('id', activity_id).in_('status', ['open', 'snoozed']).execute()
+            return True
+        except Exception as e:
+            logger.error("Erro ao dispensar atividade", extra={'id': activity_id, 'error': str(e)[:200]})
+            return False
+
+    def snooze_activity(self, activity_id: str, until: str) -> Dict[str, Any]:
+        """Adia (snoozed). Limite de 3 adiamentos (SPEC §1.5) — no 4o, retorna
+        erro orientando a dispensar com motivo."""
+        try:
+            r = self.client.table('activities').select('snooze_count,status') \
+                .eq('id', activity_id).limit(1).execute()
+            row = (r.data or [None])[0]
+            if not row:
+                return {'ok': False, 'erro': 'atividade nao encontrada'}
+            if row.get('status') not in ('open', 'snoozed'):
+                return {'ok': False, 'erro': 'atividade ja resolvida'}
+            count = int(row.get('snooze_count') or 0)
+            if count >= 3:
+                return {'ok': False, 'erro': 'limite de 3 adiamentos atingido — conclua ou dispense com motivo'}
+            self.client.table('activities').update({
+                'status': 'snoozed',
+                'snoozed_until': until,
+                'snooze_count': count + 1,
+            }).eq('id', activity_id).execute()
+            return {'ok': True, 'snooze_count': count + 1}
+        except Exception as e:
+            logger.error("Erro ao adiar atividade", extra={'id': activity_id, 'error': str(e)[:200]})
+            return {'ok': False, 'erro': str(e)[:150]}
+
+    def reassign_company_activities(self, company_id: str, new_owner: str,
+                                    note: str = '') -> int:
+        """Transfere as atividades ABERTAS da escola junto com o lead (SPEC §5.1)."""
+        try:
+            r = self.client.table('activities').select('id,details') \
+                .eq('company_id', company_id).in_('status', ['open', 'snoozed']).execute()
+            rows = r.data or []
+            for row in rows:
+                details = (row.get('details') or '')
+                if note:
+                    details = (details + f"\n[{note}]").strip()
+                self.client.table('activities').update({
+                    'owner_username': new_owner, 'details': details,
+                }).eq('id', row['id']).execute()
+            return len(rows)
+        except Exception as e:
+            logger.error("Erro ao reatribuir atividades", extra={'company_id': company_id, 'error': str(e)[:200]})
+            return 0
+
+    def count_open_activities(self, owner: str, auto_only: bool = False,
+                              min_priority: Optional[int] = None) -> int:
+        """Conta abertas do dono (teto anti-spam do engine — SPEC §1.7)."""
+        try:
+            q = self.client.table('activities').select('id', count='exact') \
+                .eq('owner_username', owner).eq('status', 'open')
+            if auto_only:
+                q = q.eq('source', 'auto')
+            if min_priority is not None:
+                q = q.gte('priority', min_priority)
+            r = q.execute()
+            return int(r.count or 0)
+        except Exception as e:
+            logger.error("Erro ao contar atividades", extra={'error': str(e)[:200]})
+            return 0
+
+    # =========================================================================
+    # METAS (goals) — SPEC §4
+    # =========================================================================
+
+    def upsert_goal(self, username: str, metric: str, period_start: str,
+                    target: float, by: str, reason: Optional[str] = None,
+                    period_type: str = 'month') -> Optional[Dict[str, Any]]:
+        """Cria/atualiza meta com trilha em revision_log (mudanca nunca e
+        silenciosa — SPEC §4.1). reason='herdada' marca o rollover automatico."""
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            r = self.client.table('goals').select('*') \
+                .eq('username', username).eq('metric', metric) \
+                .eq('period_type', period_type).eq('period_start', period_start) \
+                .limit(1).execute()
+            existing = (r.data or [None])[0]
+            if existing:
+                log = list(existing.get('revision_log') or [])
+                log.append({'at': now, 'by': by,
+                            'old_target': float(existing.get('target') or 0),
+                            'new_target': float(target),
+                            'reason': reason or ''})
+                res = self.client.table('goals').update({
+                    'target': target, 'revision_log': log,
+                }).eq('id', existing['id']).execute()
+                return (res.data or [None])[0]
+            res = self.client.table('goals').insert({
+                'username': username, 'metric': metric,
+                'period_type': period_type, 'period_start': period_start,
+                'target': target, 'created_by': by,
+                'revision_log': [{'at': now, 'by': by, 'new_target': float(target),
+                                  'reason': reason or 'criada'}],
+            }).execute()
+            return (res.data or [None])[0]
+        except Exception as e:
+            logger.error("Erro no upsert de meta", extra={'username': username, 'metric': metric,
+                                                          'error': str(e)[:200]})
+            return None
+
+    def list_goals(self, period_start: Optional[str] = None,
+                   username: Optional[str] = None,
+                   period_type: str = 'month') -> List[Dict[str, Any]]:
+        try:
+            q = self.client.table('goals').select('*').eq('period_type', period_type)
+            if period_start:
+                q = q.eq('period_start', period_start)
+            if username:
+                q = q.eq('username', username)
+            return q.order('username').order('metric').execute().data or []
+        except Exception as e:
+            logger.error("Erro ao listar metas", extra={'error': str(e)[:200]})
+            return []
+
+    def _owner_company_ids(self, username: str) -> List[str]:
+        try:
+            r = self.client.table('companies').select('id') \
+                .eq('owner_username', username).limit(5000).execute()
+            return [row['id'] for row in (r.data or [])]
+        except Exception:
+            return []
+
+    def goal_realized(self, username: str, metric: str,
+                      period_start: str, period_end: str) -> float:
+        """Realizado AO VIVO de eventos timestamped imutaveis (SPEC §4.3).
+        username='team' = sem filtro de vendedor. Fontes por metrica:
+        interactions (e-mails/respostas), meetings (reunioes), eventos
+        stage_changed do trigger (propostas/clientes/valor), activities (done)."""
+        try:
+            team = (username == 'team')
+
+            def _count_interactions(types: List[str]) -> float:
+                q = self.client.table('interactions').select('id', count='exact') \
+                    .in_('type', types) \
+                    .gte('created_at', period_start).lt('created_at', period_end)
+                if not team:
+                    ids = self._owner_company_ids(username)
+                    if not ids:
+                        return 0.0
+                    q = q.in_('company_id', ids[:200])
+                return float(q.execute().count or 0)
+
+            if metric == 'emails_enviados':
+                return _count_interactions(['email_sent'])
+            if metric == 'respostas':
+                return _count_interactions(['email_replied', 'whatsapp_replied'])
+
+            if metric == 'reunioes_realizadas':
+                q = self.client.table('meetings').select('id', count='exact') \
+                    .eq('status', 'completed') \
+                    .gte('scheduled_at', period_start).lt('scheduled_at', period_end)
+                if not team:
+                    q = q.eq('owner_username', username)
+                return float(q.execute().count or 0)
+
+            if metric in ('propostas', 'clientes', 'valor_fechado'):
+                to_stage = 'proposta' if metric == 'propostas' else 'cliente'
+                q = self.client.table('interactions').select('metadata') \
+                    .eq('type', 'stage_changed') \
+                    .eq('metadata->>to_stage', to_stage) \
+                    .gte('created_at', period_start).lt('created_at', period_end) \
+                    .limit(2000)
+                if not team:
+                    q = q.eq('metadata->>owner_username', username)
+                rows = q.execute().data or []
+                if metric == 'valor_fechado':
+                    total = 0.0
+                    for row in rows:
+                        try:
+                            total += float((row.get('metadata') or {}).get('valor_mensal_fechado') or 0)
+                        except (TypeError, ValueError):
+                            pass
+                    return total
+                return float(len(rows))
+
+            if metric == 'atividades_concluidas':
+                q = self.client.table('activities').select('id', count='exact') \
+                    .eq('status', 'done') \
+                    .in_('resolution', ['manual', 'auto_trabalho_detectado']) \
+                    .gte('completed_at', period_start).lt('completed_at', period_end)
+                if not team:
+                    q = q.eq('owner_username', username)
+                return float(q.execute().count or 0)
+
+            return 0.0
+        except Exception as e:
+            logger.error("Erro no realizado da meta", extra={'metric': metric, 'error': str(e)[:200]})
+            return 0.0
 
     def update_company(
         self,

@@ -41,6 +41,20 @@ except Exception as _enem_err:
     ENEM_TOOL_HANDLERS = {}
     _ENEM_TOOLS_AVAILABLE = False
 
+# Carregamento defensivo das tools de Agenda/Metas (F1 do redesign v2).
+# Mesmo padrao das ENEM tools: falha no modulo NAO derruba o IAlex.
+try:
+    from agent.tools.agenda_tools import AGENDA_TOOLS, AGENDA_TOOL_HANDLERS
+    from dashboard.labels import IALEX_VOCAB_PROMPT as _AGENDA_VOCAB
+    _AGENDA_TOOLS_AVAILABLE = True
+    logger.info("Agenda tools carregadas", extra={"count": len(AGENDA_TOOLS)})
+except Exception as _agenda_err:
+    logger.warning(f"Agenda tools indisponivel: {_agenda_err}")
+    AGENDA_TOOLS = []
+    AGENDA_TOOL_HANDLERS = {}
+    _AGENDA_VOCAB = ""
+    _AGENDA_TOOLS_AVAILABLE = False
+
 # Cache do CSV para fallback (carregado na primeira busca)
 _csv_df: Optional[pd.DataFrame] = None
 _csv_lock = threading.Lock()  # evita 2 threads (users) carregando o CSV ao mesmo tempo
@@ -7956,6 +7970,10 @@ TOOL_HANDLERS = {
 TOOLS = TOOLS + ENEM_TOOLS
 TOOL_HANDLERS.update(ENEM_TOOL_HANDLERS)
 
+# EXTENSAO: Agenda/Metas tools (F1 do redesign v2 — mesmo fallback seguro)
+TOOLS = TOOLS + AGENDA_TOOLS
+TOOL_HANDLERS.update(AGENDA_TOOL_HANDLERS)
+
 
 # ===========================================================================
 # SYSTEM PROMPT
@@ -9178,6 +9196,17 @@ _Diga o que precisa ou responda com o nome da acao!_
 - Score 0-100: qualificacao automatica (quanto maior, melhor fit para IAprendo)
 - NUNCA enviar email/mensagem sem aprovacao do Fernando
 """
+
+# Vocabulario unificado do redesign v2 (dashboard/labels.py) — UI e WhatsApp
+# falam a mesma lingua. Vazio se as agenda tools nao carregaram.
+if _AGENDA_VOCAB:
+    SYSTEM_PROMPT = SYSTEM_PROMPT + "\n\n== VOCABULARIO E AGENDA (v2) ==\n" + _AGENDA_VOCAB + (
+        "\nVoce tambem gerencia a AGENDA do time (minha_agenda, criar/concluir/"
+        "adiar_atividade, atividades_atrasadas) e as METAS (minha_meta, metas_time, "
+        "definir_meta — admin). Para encontros fora da plataforma use "
+        "registrar_encontro; para briefing de reuniao use preparar_reuniao; para "
+        "municao de conversa use argumentos_venda."
+    )
 
 MAX_HISTORY = 10  # Reduzido para evitar que conversas antigas vazem para novas
 
