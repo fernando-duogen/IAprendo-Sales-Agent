@@ -80,6 +80,9 @@ A v2 reorganizou o menu em volta do **dia de venda**: voce abre em **🏠 Hoje**
 | 📝 Templates (escondidos) | **✉️ Mensagens → 📄 Modelos** (com visibilidade compartilhado/pessoal) |
 | Ficha da escola (7 abas) | **🏫 Escolas → ficha em 4 abas**: Visao Geral (c/ Argumentos de venda), Desempenho, Pessoas, Conversas |
 | 📈 Analytics | **📊 Resultados** (+ secao de Metas por vendedor) |
+| 👥 Contatos (pagina) | **🏫 Escolas → 👥 Pessoas** (Power Map global) |
+| 🗺️ Mapa (pagina) | **🏫 Escolas → Lista → \"Ver como 🗺️ Mapa\"** (alternador; filtros valem no mapa) |
+| 🎯 Inteligencia (pagina) | **🏫 Escolas → 🔬 Inteligencia** (radar + explorador; ranking = Prospectar → Recomendadas) |
 | ⚙️ Configuracoes | **⚙️ Ajustes** (+ aba 💼 Vendas & Agenda do gestor) |
 
 ### Vocabulario novo (o que cada termo quer dizer)
@@ -386,7 +389,7 @@ with tab_passo:
 
     st.markdown("### Etapa 1: Importar Escolas (2 min)")
     st.markdown("""
-1. Clique em **Importar** no menu lateral
+1. Va em **🔍 Prospectar** → aba **🗺️ Buscar no Brasil**
 2. O arquivo CSV do MEC ja esta configurado no sistema
 3. Selecione os filtros:
    - **Municipio**: Porto Alegre
@@ -396,8 +399,8 @@ with tab_passo:
 4. Clique em **Importar**
 5. Aguarde — o sistema importa e cria os registros no Supabase
 """)
-    if st.button("Ir para Importar", key="passo_importar"):
-        st.switch_page("pages/1_📥_Importar.py")
+    if st.button("Ir para Prospectar (Buscar no Brasil)", key="passo_importar"):
+        st.switch_page("pages/5_📊_Pipeline.py")
 
     st.divider()
 
@@ -416,7 +419,7 @@ with tab_passo:
 
     st.markdown("### Etapa 3: Rodar Pipeline (3 min)")
     st.markdown("""
-1. Va em **Pipeline** no menu lateral
+1. Va em **🔍 Prospectar** no menu lateral (aba **📦 Preparar escolas**)
 2. Na aba **Execucao**:
    - Selecione 1-3 escolas na tabela (comece pequeno!)
    - Clique **Qualificar** — a IA analisa e atribui scores
@@ -432,8 +435,8 @@ with tab_passo:
 
     st.markdown("### Etapa 4: Aprovar e Enviar (2 min)")
     st.markdown("""
-1. Va em **Comunicacao** no menu lateral
-2. Na aba **Aprovacao** voce vera os emails gerados
+1. Va em **✉️ Mensagens** no menu lateral
+2. Na aba **⏳ Aguardando** voce vera os emails gerados
 3. Para cada email:
    - **Leia** o conteudo com atencao
    - Escolha uma acao:
@@ -450,11 +453,11 @@ with tab_passo:
 
     st.markdown("### Etapa 5: Acompanhar Resultados (2 min)")
     st.markdown("""
-1. Volte para **Comunicacao** > aba **Metricas**
+1. Volte para **✉️ Mensagens** > aba **📊 Metricas**
    - Veja taxas de abertura, resposta, bounce
-2. Va em **Analytics** para visao consolidada
+2. Va em **📊 Resultados** para visao consolidada
    - ROI, funil de conversao, custo por lead
-3. Use o **Mapa** para visualizacao geografica dos leads
+3. Use **🏫 Escolas → Ver como 🗺️ Mapa** para visualizacao geografica
 4. Confira **Inteligencia ENEM** para priorizar proximos contatos
 """)
 
@@ -470,7 +473,7 @@ with tab_passo:
 # TAB 4 — CRM (ESCOLAS)
 # #############################################################################
 with tab_crm:
-    section_header("Paginas de Gestao: Escolas, Contatos, Mapa, Importar", "business")
+    section_header("Gestao da base: 🏫 Escolas (Lista + Pessoas + Redes + Inteligencia)", "business")
 
     # --- Escolas ---
     st.markdown("## 1. Escolas (Pagina Principal do CRM)")
@@ -550,7 +553,7 @@ O Power Map e uma visualizacao hierarquica dos contatos por escola:
 """)
 
     if st.button("Ir para Contatos", key="crm_contatos"):
-        st.switch_page("pages/3_👥_Contatos.py")
+        st.switch_page("pages/2_🏫_Escolas.py")
 
     st.divider()
 
@@ -573,7 +576,7 @@ O **Mapa** mostra todas as escolas do CRM posicionadas geograficamente.
 """)
 
     if st.button("Ir para Mapa", key="crm_mapa"):
-        st.switch_page("pages/4_🗺️_Mapa.py")
+        st.switch_page("pages/2_🏫_Escolas.py")
 
     st.divider()
 
@@ -652,7 +655,7 @@ rode de novo so o Passo 2 — o upsert sincroniza tudo.
 """)
 
     if st.button("Ir para Importar", key="crm_importar"):
-        st.switch_page("pages/1_📥_Importar.py")
+        st.switch_page("pages/5_📊_Pipeline.py")
 
 
 # #############################################################################
@@ -780,7 +783,7 @@ with tab_comunicacao:
 
     st.markdown("""
 A pagina **Comunicacao** consolida tudo relacionado a emails, WhatsApp e mensagens.
-Ela e dividida em **5 abas**: Aprovacao, Follow-ups, Templates, Metricas e WhatsApp.
+Ela e organizada por **estados**: ⏳ Aguardando, ✅ Aprovadas, 📤 Enviadas, 💬 Recebidas, 🔁 Follow-ups, 📄 Modelos, 📱 WhatsApp e 📊 Metricas.
 """)
 
     st.markdown("## Aba 1: Aprovacao")
@@ -1105,7 +1108,7 @@ Cada aba tem um badge visual indicando a forca do argumento comercial:
 """)
 
     if st.button("Ir para Inteligencia", key="intel_go"):
-        st.switch_page("pages/7_🎯_Inteligencia.py")
+        st.switch_page("pages/2_🏫_Escolas.py")
 
 
 # #############################################################################
@@ -1758,7 +1761,7 @@ adiciona-la ao pipeline.
 
 **Passo a passo**:
 
-1. **Va em Importar**
+1. **Va em 🔍 Prospectar → Buscar no Brasil**
    - Se a escola ja esta no CRM, va direto ao passo 3
    - Se nao, importe pelo CSV (filtre por nome ou INEP)
 
@@ -1766,24 +1769,24 @@ adiciona-la ao pipeline.
    - Busque pelo nome da escola
    - Confirme que os dados estao corretos (endereco, porte, etapas)
 
-3. **Va em Pipeline > Execucao**
+3. **Va em 🔍 Prospectar → 📦 Preparar escolas**
    - Selecione a escola
    - Clique **Qualificar** — veja o score
    - Clique **Enriquecer** — busque dados web
    - Clique **Encontrar Contatos** — localize o diretor(a)
 
 4. **Gere o Email**
-   - Clique **Gerar Email** no Pipeline
+   - Use **▶ Preparar** (ja gera a mensagem) ou as etapas individuais
    - O email vai para a fila de aprovacao
 
-5. **Aprove em Comunicacao**
-   - Va em Comunicacao > Aprovacao
+5. **Aprove em Mensagens**
+   - Va em ✉️ Mensagens > ⏳ Aguardando
    - Leia o email gerado
    - Aprove, edite ou peca reescrita
    - Apos aprovacao, o email e enviado automaticamente
 
 6. **Acompanhe**
-   - Em Comunicacao > Metricas, veja se foi aberto
+   - Em ✉️ Mensagens > 📊 Metricas, veja se foi aberto
    - Em 3 dias, o follow-up automatico sera gerado (se nao abriu)
 """)
 
@@ -1793,8 +1796,7 @@ adiciona-la ao pipeline.
 
 **Passo a passo**:
 
-1. **Va em Inteligencia**
-   - Selecione a aba **Ranking P1/P2/P3**
+1. **Va em 🔍 Prospectar → ⭐ Recomendadas** (o antigo Ranking P1/P2/P3)
    - Filtre por: Privadas, Porte Medio+, Amostra Confiavel
 
 2. **Analise as P1**

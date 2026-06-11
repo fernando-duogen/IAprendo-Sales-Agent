@@ -1081,10 +1081,10 @@ if st.session_state.escola_detail_id:
         # Decision tree (do mais especifico para o mais geral)
         if has_reply:
             return {"label": "Responder a escola (resposta recebida)", "icon": "reply",
-                    "page": "Comunicacao", "type": "success"}
+                    "page": "mensagens", "type": "success"}
         if n_pending > 0:
             return {"label": f"Aprovar mensagem(ns) na fila ({n_pending})", "icon": "mark_email_read",
-                    "page": "Comunicacao", "type": "warning"}
+                    "page": "mensagens", "type": "warning"}
         if last_sent:
             try:
                 _sent_dt = _dt.fromisoformat(str(last_sent["sent_at"]).replace("Z", "+00:00"))
@@ -1096,19 +1096,19 @@ if st.session_state.escola_detail_id:
                         "page": None, "type": "info"}
             else:
                 return {"label": f"Gerar follow-up ({_days_since} dias sem resposta)", "icon": "autorenew",
-                        "page": "Comunicacao", "type": "warning"}
+                        "page": "mensagens", "type": "warning"}
         if st_status == "raw":
             return {"label": "Qualificar com IA (selecione no Pipeline)", "icon": "grading",
-                    "page": "Pipeline", "type": "info"}
+                    "page": "prospectar", "type": "info"}
         if st_status in ("qualified", "filtered") and n_contacts == 0:
             return {"label": "Buscar decisores (Enriquecer no Pipeline)", "icon": "person_search",
-                    "page": "Pipeline", "type": "info"}
+                    "page": "prospectar", "type": "info"}
         if n_contacts > 0 and n_with_email == 0:
             return {"label": "Buscar emails dos contatos (Pipeline > Enriquecer)", "icon": "alternate_email",
-                    "page": "Pipeline", "type": "warning"}
+                    "page": "prospectar", "type": "warning"}
         if st_status in ("qualified", "enriched") and n_with_email > 0:
             return {"label": "Gerar email (Pipeline > Gerar)", "icon": "edit_note",
-                    "page": "Pipeline", "type": "info"}
+                    "page": "prospectar", "type": "info"}
         return None
 
     _next = _next_action_for_school(company, company_id)
@@ -1121,7 +1121,7 @@ if st.session_state.escola_detail_id:
                 f'<a href="/{_next["page"]}" target="_self" '
                 f'style="background:{_bg};color:white;padding:6px 14px;border-radius:6px;'
                 f'text-decoration:none;font-weight:600;font-size:13px;margin-left:auto">'
-                f'Ir para {_next["page"]} &rarr;</a>'
+                f'Ir para {"Mensagens" if _next["page"] == "mensagens" else "Prospectar"} &rarr;</a>'
             )
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;'
@@ -1943,8 +1943,13 @@ if st.session_state.escola_detail_id:
 # MODO LISTA (tabela com data_editor)
 # ===========================================================================
 else:
-    tab_lista, tab_redes = st.tabs(["📋 Lista", "🔗 Redes"])
-    with tab_lista:
+    _ESC_SECOES = ["📋 Lista", "👥 Pessoas", "🔗 Redes", "🔬 Inteligencia"]
+    if st.session_state.get("escolas_secao") not in _ESC_SECOES:
+        st.session_state["escolas_secao"] = "📋 Lista"
+    _esc_sec = st.segmented_control(
+        "Secao", _ESC_SECOES, key="escolas_secao", label_visibility="collapsed",
+    ) or "📋 Lista"
+    if _esc_sec == "📋 Lista":
         section_header("Escolas", "school")
 
         # Buscar dados — inclui campos ricos do Censo 2025
@@ -1955,7 +1960,7 @@ else:
                 "inep_code, created_at, fonte_dados, "
                 "matriculas_fund_af, matriculas_medio, total_docentes, "
                 "qt_coordenadores, nivel_tecnologico, urgency_score, urgency_tier, "
-                "commercial_stage, owner_username"
+                "commercial_stage, owner_username, latitude, longitude"
             ).order("created_at", desc=True).limit(1000).execute()
             rows = result.data or []
         except Exception as e:
@@ -1963,7 +1968,7 @@ else:
             st.stop()
 
         if not rows:
-            alert_banner("Nenhuma escola importada. Use '1 - Importar Escolas' para comecar.", "info")
+            alert_banner("Nenhuma escola importada. Use 🔍 Prospectar → Buscar no Brasil para comecar.", "info")
             st.stop()
 
         df = pd.DataFrame(rows)
@@ -2198,264 +2203,281 @@ else:
                 alert_banner(msg_text, "info")
             st.session_state.escola_msg = None
 
-        # --- Tabela interativa com selecao por clique ---
-        _ALL_COLS = [c for c in [
-            "name", "Abrir", "city", "UF", "Bairro", "Etapa", "Fund AF", "Medio",
-            "Potencial R$", "Urgencia", "Dono", "Tipo", "Porte", "Tech",
-            "Potencial", "Gap ENEM", "Trajet. Peer", "Coord", "Fit",
-            "Score", "Status", "Fonte", "Importado",
-        ] if c in df_f.columns]
-        _COL_PRESETS = {
-            "Comercial": ["name", "Abrir", "city", "UF", "Etapa", "Fund AF", "Medio",
-                          "Potencial R$", "Urgencia", "Fit", "Dono"],
-            "Essencial": ["name", "Abrir", "city", "UF", "Etapa", "Potencial R$", "Dono"],
-            "Censo & ENEM": ["name", "Abrir", "city", "UF", "Tipo", "Porte", "Fund AF",
-                             "Medio", "Tech", "Coord", "Potencial", "Gap ENEM",
-                             "Trajet. Peer"],
-            "Tudo": list(_ALL_COLS),
-        }
-        with st.popover("Colunas", icon=":material/view_column:"):
-            _preset = st.radio(
-                "Conjunto", list(_COL_PRESETS.keys()), horizontal=True,
-                key="esc_cols_preset",
-            )
-            _default_cols = [c for c in _COL_PRESETS[_preset] if c in _ALL_COLS]
-            table_cols = st.multiselect(
-                "Colunas visiveis", _ALL_COLS, default=_default_cols,
-                key=f"esc_cols_custom_{_preset}",
-                format_func=lambda c: {"name": "Escola", "city": "Cidade"}.get(c, c),
-            )
-        if not table_cols:
-            table_cols = _COL_PRESETS["Comercial"]
-        table_cols = [c for c in table_cols if c in df_f.columns]
-        col_config = {
-            "name": st.column_config.TextColumn("Escola", width="large"),
-            "city": st.column_config.TextColumn("Cidade", width="small"),
-            "UF": st.column_config.TextColumn("UF", width="small", disabled=True),
-            "Bairro": st.column_config.TextColumn("Bairro", width="small", disabled=True),
-            "Tipo": st.column_config.TextColumn("Tipo", width="small", disabled=True),
-            "Fund AF": st.column_config.NumberColumn(
-                "Fund AF", width="small", disabled=True,
-                help="Matriculas no Ensino Fundamental Anos Finais (6o-9o) — alvo IAprendo",
-            ),
-            "Medio": st.column_config.NumberColumn(
-                "Medio", width="small", disabled=True,
-                help="Matriculas no Ensino Medio (1o-3o) — alvo IAprendo",
-            ),
-            "Tech": st.column_config.TextColumn(
-                "Tech", width="small", disabled=True,
-                help="Nivel tecnologico da escola (Alto/Medio/Baixo)",
-            ),
-            "Potencial": st.column_config.TextColumn(
-                "Potencial ENEM", width="small", disabled=True,
-                help="Potencial de melhoria ENEM 2024 (Alto=🔥 / Medio=🟡 / Baixo=🟢 / —=sem amostra confiavel)",
-            ),
-            "Gap ENEM": st.column_config.NumberColumn(
-                "Gap peer", width="small", disabled=True, format="%+.1f",
-                help="Gap (pts) vs peer group em 2024. Negativo=abaixo dos pares (oportunidade).",
-            ),
-            "Trajet. Peer": st.column_config.TextColumn(
-                "Trajet. peer", width="small", disabled=True,
-                help="Trajetoria 5 anos do peer group (escolas do mesmo municipio × mesma dependencia). NAO e da escola individual.",
-            ),
-            "Coord": st.column_config.NumberColumn(
-                "Coord", width="small", disabled=True,
-                help="Quantidade de coordenadores pedagogicos",
-            ),
-            "Fit": st.column_config.ProgressColumn(
-                "Fit", min_value=0, max_value=100, width="small",
-                help="Fit IAprendo: 0-100, deterministico, baseado em alvo×tech×coord×categoria",
-            ),
-            "Score": st.column_config.NumberColumn("Score", min_value=0, max_value=100, width="small"),
-            "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
-            "Etapa": st.column_config.TextColumn(
-                "Etapa", width="small", disabled=True,
-                help="Etapa unica da escola no funil (status + kanban)",
-            ),
-            "Potencial R$": st.column_config.NumberColumn(
-                "Potencial R$/mes", width="small", disabled=True, format="R$ %d",
-                help="Alunos-alvo (Fund AF + Medio) x ticket por aluno",
-            ),
-            "Urgencia": st.column_config.TextColumn(
-                "Prioridade", width="small", disabled=True,
-                help="Prioridade de atendimento (score de urgencia 0-100)",
-            ),
-            "Dono": st.column_config.TextColumn(
-                "Dono", width="small", disabled=True,
-                help="Vendedor responsavel pela escola",
-            ),
-            "Abrir": st.column_config.LinkColumn(
-                "Ficha", display_text="↗ abrir", width="small",
-                help="Abre a ficha completa da escola",
-            ),
-            "Porte": st.column_config.TextColumn("Porte", width="small", disabled=True),
-            "Fonte": st.column_config.TextColumn("Fonte", width="small", disabled=True),
-            "Importado": st.column_config.TextColumn("Importado", width="small", disabled=True),
-        }
-
-        # Sinalizacao de contagem (1.1 Quick Win): total/filtrado/filtros ativos
-        from dashboard._table_count import render_count, summarize_filters
-        _filter_summary = summarize_filters({
-            "status": sel_status if sel_status else None,
-            "tipo": sel_type if sel_type else None,
-            "score": f"{score_range[0]}-{score_range[1]}" if (score_range[0] > 0 or score_range[1] < 100) else None,
-            "tech": sel_tech if sel_tech else None,
-            "fonte": sel_fonte if sel_fonte else None,
-            "fund>=": min_fund if min_fund > 0 else None,
-            "medio>=": min_medio if min_medio > 0 else None,
-            "fit>=": min_fit if min_fit > 0 else None,
-            "potencial": sel_pot if sel_pot else None,
-            "trajetoria": sel_traj if sel_traj else None,
-            "gap<=": max_gap if max_gap < 200 else None,
-            "busca": search if search else None,
-            "dono": sel_owner_esc if sel_owner_esc else None,
-        })
-        render_count(
-            total=len(df),
-            filtered=len(df_f),
-            filter_summary=_filter_summary,
-            label_singular="escola",
-            label_plural="escolas",
-        )
-        st.caption("Clique em uma linha para ver acoes. Edite Status e Score diretamente na tabela.")
-
-        df_f_reset = df_f.reset_index(drop=True)
-        edited_df = st.data_editor(
-            df_f_reset[table_cols],
-            use_container_width=True,
-            hide_index=True,
-            column_config=col_config,
-            num_rows="fixed",
-            key="escola_table",
-            on_change=None,
-        )
-
-        # Detect inline edits and save them (so quando Status+Score visiveis)
-        if edited_df is not None and "Status" in edited_df.columns                 and "Score" in edited_df.columns:
-            for idx_row in range(min(len(df_f_reset), len(edited_df))):
-                orig_status = df_f_reset.iloc[idx_row]["Status"]
-                orig_score = df_f_reset.iloc[idx_row]["Score"]
-                new_status = edited_df.iloc[idx_row]["Status"]
-                new_score = edited_df.iloc[idx_row]["Score"]
-                if new_status != orig_status or new_score != orig_score:
-                    cid = df_f_reset.iloc[idx_row]["id"]
-                    updates = {}
-                    if new_status != orig_status:
-                        updates["status"] = PT_TO_EN.get(new_status, "raw")
-                    if new_score != orig_score:
-                        updates["qualification_score"] = int(new_score)
-                    if updates:
-                        db.update_company(cid, updates)
-
-        # --- Barra de acoes rapidas (logo abaixo da tabela) ---
-        st.markdown(
-            '<p style="font-size:12px;font-weight:600;color:#757575;text-transform:uppercase;'
-            'letter-spacing:0.5px;margin-top:12px;margin-bottom:4px">Acoes rapidas</p>',
-            unsafe_allow_html=True,
-        )
-
-        escola_options = df_f_reset[["id", "name"]].values.tolist()
-        if escola_options:
-            escola_names = [row[1] for row in escola_options]
-            # Linha 1: Seletor + Ver detalhes
-            ac_row1_1, ac_row1_2 = st.columns([4, 1])
-            with ac_row1_1:
-                selected_escola_idx = st.selectbox(
-                    "Escola:", range(len(escola_names)),
-                    format_func=lambda i: escola_names[i],
-                    label_visibility="collapsed",
-                    placeholder="Selecione uma escola...",
+        # --- Alternador Tabela/Mapa (rodada 5 — pedido do dono/mockup) ---
+        _ver_como = st.segmented_control(
+            "Ver como", ["📋 Tabela", "🗺️ Mapa"],
+            key="escolas_ver_como", label_visibility="collapsed",
+        ) or "📋 Tabela"
+        if _ver_como == "📋 Tabela":
+            # --- Tabela interativa com selecao por clique ---
+            _ALL_COLS = [c for c in [
+                "name", "Abrir", "city", "UF", "Bairro", "Etapa", "Fund AF", "Medio",
+                "Potencial R$", "Urgencia", "Dono", "Tipo", "Porte", "Tech",
+                "Potencial", "Gap ENEM", "Trajet. Peer", "Coord", "Fit",
+                "Score", "Status", "Fonte", "Importado",
+            ] if c in df_f.columns]
+            _COL_PRESETS = {
+                "Comercial": ["name", "Abrir", "city", "UF", "Etapa", "Fund AF", "Medio",
+                              "Potencial R$", "Urgencia", "Fit", "Dono"],
+                "Essencial": ["name", "Abrir", "city", "UF", "Etapa", "Potencial R$", "Dono"],
+                "Censo & ENEM": ["name", "Abrir", "city", "UF", "Tipo", "Porte", "Fund AF",
+                                 "Medio", "Tech", "Coord", "Potencial", "Gap ENEM",
+                                 "Trajet. Peer"],
+                "Tudo": list(_ALL_COLS),
+            }
+            with st.popover("Colunas", icon=":material/view_column:"):
+                _preset = st.radio(
+                    "Conjunto", list(_COL_PRESETS.keys()), horizontal=True,
+                    key="esc_cols_preset",
                 )
-            with ac_row1_2:
-                if st.button("Ver detalhes", type="primary", icon=":material/open_in_new:",
-                              use_container_width=True):
-                    go_to_detail(escola_options[selected_escola_idx][0])
-                    st.rerun()
-            # Linha 2: Alterar status + Excluir
-            ac_row2_1, ac_row2_2, ac_row2_3 = st.columns([2, 1, 1])
-            with ac_row2_1:
-                new_st = st.selectbox("Alterar status para:", list(STATUS_PT.values()), key="quick_st",
-                                       label_visibility="collapsed")
-            with ac_row2_2:
-                if st.button("Alterar status", icon=":material/edit:", use_container_width=True):
-                    cid = escola_options[selected_escola_idx][0]
-                    new_en = PT_TO_EN.get(new_st, "raw")
-                    db.reset_company_status(cid, new_en)
-                    st.toast(f"Status alterado para {new_st}!")
-                    st.rerun()
-            with ac_row2_3:
-                if st.button("Excluir escola", icon=":material/delete:", use_container_width=True):
-                    st.session_state["confirm_single_delete"] = escola_options[selected_escola_idx]
+                _default_cols = [c for c in _COL_PRESETS[_preset] if c in _ALL_COLS]
+                table_cols = st.multiselect(
+                    "Colunas visiveis", _ALL_COLS, default=_default_cols,
+                    key=f"esc_cols_custom_{_preset}",
+                    format_func=lambda c: {"name": "Escola", "city": "Cidade"}.get(c, c),
+                )
+            if not table_cols:
+                table_cols = _COL_PRESETS["Comercial"]
+            table_cols = [c for c in table_cols if c in df_f.columns]
+            col_config = {
+                "name": st.column_config.TextColumn("Escola", width="large"),
+                "city": st.column_config.TextColumn("Cidade", width="small"),
+                "UF": st.column_config.TextColumn("UF", width="small", disabled=True),
+                "Bairro": st.column_config.TextColumn("Bairro", width="small", disabled=True),
+                "Tipo": st.column_config.TextColumn("Tipo", width="small", disabled=True),
+                "Fund AF": st.column_config.NumberColumn(
+                    "Fund AF", width="small", disabled=True,
+                    help="Matriculas no Ensino Fundamental Anos Finais (6o-9o) — alvo IAprendo",
+                ),
+                "Medio": st.column_config.NumberColumn(
+                    "Medio", width="small", disabled=True,
+                    help="Matriculas no Ensino Medio (1o-3o) — alvo IAprendo",
+                ),
+                "Tech": st.column_config.TextColumn(
+                    "Tech", width="small", disabled=True,
+                    help="Nivel tecnologico da escola (Alto/Medio/Baixo)",
+                ),
+                "Potencial": st.column_config.TextColumn(
+                    "Potencial ENEM", width="small", disabled=True,
+                    help="Potencial de melhoria ENEM 2024 (Alto=🔥 / Medio=🟡 / Baixo=🟢 / —=sem amostra confiavel)",
+                ),
+                "Gap ENEM": st.column_config.NumberColumn(
+                    "Gap peer", width="small", disabled=True, format="%+.1f",
+                    help="Gap (pts) vs peer group em 2024. Negativo=abaixo dos pares (oportunidade).",
+                ),
+                "Trajet. Peer": st.column_config.TextColumn(
+                    "Trajet. peer", width="small", disabled=True,
+                    help="Trajetoria 5 anos do peer group (escolas do mesmo municipio × mesma dependencia). NAO e da escola individual.",
+                ),
+                "Coord": st.column_config.NumberColumn(
+                    "Coord", width="small", disabled=True,
+                    help="Quantidade de coordenadores pedagogicos",
+                ),
+                "Fit": st.column_config.ProgressColumn(
+                    "Fit", min_value=0, max_value=100, width="small",
+                    help="Fit IAprendo: 0-100, deterministico, baseado em alvo×tech×coord×categoria",
+                ),
+                "Score": st.column_config.NumberColumn("Score", min_value=0, max_value=100, width="small"),
+                "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
+                "Etapa": st.column_config.TextColumn(
+                    "Etapa", width="small", disabled=True,
+                    help="Etapa unica da escola no funil (status + kanban)",
+                ),
+                "Potencial R$": st.column_config.NumberColumn(
+                    "Potencial R$/mes", width="small", disabled=True, format="R$ %d",
+                    help="Alunos-alvo (Fund AF + Medio) x ticket por aluno",
+                ),
+                "Urgencia": st.column_config.TextColumn(
+                    "Prioridade", width="small", disabled=True,
+                    help="Prioridade de atendimento (score de urgencia 0-100)",
+                ),
+                "Dono": st.column_config.TextColumn(
+                    "Dono", width="small", disabled=True,
+                    help="Vendedor responsavel pela escola",
+                ),
+                "Abrir": st.column_config.LinkColumn(
+                    "Ficha", display_text="↗ abrir", width="small",
+                    help="Abre a ficha completa da escola",
+                ),
+                "Porte": st.column_config.TextColumn("Porte", width="small", disabled=True),
+                "Fonte": st.column_config.TextColumn("Fonte", width="small", disabled=True),
+                "Importado": st.column_config.TextColumn("Importado", width="small", disabled=True),
+            }
 
-        # Confirmacao de exclusao individual
-        if st.session_state.get("confirm_single_delete"):
-            del_id, del_name = st.session_state["confirm_single_delete"]
-            alert_banner(f"Confirma exclusao de <strong>{del_name}</strong> e todos os dados?", "error")
-            cd1, cd2 = st.columns(2)
-            with cd1:
-                if st.button("Sim, excluir", type="primary", key="confirm_del_single"):
-                    db.delete_company(del_id)
-                    st.session_state.escola_msg = ("success", f"{del_name} excluida.")
-                    st.session_state.pop("confirm_single_delete", None)
-                    st.rerun()
-            with cd2:
-                if st.button("Cancelar", key="cancel_del_single"):
-                    st.session_state.pop("confirm_single_delete", None)
-                    st.rerun()
+            # Sinalizacao de contagem (1.1 Quick Win): total/filtrado/filtros ativos
+            from dashboard._table_count import render_count, summarize_filters
+            _filter_summary = summarize_filters({
+                "status": sel_status if sel_status else None,
+                "tipo": sel_type if sel_type else None,
+                "score": f"{score_range[0]}-{score_range[1]}" if (score_range[0] > 0 or score_range[1] < 100) else None,
+                "tech": sel_tech if sel_tech else None,
+                "fonte": sel_fonte if sel_fonte else None,
+                "fund>=": min_fund if min_fund > 0 else None,
+                "medio>=": min_medio if min_medio > 0 else None,
+                "fit>=": min_fit if min_fit > 0 else None,
+                "potencial": sel_pot if sel_pot else None,
+                "trajetoria": sel_traj if sel_traj else None,
+                "gap<=": max_gap if max_gap < 200 else None,
+                "busca": search if search else None,
+                "dono": sel_owner_esc if sel_owner_esc else None,
+            })
+            render_count(
+                total=len(df),
+                filtered=len(df_f),
+                filter_summary=_filter_summary,
+                label_singular="escola",
+                label_plural="escolas",
+            )
+            st.caption("Clique em uma linha para ver acoes. Edite Status e Score diretamente na tabela.")
 
-        # --- Acoes em massa ---
-        with st.expander("Acoes em massa (todas as filtradas)"):
-            am_col1, am_col2, am_col3 = st.columns(3)
-            with am_col1:
-                new_status_pt = st.selectbox("Novo status:", list(STATUS_PT.values()), key="bulk_st")
-            with am_col2:
-                if st.button(f"Alterar {len(df_f)} escolas", icon=":material/edit:", use_container_width=True):
-                    new_en = PT_TO_EN.get(new_status_pt, "raw")
-                    for cid in df_f["id"].tolist():
+            df_f_reset = df_f.reset_index(drop=True)
+            edited_df = st.data_editor(
+                df_f_reset[table_cols],
+                use_container_width=True,
+                hide_index=True,
+                column_config=col_config,
+                num_rows="fixed",
+                key="escola_table",
+                on_change=None,
+            )
+
+            # Detect inline edits and save them (so quando Status+Score visiveis)
+            if edited_df is not None and "Status" in edited_df.columns                 and "Score" in edited_df.columns:
+                for idx_row in range(min(len(df_f_reset), len(edited_df))):
+                    orig_status = df_f_reset.iloc[idx_row]["Status"]
+                    orig_score = df_f_reset.iloc[idx_row]["Score"]
+                    new_status = edited_df.iloc[idx_row]["Status"]
+                    new_score = edited_df.iloc[idx_row]["Score"]
+                    if new_status != orig_status or new_score != orig_score:
+                        cid = df_f_reset.iloc[idx_row]["id"]
+                        updates = {}
+                        if new_status != orig_status:
+                            updates["status"] = PT_TO_EN.get(new_status, "raw")
+                        if new_score != orig_score:
+                            updates["qualification_score"] = int(new_score)
+                        if updates:
+                            db.update_company(cid, updates)
+
+            # --- Barra de acoes rapidas (logo abaixo da tabela) ---
+            st.markdown(
+                '<p style="font-size:12px;font-weight:600;color:#757575;text-transform:uppercase;'
+                'letter-spacing:0.5px;margin-top:12px;margin-bottom:4px">Acoes rapidas</p>',
+                unsafe_allow_html=True,
+            )
+
+            escola_options = df_f_reset[["id", "name"]].values.tolist()
+            if escola_options:
+                escola_names = [row[1] for row in escola_options]
+                # Linha 1: Seletor + Ver detalhes
+                ac_row1_1, ac_row1_2 = st.columns([4, 1])
+                with ac_row1_1:
+                    selected_escola_idx = st.selectbox(
+                        "Escola:", range(len(escola_names)),
+                        format_func=lambda i: escola_names[i],
+                        label_visibility="collapsed",
+                        placeholder="Selecione uma escola...",
+                    )
+                with ac_row1_2:
+                    if st.button("Ver detalhes", type="primary", icon=":material/open_in_new:",
+                                  use_container_width=True):
+                        go_to_detail(escola_options[selected_escola_idx][0])
+                        st.rerun()
+                # Linha 2: Alterar status + Excluir
+                ac_row2_1, ac_row2_2, ac_row2_3 = st.columns([2, 1, 1])
+                with ac_row2_1:
+                    new_st = st.selectbox("Alterar status para:", list(STATUS_PT.values()), key="quick_st",
+                                           label_visibility="collapsed")
+                with ac_row2_2:
+                    if st.button("Alterar status", icon=":material/edit:", use_container_width=True):
+                        cid = escola_options[selected_escola_idx][0]
+                        new_en = PT_TO_EN.get(new_st, "raw")
                         db.reset_company_status(cid, new_en)
-                    st.session_state.escola_msg = ("success", f"Status de {len(df_f)} escolas alterado.")
-                    st.rerun()
-            with am_col3:
-                if st.button(f"Excluir {len(df_f)} escolas", icon=":material/delete_forever:",
-                              use_container_width=True):
-                    st.session_state["confirm_bulk_delete"] = df_f["id"].tolist()
+                        st.toast(f"Status alterado para {new_st}!")
+                        st.rerun()
+                with ac_row2_3:
+                    if st.button("Excluir escola", icon=":material/delete:", use_container_width=True):
+                        st.session_state["confirm_single_delete"] = escola_options[selected_escola_idx]
 
-            if st.session_state.get("confirm_bulk_delete"):
-                ids_to_del = st.session_state["confirm_bulk_delete"]
-                alert_banner(f"Confirma exclusao de {len(ids_to_del)} escolas e todos os dados?", "error")
+            # Confirmacao de exclusao individual
+            if st.session_state.get("confirm_single_delete"):
+                del_id, del_name = st.session_state["confirm_single_delete"]
+                alert_banner(f"Confirma exclusao de <strong>{del_name}</strong> e todos os dados?", "error")
                 cd1, cd2 = st.columns(2)
                 with cd1:
-                    if st.button("Sim, excluir tudo", type="primary"):
-                        deleted = db.bulk_delete_companies(ids_to_del)
-                        st.session_state.escola_msg = ("success", f"{deleted} escolas excluidas.")
-                        st.session_state.pop("confirm_bulk_delete", None)
+                    if st.button("Sim, excluir", type="primary", key="confirm_del_single"):
+                        db.delete_company(del_id)
+                        st.session_state.escola_msg = ("success", f"{del_name} excluida.")
+                        st.session_state.pop("confirm_single_delete", None)
                         st.rerun()
                 with cd2:
-                    if st.button("Cancelar", key="cancel_del"):
-                        st.session_state.pop("confirm_bulk_delete", None)
+                    if st.button("Cancelar", key="cancel_del_single"):
+                        st.session_state.pop("confirm_single_delete", None)
                         st.rerun()
 
-        # --- Exportar (1-clique, respeita filtros + colunas visiveis) ---
-        st.divider()
-        _exp_cols = [c for c in (["inep_code"] + table_cols) if c in df_f.columns]
-        _exp_x, _exp_c, _ = st.columns([1.6, 1, 3.4])
-        with _exp_x:
-            import io as _io
-            try:
-                _buf = _io.BytesIO()
-                with pd.ExcelWriter(_buf, engine="openpyxl") as _xw:
-                    df_f[_exp_cols].to_excel(_xw, index=False, sheet_name="Escolas")
-                st.download_button(
-                    "Exportar XLSX", _buf.getvalue(), "escolas.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    icon=":material/download:", type="primary",
-                    help="Escolas filtradas, com as colunas visiveis na tabela",
-                )
-            except Exception:
-                pass
-        with _exp_c:
-            csv = df_f[_exp_cols].to_csv(index=False)
-            st.download_button("CSV", csv, "escolas.csv", "text/csv")
+            # --- Acoes em massa ---
+            with st.expander("Acoes em massa (todas as filtradas)"):
+                am_col1, am_col2, am_col3 = st.columns(3)
+                with am_col1:
+                    new_status_pt = st.selectbox("Novo status:", list(STATUS_PT.values()), key="bulk_st")
+                with am_col2:
+                    if st.button(f"Alterar {len(df_f)} escolas", icon=":material/edit:", use_container_width=True):
+                        new_en = PT_TO_EN.get(new_status_pt, "raw")
+                        for cid in df_f["id"].tolist():
+                            db.reset_company_status(cid, new_en)
+                        st.session_state.escola_msg = ("success", f"Status de {len(df_f)} escolas alterado.")
+                        st.rerun()
+                with am_col3:
+                    if st.button(f"Excluir {len(df_f)} escolas", icon=":material/delete_forever:",
+                                  use_container_width=True):
+                        st.session_state["confirm_bulk_delete"] = df_f["id"].tolist()
 
-    with tab_redes:
+                if st.session_state.get("confirm_bulk_delete"):
+                    ids_to_del = st.session_state["confirm_bulk_delete"]
+                    alert_banner(f"Confirma exclusao de {len(ids_to_del)} escolas e todos os dados?", "error")
+                    cd1, cd2 = st.columns(2)
+                    with cd1:
+                        if st.button("Sim, excluir tudo", type="primary"):
+                            deleted = db.bulk_delete_companies(ids_to_del)
+                            st.session_state.escola_msg = ("success", f"{deleted} escolas excluidas.")
+                            st.session_state.pop("confirm_bulk_delete", None)
+                            st.rerun()
+                    with cd2:
+                        if st.button("Cancelar", key="cancel_del"):
+                            st.session_state.pop("confirm_bulk_delete", None)
+                            st.rerun()
+
+            # --- Exportar (1-clique, respeita filtros + colunas visiveis) ---
+            st.divider()
+            _exp_cols = [c for c in (["inep_code"] + table_cols) if c in df_f.columns]
+            _exp_x, _exp_c, _ = st.columns([1.6, 1, 3.4])
+            with _exp_x:
+                import io as _io
+                try:
+                    _buf = _io.BytesIO()
+                    with pd.ExcelWriter(_buf, engine="openpyxl") as _xw:
+                        df_f[_exp_cols].to_excel(_xw, index=False, sheet_name="Escolas")
+                    st.download_button(
+                        "Exportar XLSX", _buf.getvalue(), "escolas.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        icon=":material/download:", type="primary",
+                        help="Escolas filtradas, com as colunas visiveis na tabela",
+                    )
+                except Exception:
+                    pass
+            with _exp_c:
+                csv = df_f[_exp_cols].to_csv(index=False)
+                st.download_button("CSV", csv, "escolas.csv", "text/csv")
+        else:
+            from dashboard.helpers.mapa_view import render_mapa_escolas
+            render_mapa_escolas(df_f)
+
+    elif _esc_sec == "👥 Pessoas":
+        from dashboard.helpers.contatos_view import render_contatos
+        render_contatos()
+
+    elif _esc_sec == "🔗 Redes":
         render_redes_view()
+
+    elif _esc_sec == "🔬 Inteligencia":
+        from dashboard.helpers.inteligencia_view import render_inteligencia
+        render_inteligencia()

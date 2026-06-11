@@ -55,13 +55,10 @@ pages = {
         st.Page("pages/9_⚙️_Configuracoes.py", title="Ajustes", icon="⚙️", url_path="ajustes"),
         st.Page("pages/10_📖_Manual.py", title="Ajuda", icon="❓", url_path="ajuda"),
     ],
-    "Base (em migracao)": [
-        # Importar foi ABSORVIDO por Prospectar > Buscar no Brasil (rodada 1)
-        st.Page("pages/3_👥_Contatos.py", title="Contatos", icon="👥", url_path="contatos"),
-        st.Page("pages/4_🗺️_Mapa.py", title="Mapa", icon="🗺️", url_path="mapa"),
-        st.Page("pages/7_🎯_Inteligencia.py", title="Inteligencia", icon="🎯", url_path="inteligencia"),
-    ],
 }
+# Rodada 5: "Base (em migracao)" acabou — Contatos virou Escolas → 👥 Pessoas,
+# Mapa virou o alternador Tabela/Mapa da lista, Inteligencia virou
+# Escolas → 🔬 Inteligencia (ranking ja vivia em Prospectar → Recomendadas).
 pg = st.navigation(pages, position="sidebar", expanded=True)
 
 # =========================================================================

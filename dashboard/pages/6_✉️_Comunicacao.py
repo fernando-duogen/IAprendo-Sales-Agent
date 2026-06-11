@@ -1338,7 +1338,7 @@ with tab_followups:
                         with st.spinner("Gerando mensagens de follow-up..."):
                             result = follow_up_manager.run_follow_up_check()
                         alert_banner(
-                            f"Gerados {result.get('generated', 0)} follow-ups! Veja na aba Aprovacao.",
+                            f"Gerados {result.get('generated', 0)} follow-ups! Veja na aba ⏳ Aguardando.",
                             "success",
                         )
                 else:
@@ -2307,7 +2307,7 @@ with tab_templates:
         f'PDFs marcados como <strong>ativos</strong> sao anexados '
         f'<strong>automaticamente</strong> em todos os emails enviados por voce '
         f'(iniciais e follow-ups). Voce pode excluir/incluir individualmente por '
-        f'mensagem na aba <em>Aprovacao</em>. Limite recomendado: <strong>10 MB</strong> por anexo.'
+        f'mensagem na aba <em>⏳ Aguardando</em>. Limite recomendado: <strong>10 MB</strong> por anexo.'
         f'</div>',
         unsafe_allow_html=True,
     )
