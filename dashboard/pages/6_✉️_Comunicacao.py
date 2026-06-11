@@ -46,9 +46,9 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------------------
-breadcrumb(["IAprendo", "Comunicacao"])
-st.markdown("# Comunicacao")
-st.caption("Aprovacao, follow-ups, templates e metricas em um so lugar.")
+breadcrumb(["IAprendo", "Mensagens"])
+st.markdown("# Mensagens")
+st.caption("Toda a comunicacao em um lugar: aprovar, acompanhar, responder e gerenciar modelos.")
 
 # ---------------------------------------------------------------------------
 # Session state defaults (prefixados para evitar colisao)
@@ -59,74 +59,58 @@ if "refresh" not in st.session_state:
     st.session_state.refresh = 0
 
 # ---------------------------------------------------------------------------
-# TABS PRINCIPAIS
+# Contagens p/ os chips de estado (mockup mensagens.html)
 # ---------------------------------------------------------------------------
-tab_aprovacao, tab_followups, tab_templates, tab_metricas, tab_whatsapp = st.tabs([
-    "📬 Aprovacao",
-    "📨 Follow-ups",
-    "📝 Templates",
-    "📊 Metricas",
+pending = queue_manager.get_pending(limit=50)
+total = len(pending)
+
+
+def _count_status(_status: str) -> int:
+    try:
+        return (
+            db.client.table("approval_queue")
+            .select("id", count="exact")
+            .eq("status", _status)
+            .execute()
+        ).count or 0
+    except Exception:
+        return 0
+
+
+approved_count = _count_status("approved")
+sent_count = _count_status("sent")
+rejected_count = _count_status("rejected")
+
+# ---------------------------------------------------------------------------
+# ESTADOS DE TOPO (mockup mensagens.html): fila unica por estado + Modelos
+# ---------------------------------------------------------------------------
+(tab_aguardando, tab_aprovadas, tab_enviadas, tab_recebidas, tab_followups,
+ tab_templates, tab_whatsapp, tab_metricas) = st.tabs([
+    f"⏳ Aguardando ({total})",
+    f"✅ Aprovadas ({approved_count})",
+    f"📤 Enviadas ({sent_count})",
+    "💬 Recebidas",
+    "🔁 Follow-ups",
+    "📄 Modelos",
     "📱 WhatsApp",
+    "📊 Metricas",
 ])
+
+# Aliases v1 -> v2: os blocos existentes renderizam nos estados novos
+# sem mover codigo (as sub-abas da v1 viraram estados de topo)
+tab_aprovacao = tab_aguardando
+aprov_tab_pending = tab_aguardando
+aprov_tab_approved = tab_aprovadas
+aprov_tab_sent = tab_enviadas
+aprov_tab_inbox = tab_recebidas
 
 
 # =============================================================================
 # TAB 1: APROVACAO  (fonte: 8_Aprovacao.py)
 # =============================================================================
 with tab_aprovacao:
-
-    # --- Carregar dados ---
-    pending = queue_manager.get_pending(limit=50)
-    total = len(pending)
-
-    try:
-        approved_count = (
-            db.client.table("approval_queue")
-            .select("id", count="exact")
-            .eq("status", "approved")
-            .execute()
-        ).count or 0
-    except Exception:
-        approved_count = 0
-    try:
-        sent_count = (
-            db.client.table("approval_queue")
-            .select("id", count="exact")
-            .eq("status", "sent")
-            .execute()
-        ).count or 0
-    except Exception:
-        sent_count = 0
-    try:
-        rejected_count = (
-            db.client.table("approval_queue")
-            .select("id", count="exact")
-            .eq("status", "rejected")
-            .execute()
-        ).count or 0
-    except Exception:
-        rejected_count = 0
-
-    # --- Metricas rapidas ---
-    mc1, mc2, mc3, mc4 = st.columns(4)
-    with mc1:
-        metric_card("Pendentes", total, COLORS["warning"], icon="pending_actions")
-    with mc2:
-        metric_card("Aprovadas", approved_count, COLORS["success"], icon="check_circle")
-    with mc3:
-        metric_card("Enviadas", sent_count, COLORS["info"], icon="send")
-    with mc4:
-        metric_card("Rejeitadas", rejected_count, COLORS["error"], icon="cancel")
-
-    st.markdown("")
-
-    # --- Sub-tabs dentro de Aprovacao ---
-    aprov_tab_pending, aprov_tab_approved, aprov_tab_sent, aprov_tab_inbox = st.tabs([
-        f"Pendentes ({total})",
-        f"Aprovadas ({approved_count})",
-        f"Enviadas ({sent_count})",
-        "🧠 Inbox de Respostas",
-    ])
+    # (metricas rapidas da v1 sairam — as contagens vivem nos chips de estado)
+    pass
 
     # ---- Sub-tab: Aprovadas (aguardando envio) ----
     with aprov_tab_approved:
@@ -1116,11 +1100,57 @@ with tab_aprovacao:
     # SUB-TAB: INBOX DE RESPOSTAS (F7 - Classificacao LLM de replies)
     # =========================================================================
     with aprov_tab_inbox:
-        section_header("Inbox de Respostas", "mark_chat_unread")
+        section_header("Respostas recebidas", "mark_chat_unread")
         st.caption(
             "Respostas recebidas classificadas automaticamente pelo LLM. "
             "Cada linha mostra a intencao detectada e uma acao sugerida."
         )
+
+        # --- Registrar resposta recebida fora da plataforma (blueprint v1.4) ---
+        with st.expander("Registrar resposta recebida fora da plataforma",
+                         icon=":material/move_to_inbox:"):
+            st.caption("Alguem respondeu por outro canal (telefone, WhatsApp pessoal, "
+                       "e-mail fora do Brevo)? Registre aqui pra valer no historico e nas metas.")
+            try:
+                _rr_schools = (
+                    db.client.table("companies").select("id, name, city")
+                    .order("last_interaction_at", desc=True).limit(300).execute().data or []
+                )
+            except Exception:
+                _rr_schools = []
+            if _rr_schools:
+                with st.form(key="comm_form_resposta_manual"):
+                    _rr_idx = st.selectbox(
+                        "Escola que respondeu:", range(len(_rr_schools)),
+                        format_func=lambda i: (
+                            f"{_rr_schools[i]['name']} — {_rr_schools[i].get('city') or '?'}"
+                        ),
+                    )
+                    _rr_canal = st.selectbox(
+                        "Canal:", ["email", "whatsapp", "ligacao"],
+                        format_func=lambda c: {"email": "✉️ E-mail",
+                                               "whatsapp": "📱 WhatsApp",
+                                               "ligacao": "📞 Ligacao"}[c],
+                    )
+                    _rr_texto = st.text_area("Resumo/corpo da resposta:", height=120,
+                                             placeholder="O que a escola disse?")
+                    if st.form_submit_button("Registrar resposta", type="primary"):
+                        if not _rr_texto.strip():
+                            st.error("Descreva a resposta.")
+                        else:
+                            try:
+                                db.register_manual_interaction(
+                                    company_id=_rr_schools[_rr_idx]["id"],
+                                    channel=_rr_canal,
+                                    direction="received",
+                                    notes=_rr_texto.strip(),
+                                    source="dashboard",
+                                )
+                                st.success("Resposta registrada no historico da escola.")
+                            except Exception as _e_rr:
+                                st.error(f"Erro ao registrar: {_e_rr}")
+            else:
+                st.info("Nenhuma escola no CRM ainda.")
 
         # Filtros
         col_f1, col_f2, col_f3 = st.columns(3)
@@ -1224,8 +1254,12 @@ with tab_aprovacao:
                             f"</div>",
                             unsafe_allow_html=True,
                         )
+                        _full_reply = rep.get("reply_text") or ""
+                        if len(_full_reply) > 250:
+                            with st.expander("Ver resposta completa"):
+                                st.markdown(f"> {_full_reply}")
                     with col_action:
-                        if st.button("Gerar resposta", key=f"inbox_respond_{rep.get('queue_id', idx)}", use_container_width=True):
+                        if st.button("🤖 Responder com IA", key=f"inbox_respond_{rep.get('queue_id', idx)}", use_container_width=True):
                             st.session_state["inbox_generate_queue_id"] = rep.get("queue_id")
                             st.session_state["inbox_generate_company_id"] = rep.get("company_id")
                             st.toast("IAlex esta gerando resposta... verificar aba Pendentes em ~10s", icon="🤖")
@@ -1656,6 +1690,455 @@ with tab_followups:
 # =============================================================================
 with tab_templates:
 
+    # --- Banner: selecao automatica de modelo (mockup mensagens.html) ---
+    st.markdown(
+        '<div style="background:#FFF8E6;border:1px solid #F5D982;border-radius:10px;'
+        'padding:12px 16px;margin-bottom:14px;font-size:13px;color:#7A5C00;line-height:1.5">'
+        '⚡ <strong>Selecao automatica:</strong> ao gerar mensagens no modo '
+        '"Template auto por alvo", o sistema escolhe o modelo certo pela matriz '
+        'publico (👤 nominal / 🏫 generico) × dados (📊 matriculas / ENEM). '
+        'Voce so precisa manter a matriz de cobertura completa (veja em Criar Novo).</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ---- Templates de Mensagem (CRUD) ----
+
+    # Carregar templates existentes
+    try:
+        templates = db.client.table("message_templates").select("*").order("created_at", desc=True).execute().data or []
+    except Exception as e:
+        st.error(f"Erro ao buscar templates: {e}")
+        templates = []
+
+    # Visibilidade (blueprint v1.4): compartilhados (default) + os meus.
+    # Tolerante a migration 020 pendente (sem coluna -> mostra tudo).
+    try:
+        from utils.sender_profile import get_active_sender_username as _tpl_me
+        _me_tpl = _tpl_me()
+        templates = [
+            t for t in templates
+            if (t.get("visibility") or "shared") == "shared"
+            or t.get("owner_username") in (None, _me_tpl)
+        ]
+    except Exception:
+        pass
+
+    # Sub-tabs: Gerenciar / Criar / Variaveis / Preview
+    tpl_tab_manage, tpl_tab_create, tpl_tab_vars, tpl_tab_preview = st.tabs([
+        "Templates", "Criar Novo", "Variaveis", "Preview",
+    ])
+
+    # --- Gerenciar Templates ---
+    with tpl_tab_manage:
+        if not templates:
+            alert_banner("Nenhum template criado ainda. Use a aba 'Criar Novo' para criar o primeiro.", "info")
+        else:
+            total_tpl = len(templates)
+            active_count_tpl = len([t for t in templates if t.get("is_active")])
+            default_count_tpl = len([t for t in templates if t.get("is_default")])
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                metric_card("Total", total_tpl, icon="description", color=COLORS["primary"])
+            with c2:
+                metric_card("Ativos", active_count_tpl, icon="check_circle", color=COLORS["success"])
+            with c3:
+                metric_card("Padrao", default_count_tpl, icon="star", color=COLORS["accent"])
+
+            st.markdown('<div class="mt-2"></div>', unsafe_allow_html=True)
+
+            for tmpl in templates:
+                tid = tmpl["id"]
+                name = tmpl.get("name", "?")
+                is_default = tmpl.get("is_default", False)
+                is_active = tmpl.get("is_active", True)
+                target = tmpl.get("target_role")
+                target_label = ROLE_LABELS.get(target, "Todos") if target else "Todos"
+
+                badges = ""
+                if is_default:
+                    badges += status_badge("approved", "Padrao")
+                if is_active:
+                    badges += " " + status_badge("active", "Ativo")
+                else:
+                    badges += " " + status_badge("paused", "Inativo")
+
+                _chip_css = ('display:inline-block;padding:2px 9px;border-radius:20px;'
+                             'font-size:11px;font-weight:600;margin-right:5px;'
+                             'background:#EEF2FF;color:#4338CA;border:1px solid #E0E7FF')
+                _aud_tpl = tmpl.get("audience_type")
+                _dat_tpl = tmpl.get("data_profile")
+                _vis_tpl = (tmpl.get("visibility") or "shared")
+                _chips_tpl = ""
+                if _aud_tpl:
+                    _chips_tpl += (f'<span style="{_chip_css}">'
+                                   f'{"👤 Nominal" if _aud_tpl == "nominal" else "🏫 Generico"}</span>')
+                if _dat_tpl:
+                    _lbl_dat = {"ambos": "📊 Matriculas+ENEM", "matriculas": "📋 Matriculas",
+                                "enem": "📈 ENEM", "nenhum": "📭 Sem dados"}.get(_dat_tpl, _dat_tpl)
+                    _chips_tpl += f'<span style="{_chip_css}">{_lbl_dat}</span>'
+                _chips_tpl += (f'<span style="{_chip_css}">'
+                               f'{"🌐 Compartilhado" if _vis_tpl == "shared" else "🔒 Pessoal"}</span>')
+                st.markdown(
+                    f'<div class="data-card">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+                    f'<strong style="font-size:15px">{name}</strong>'
+                    f'<div>{badges}</div></div>'
+                    f'<div style="margin-bottom:6px">{_chips_tpl}</div>'
+                    f'<div style="font-size:13px;color:#757575">Cargo: {target_label} | '
+                    f'Assunto: {(tmpl.get("subject_template") or "")[:50]}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+                is_editing = st.session_state.get(f"comm_editing_{tid}", False)
+
+                if not is_editing:
+                    with st.expander(f"Ver corpo e acoes: {name}", expanded=False):
+                        st.markdown(f"**Assunto:** {tmpl.get('subject_template', '')}")
+                        st.text_area(
+                            "Corpo:", value=tmpl.get("body_template", ""), height=150,
+                            disabled=True, key=f"comm_view_body_{tid}",
+                        )
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            if st.button("Editar", key=f"comm_edit_{tid}"):
+                                st.session_state[f"comm_editing_{tid}"] = True
+                                st.rerun()
+                        with col2:
+                            if not is_default and is_active:
+                                if st.button("Tornar Padrao", key=f"comm_default_{tid}"):
+                                    try:
+                                        db.client.table("message_templates").update(
+                                            {"is_default": False}
+                                        ).eq("is_default", True).execute()
+                                        db.client.table("message_templates").update(
+                                            {"is_default": True}
+                                        ).eq("id", tid).execute()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro: {e}")
+                        with col3:
+                            if is_active:
+                                if st.button("Desativar", key=f"comm_deactivate_{tid}"):
+                                    try:
+                                        db.client.table("message_templates").update(
+                                            {"is_active": False, "is_default": False}
+                                        ).eq("id", tid).execute()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro: {e}")
+                            else:
+                                if st.button("Reativar", key=f"comm_reactivate_{tid}"):
+                                    try:
+                                        db.client.table("message_templates").update(
+                                            {"is_active": True}
+                                        ).eq("id", tid).execute()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro: {e}")
+                        with col4:
+                            if st.button("Excluir", key=f"comm_delete_{tid}"):
+                                try:
+                                    db.client.table("message_templates").delete().eq("id", tid).execute()
+                                    alert_banner("Template excluido!", "success")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro: {e}")
+                else:
+                    with st.expander(f"Editando: {name}", expanded=True):
+                        with st.form(key=f"comm_edit_form_{tid}"):
+                            edit_name = st.text_input(
+                                "Nome:", value=tmpl.get("name", ""), key=f"comm_edit_name_{tid}"
+                            )
+                            edit_role = st.selectbox(
+                                "Para qual cargo?",
+                                ["Todos"] + [ROLE_LABELS[r] for r in ALL_ROLE_TYPES],
+                                index=(
+                                    0 if not target
+                                    else (
+                                        [0] + [
+                                            i + 1
+                                            for i, r in enumerate(ALL_ROLE_TYPES)
+                                            if r == target
+                                        ] or [0]
+                                    )[0]
+                                    if target in ALL_ROLE_TYPES
+                                    else 0
+                                ),
+                                key=f"comm_edit_role_{tid}",
+                            )
+                            # Selecao automatica por alvo
+                            _AUD_OPTS_E = {
+                                "Qualquer": None,
+                                "Pessoa nominal (diretor, coordenador...)": "nominal",
+                                "Genérico (secretaria@, contato@...)": "generico",
+                            }
+                            _DATA_OPTS_E = {
+                                "Qualquer": None,
+                                "Matrículas + ENEM (ideal)": "ambos",
+                                "Só Matrículas (Censo)": "matriculas",
+                                "Só ENEM": "enem",
+                                "Nenhum (sem dados ricos)": "nenhum",
+                            }
+                            _aud_keys = list(_AUD_OPTS_E.keys())
+                            _data_keys = list(_DATA_OPTS_E.keys())
+                            _cur_aud = (tmpl.get("audience_type") or "")
+                            _cur_data = (tmpl.get("data_profile") or "")
+                            _aud_idx = next((i for i, k in enumerate(_aud_keys) if _AUD_OPTS_E[k] == (_cur_aud or None)), 0)
+                            _data_idx = next((i for i, k in enumerate(_data_keys) if _DATA_OPTS_E[k] == (_cur_data or None)), 0)
+                            _ec1, _ec2 = st.columns(2)
+                            with _ec1:
+                                edit_audience = st.selectbox(
+                                    "Público-alvo:", _aud_keys, index=_aud_idx, key=f"comm_edit_aud_{tid}",
+                                )
+                            with _ec2:
+                                edit_data = st.selectbox(
+                                    "Dados que usa:", _data_keys, index=_data_idx, key=f"comm_edit_data_{tid}",
+                                )
+                            edit_subject = st.text_input(
+                                "Assunto:", value=tmpl.get("subject_template", ""), key=f"comm_edit_subj_{tid}"
+                            )
+                            edit_body = st.text_area(
+                                "Corpo:", value=tmpl.get("body_template", ""), height=250, key=f"comm_edit_body_{tid}"
+                            )
+                            fc1, fc2 = st.columns(2)
+                            with fc1:
+                                save_btn = st.form_submit_button("Salvar alteracoes", type="primary")
+                            with fc2:
+                                cancel_btn = st.form_submit_button("Cancelar")
+
+                            if save_btn:
+                                new_target = None
+                                for key, label in ROLE_LABELS.items():
+                                    if label == edit_role:
+                                        new_target = key
+                                        break
+                                try:
+                                    db.client.table("message_templates").update({
+                                        "name": edit_name,
+                                        "subject_template": edit_subject,
+                                        "body_template": edit_body,
+                                        "target_role": new_target,
+                                        "audience_type": _AUD_OPTS_E[edit_audience],
+                                        "data_profile": _DATA_OPTS_E[edit_data],
+                                    }).eq("id", tid).execute()
+                                    st.session_state[f"comm_editing_{tid}"] = False
+                                    alert_banner("Template atualizado!", "success")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao salvar: {e}")
+                            if cancel_btn:
+                                st.session_state[f"comm_editing_{tid}"] = False
+                                st.rerun()
+
+    # --- Criar Novo Template ---
+    with tpl_tab_create:
+        section_header("Novo Template", "add_circle_outline")
+
+        # Opcoes pra selecao automatica por alvo (audience x dados)
+        _AUDIENCE_OPTS = {
+            "Qualquer": None,
+            "Pessoa nominal (diretor, coordenador...)": "nominal",
+            "Genérico (secretaria@, contato@...)": "generico",
+        }
+        _DATA_OPTS = {
+            "Qualquer": None,
+            "Matrículas + ENEM (ideal)": "ambos",
+            "Só Matrículas (Censo)": "matriculas",
+            "Só ENEM": "enem",
+            "Nenhum (sem dados ricos)": "nenhum",
+        }
+
+        with st.form(key="comm_new_template_form"):
+            t_name = st.text_input("Nome do template:", placeholder="Nominal · Matrículas+ENEM")
+            t_role = st.selectbox(
+                "Para qual cargo? (legado, opcional)", ["Todos"] + [ROLE_LABELS[r] for r in ALL_ROLE_TYPES],
+                key="comm_new_tpl_role",
+            )
+            st.markdown("**Seleção automática por alvo** (usado no modo 'Template auto por alvo')")
+            _ac1, _ac2 = st.columns(2)
+            with _ac1:
+                t_audience_label = st.selectbox(
+                    "Público-alvo:", list(_AUDIENCE_OPTS.keys()), key="comm_new_tpl_audience",
+                    help="Pra quem este template foi escrito. 'Genérico' usa saudação institucional.",
+                )
+            with _ac2:
+                t_data_label = st.selectbox(
+                    "Dados que o template usa:", list(_DATA_OPTS.keys()), key="comm_new_tpl_data",
+                    help="Só será escolhido se a escola tiver esses dados. Ex: 'Matrículas+ENEM' exige ambos.",
+                )
+            t_subject = st.text_input(
+                "Assunto (max 60 chars):",
+                placeholder="IAprendo -- tecnologia para {school_name}",
+            )
+            t_body = st.text_area(
+                "Corpo da mensagem:", height=250,
+                placeholder="Prezado(a) {contact_name}, Sou {sender_name}, da IAprendo... Att, {sender_name}",
+            )
+            t_default = st.checkbox("Marcar como padrao", value=not templates)
+            t_vis_label = st.selectbox(
+                "Visibilidade:", ["🌐 Compartilhado (todo o time)", "🔒 Pessoal (so eu)"],
+                key="comm_new_tpl_vis",
+                help="Compartilhado e o padrao: o time todo ve e usa. Pessoal so aparece pra voce.",
+            )
+            submit = st.form_submit_button("Salvar Template", type="primary")
+            if submit:
+                if not t_name or not t_subject or not t_body:
+                    st.error("Preencha todos os campos.")
+                else:
+                    target = None
+                    for key, label in ROLE_LABELS.items():
+                        if label == t_role:
+                            target = key
+                            break
+                    try:
+                        if t_default:
+                            db.client.table("message_templates").update(
+                                {"is_default": False}
+                            ).eq("is_default", True).execute()
+                        try:
+                            from utils.sender_profile import get_active_sender_username as _gnu
+                            _vis_owner = _gnu()
+                        except Exception:
+                            _vis_owner = None
+                        _is_personal = t_vis_label.startswith("🔒")
+                        new_tmpl = {
+                            "name": t_name,
+                            "subject_template": t_subject,
+                            "body_template": t_body,
+                            "target_role": target,
+                            "audience_type": _AUDIENCE_OPTS[t_audience_label],
+                            "data_profile": _DATA_OPTS[t_data_label],
+                            "is_active": True,
+                            "is_default": t_default,
+                            "visibility": "personal" if _is_personal else "shared",
+                            "owner_username": _vis_owner if _is_personal else None,
+                        }
+                        try:
+                            db.client.table("message_templates").insert(new_tmpl).execute()
+                        except Exception as _e_ins:
+                            # Guard: colunas opcionais podem nao existir se as
+                            # migrations (selector cols / 020 visibility) nao rodaram.
+                            if "column" in str(_e_ins).lower() or any(
+                                _c in str(_e_ins) for _c in
+                                ("audience_type", "data_profile", "visibility", "owner_username")
+                            ):
+                                for _c in ("audience_type", "data_profile",
+                                           "visibility", "owner_username"):
+                                    new_tmpl.pop(_c, None)
+                                db.client.table("message_templates").insert(new_tmpl).execute()
+                                st.warning("Template criado, MAS sem selecao automatica/"
+                                           "visibilidade. Rode as migrations pendentes "
+                                           "(add_template_selector_cols / APLICAR-020).")
+                            else:
+                                raise
+                        alert_banner(f"Template '{t_name}' criado!", "success")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
+
+        # --- Matriz de cobertura (quais combos audience x dados ja tem template) ---
+        st.divider()
+        section_header("Matriz de cobertura (seleção automática)", "grid_view")
+        st.caption(
+            "Mostra quais combinações de alvo já têm template. O ideal é cobrir pelo menos "
+            "⭐ (nominal+ambos) e o último (genérico+sem dados, fallback universal)."
+        )
+        try:
+            from utils.template_selector import matriz_cobertura
+            _cob = matriz_cobertura(templates)
+            _cob_cols = st.columns(2)
+            for _i, _item in enumerate(_cob):
+                with _cob_cols[_i % 2]:
+                    _icon = "✅" if _item["coberto"] else "⬜"
+                    _names = ", ".join(_item["templates"][:2]) if _item["templates"] else "_(faltando)_"
+                    st.markdown(f"{_icon} **{_item['label']}** — {_names}")
+        except Exception as _e_cob:
+            st.caption(f"(matriz indisponivel: {_e_cob})")
+
+    # --- Variaveis Disponiveis ---
+    with tpl_tab_vars:
+        section_header("Variaveis Disponiveis", "data_object")
+        st.markdown(
+            "Use estas variaveis no assunto e corpo do template. "
+            "Elas serao substituidas automaticamente pelos dados reais de cada escola."
+        )
+
+        for var, desc in TEMPLATE_VARIABLES.items():
+            var_code = "{" + var + "}"
+            st.markdown(
+                f'<div class="data-card" style="display:flex;align-items:center;gap:16px;padding:10px 16px">'
+                f'<code style="background:#E3F2FD;color:#1565C0;padding:4px 12px;border-radius:6px;'
+                f'font-size:13px;font-weight:600;white-space:nowrap">{var_code}</code>'
+                f'<span style="font-size:13px;color:#757575">{desc}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    # --- Preview com Dados Reais ---
+    with tpl_tab_preview:
+        section_header("Preview com Dados Reais", "preview")
+        active_templates = [t for t in templates if t.get("is_active")]
+        if not active_templates:
+            alert_banner("Crie um template ativo para ver o preview.", "info")
+        else:
+            try:
+                schools_preview = db.client.table("companies").select(
+                    "id,name,city,state,education_levels,admin_category,qualification_score"
+                ).order("qualification_score", desc=True).limit(20).execute().data or []
+            except Exception:
+                schools_preview = []
+
+            if schools_preview:
+                col_tmpl, col_school = st.columns(2)
+                with col_tmpl:
+                    selected_tmpl = st.selectbox(
+                        "Template:",
+                        active_templates,
+                        format_func=lambda t: t.get("name", "?"),
+                        key="comm_preview_tmpl",
+                    )
+                with col_school:
+                    selected_school = st.selectbox(
+                        "Escola:",
+                        schools_preview,
+                        format_func=lambda s: f"{s.get('name', '?')} ({s.get('city', '')})",
+                        key="comm_preview_school",
+                    )
+
+                if selected_tmpl and selected_school:
+                    contacts_preview = db.client.table("contacts").select("*").eq(
+                        "company_id", selected_school["id"]
+                    ).order("outreach_priority").execute().data or []
+                    contact_preview = contacts_preview[0] if contacts_preview else {"full_name": "Diretor(a)", "role": "Diretor(a)"}
+
+                    rendered = render_template(
+                        selected_tmpl["subject_template"],
+                        selected_tmpl["body_template"],
+                        selected_school,
+                        contact_preview,
+                    )
+
+                    st.markdown(
+                        f'<div class="data-card" style="border-left:4px solid {COLORS["primary"]}">'
+                        f'<div style="font-size:13px;color:#757575;margin-bottom:4px">Assunto:</div>'
+                        f'<div style="font-size:15px;font-weight:600;margin-bottom:12px">{rendered["subject"]}</div>'
+                        f'<div style="font-size:13px;color:#757575;margin-bottom:4px">Corpo:</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.text_area(
+                        "Corpo renderizado:",
+                        value=rendered["body"],
+                        height=200,
+                        disabled=True,
+                        key="comm_preview_result",
+                    )
+            else:
+                alert_banner("Nenhuma escola no banco para preview.", "info")
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
     # ---- Assinatura de Email ----
     section_header("Assinatura de Email", "draw")
 
@@ -2013,394 +2496,6 @@ with tab_templates:
         st.warning(f"Templates de follow-up indisponiveis: {e}")
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-    # ---- Templates de Mensagem (CRUD) ----
-
-    # Carregar templates existentes
-    try:
-        templates = db.client.table("message_templates").select("*").order("created_at", desc=True).execute().data or []
-    except Exception as e:
-        st.error(f"Erro ao buscar templates: {e}")
-        templates = []
-
-    # Sub-tabs: Gerenciar / Criar / Variaveis / Preview
-    tpl_tab_manage, tpl_tab_create, tpl_tab_vars, tpl_tab_preview = st.tabs([
-        "Templates", "Criar Novo", "Variaveis", "Preview",
-    ])
-
-    # --- Gerenciar Templates ---
-    with tpl_tab_manage:
-        if not templates:
-            alert_banner("Nenhum template criado ainda. Use a aba 'Criar Novo' para criar o primeiro.", "info")
-        else:
-            total_tpl = len(templates)
-            active_count_tpl = len([t for t in templates if t.get("is_active")])
-            default_count_tpl = len([t for t in templates if t.get("is_default")])
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                metric_card("Total", total_tpl, icon="description", color=COLORS["primary"])
-            with c2:
-                metric_card("Ativos", active_count_tpl, icon="check_circle", color=COLORS["success"])
-            with c3:
-                metric_card("Padrao", default_count_tpl, icon="star", color=COLORS["accent"])
-
-            st.markdown('<div class="mt-2"></div>', unsafe_allow_html=True)
-
-            for tmpl in templates:
-                tid = tmpl["id"]
-                name = tmpl.get("name", "?")
-                is_default = tmpl.get("is_default", False)
-                is_active = tmpl.get("is_active", True)
-                target = tmpl.get("target_role")
-                target_label = ROLE_LABELS.get(target, "Todos") if target else "Todos"
-
-                badges = ""
-                if is_default:
-                    badges += status_badge("approved", "Padrao")
-                if is_active:
-                    badges += " " + status_badge("active", "Ativo")
-                else:
-                    badges += " " + status_badge("paused", "Inativo")
-
-                st.markdown(
-                    f'<div class="data-card">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-                    f'<strong style="font-size:15px">{name}</strong>'
-                    f'<div>{badges}</div></div>'
-                    f'<div style="font-size:13px;color:#757575">Cargo: {target_label} | '
-                    f'Assunto: {(tmpl.get("subject_template") or "")[:50]}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-                is_editing = st.session_state.get(f"comm_editing_{tid}", False)
-
-                if not is_editing:
-                    with st.expander(f"Ver corpo e acoes: {name}", expanded=False):
-                        st.markdown(f"**Assunto:** {tmpl.get('subject_template', '')}")
-                        st.text_area(
-                            "Corpo:", value=tmpl.get("body_template", ""), height=150,
-                            disabled=True, key=f"comm_view_body_{tid}",
-                        )
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            if st.button("Editar", key=f"comm_edit_{tid}"):
-                                st.session_state[f"comm_editing_{tid}"] = True
-                                st.rerun()
-                        with col2:
-                            if not is_default and is_active:
-                                if st.button("Tornar Padrao", key=f"comm_default_{tid}"):
-                                    try:
-                                        db.client.table("message_templates").update(
-                                            {"is_default": False}
-                                        ).eq("is_default", True).execute()
-                                        db.client.table("message_templates").update(
-                                            {"is_default": True}
-                                        ).eq("id", tid).execute()
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro: {e}")
-                        with col3:
-                            if is_active:
-                                if st.button("Desativar", key=f"comm_deactivate_{tid}"):
-                                    try:
-                                        db.client.table("message_templates").update(
-                                            {"is_active": False, "is_default": False}
-                                        ).eq("id", tid).execute()
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro: {e}")
-                            else:
-                                if st.button("Reativar", key=f"comm_reactivate_{tid}"):
-                                    try:
-                                        db.client.table("message_templates").update(
-                                            {"is_active": True}
-                                        ).eq("id", tid).execute()
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro: {e}")
-                        with col4:
-                            if st.button("Excluir", key=f"comm_delete_{tid}"):
-                                try:
-                                    db.client.table("message_templates").delete().eq("id", tid).execute()
-                                    alert_banner("Template excluido!", "success")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro: {e}")
-                else:
-                    with st.expander(f"Editando: {name}", expanded=True):
-                        with st.form(key=f"comm_edit_form_{tid}"):
-                            edit_name = st.text_input(
-                                "Nome:", value=tmpl.get("name", ""), key=f"comm_edit_name_{tid}"
-                            )
-                            edit_role = st.selectbox(
-                                "Para qual cargo?",
-                                ["Todos"] + [ROLE_LABELS[r] for r in ALL_ROLE_TYPES],
-                                index=(
-                                    0 if not target
-                                    else (
-                                        [0] + [
-                                            i + 1
-                                            for i, r in enumerate(ALL_ROLE_TYPES)
-                                            if r == target
-                                        ] or [0]
-                                    )[0]
-                                    if target in ALL_ROLE_TYPES
-                                    else 0
-                                ),
-                                key=f"comm_edit_role_{tid}",
-                            )
-                            # Selecao automatica por alvo
-                            _AUD_OPTS_E = {
-                                "Qualquer": None,
-                                "Pessoa nominal (diretor, coordenador...)": "nominal",
-                                "Genérico (secretaria@, contato@...)": "generico",
-                            }
-                            _DATA_OPTS_E = {
-                                "Qualquer": None,
-                                "Matrículas + ENEM (ideal)": "ambos",
-                                "Só Matrículas (Censo)": "matriculas",
-                                "Só ENEM": "enem",
-                                "Nenhum (sem dados ricos)": "nenhum",
-                            }
-                            _aud_keys = list(_AUD_OPTS_E.keys())
-                            _data_keys = list(_DATA_OPTS_E.keys())
-                            _cur_aud = (tmpl.get("audience_type") or "")
-                            _cur_data = (tmpl.get("data_profile") or "")
-                            _aud_idx = next((i for i, k in enumerate(_aud_keys) if _AUD_OPTS_E[k] == (_cur_aud or None)), 0)
-                            _data_idx = next((i for i, k in enumerate(_data_keys) if _DATA_OPTS_E[k] == (_cur_data or None)), 0)
-                            _ec1, _ec2 = st.columns(2)
-                            with _ec1:
-                                edit_audience = st.selectbox(
-                                    "Público-alvo:", _aud_keys, index=_aud_idx, key=f"comm_edit_aud_{tid}",
-                                )
-                            with _ec2:
-                                edit_data = st.selectbox(
-                                    "Dados que usa:", _data_keys, index=_data_idx, key=f"comm_edit_data_{tid}",
-                                )
-                            edit_subject = st.text_input(
-                                "Assunto:", value=tmpl.get("subject_template", ""), key=f"comm_edit_subj_{tid}"
-                            )
-                            edit_body = st.text_area(
-                                "Corpo:", value=tmpl.get("body_template", ""), height=250, key=f"comm_edit_body_{tid}"
-                            )
-                            fc1, fc2 = st.columns(2)
-                            with fc1:
-                                save_btn = st.form_submit_button("Salvar alteracoes", type="primary")
-                            with fc2:
-                                cancel_btn = st.form_submit_button("Cancelar")
-
-                            if save_btn:
-                                new_target = None
-                                for key, label in ROLE_LABELS.items():
-                                    if label == edit_role:
-                                        new_target = key
-                                        break
-                                try:
-                                    db.client.table("message_templates").update({
-                                        "name": edit_name,
-                                        "subject_template": edit_subject,
-                                        "body_template": edit_body,
-                                        "target_role": new_target,
-                                        "audience_type": _AUD_OPTS_E[edit_audience],
-                                        "data_profile": _DATA_OPTS_E[edit_data],
-                                    }).eq("id", tid).execute()
-                                    st.session_state[f"comm_editing_{tid}"] = False
-                                    alert_banner("Template atualizado!", "success")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao salvar: {e}")
-                            if cancel_btn:
-                                st.session_state[f"comm_editing_{tid}"] = False
-                                st.rerun()
-
-    # --- Criar Novo Template ---
-    with tpl_tab_create:
-        section_header("Novo Template", "add_circle_outline")
-
-        # Opcoes pra selecao automatica por alvo (audience x dados)
-        _AUDIENCE_OPTS = {
-            "Qualquer": None,
-            "Pessoa nominal (diretor, coordenador...)": "nominal",
-            "Genérico (secretaria@, contato@...)": "generico",
-        }
-        _DATA_OPTS = {
-            "Qualquer": None,
-            "Matrículas + ENEM (ideal)": "ambos",
-            "Só Matrículas (Censo)": "matriculas",
-            "Só ENEM": "enem",
-            "Nenhum (sem dados ricos)": "nenhum",
-        }
-
-        with st.form(key="comm_new_template_form"):
-            t_name = st.text_input("Nome do template:", placeholder="Nominal · Matrículas+ENEM")
-            t_role = st.selectbox(
-                "Para qual cargo? (legado, opcional)", ["Todos"] + [ROLE_LABELS[r] for r in ALL_ROLE_TYPES],
-                key="comm_new_tpl_role",
-            )
-            st.markdown("**Seleção automática por alvo** (usado no modo 'Template auto por alvo')")
-            _ac1, _ac2 = st.columns(2)
-            with _ac1:
-                t_audience_label = st.selectbox(
-                    "Público-alvo:", list(_AUDIENCE_OPTS.keys()), key="comm_new_tpl_audience",
-                    help="Pra quem este template foi escrito. 'Genérico' usa saudação institucional.",
-                )
-            with _ac2:
-                t_data_label = st.selectbox(
-                    "Dados que o template usa:", list(_DATA_OPTS.keys()), key="comm_new_tpl_data",
-                    help="Só será escolhido se a escola tiver esses dados. Ex: 'Matrículas+ENEM' exige ambos.",
-                )
-            t_subject = st.text_input(
-                "Assunto (max 60 chars):",
-                placeholder="IAprendo -- tecnologia para {school_name}",
-            )
-            t_body = st.text_area(
-                "Corpo da mensagem:", height=250,
-                placeholder="Prezado(a) {contact_name}, Sou {sender_name}, da IAprendo... Att, {sender_name}",
-            )
-            t_default = st.checkbox("Marcar como padrao", value=not templates)
-            submit = st.form_submit_button("Salvar Template", type="primary")
-            if submit:
-                if not t_name or not t_subject or not t_body:
-                    st.error("Preencha todos os campos.")
-                else:
-                    target = None
-                    for key, label in ROLE_LABELS.items():
-                        if label == t_role:
-                            target = key
-                            break
-                    try:
-                        if t_default:
-                            db.client.table("message_templates").update(
-                                {"is_default": False}
-                            ).eq("is_default", True).execute()
-                        new_tmpl = {
-                            "name": t_name,
-                            "subject_template": t_subject,
-                            "body_template": t_body,
-                            "target_role": target,
-                            "audience_type": _AUDIENCE_OPTS[t_audience_label],
-                            "data_profile": _DATA_OPTS[t_data_label],
-                            "is_active": True,
-                            "is_default": t_default,
-                        }
-                        try:
-                            db.client.table("message_templates").insert(new_tmpl).execute()
-                        except Exception as _e_ins:
-                            # Guard: colunas audience_type/data_profile podem nao existir
-                            # se a migration add_template_selector_cols ainda nao rodou.
-                            if "audience_type" in str(_e_ins) or "data_profile" in str(_e_ins) or "column" in str(_e_ins).lower():
-                                new_tmpl.pop("audience_type", None)
-                                new_tmpl.pop("data_profile", None)
-                                db.client.table("message_templates").insert(new_tmpl).execute()
-                                st.warning("Template criado, MAS sem os campos de seleção automática. "
-                                           "Rode a migration add_template_selector_cols pra habilitar.")
-                            else:
-                                raise
-                        alert_banner(f"Template '{t_name}' criado!", "success")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
-
-        # --- Matriz de cobertura (quais combos audience x dados ja tem template) ---
-        st.divider()
-        section_header("Matriz de cobertura (seleção automática)", "grid_view")
-        st.caption(
-            "Mostra quais combinações de alvo já têm template. O ideal é cobrir pelo menos "
-            "⭐ (nominal+ambos) e o último (genérico+sem dados, fallback universal)."
-        )
-        try:
-            from utils.template_selector import matriz_cobertura
-            _cob = matriz_cobertura(templates)
-            _cob_cols = st.columns(2)
-            for _i, _item in enumerate(_cob):
-                with _cob_cols[_i % 2]:
-                    _icon = "✅" if _item["coberto"] else "⬜"
-                    _names = ", ".join(_item["templates"][:2]) if _item["templates"] else "_(faltando)_"
-                    st.markdown(f"{_icon} **{_item['label']}** — {_names}")
-        except Exception as _e_cob:
-            st.caption(f"(matriz indisponivel: {_e_cob})")
-
-    # --- Variaveis Disponiveis ---
-    with tpl_tab_vars:
-        section_header("Variaveis Disponiveis", "data_object")
-        st.markdown(
-            "Use estas variaveis no assunto e corpo do template. "
-            "Elas serao substituidas automaticamente pelos dados reais de cada escola."
-        )
-
-        for var, desc in TEMPLATE_VARIABLES.items():
-            var_code = "{" + var + "}"
-            st.markdown(
-                f'<div class="data-card" style="display:flex;align-items:center;gap:16px;padding:10px 16px">'
-                f'<code style="background:#E3F2FD;color:#1565C0;padding:4px 12px;border-radius:6px;'
-                f'font-size:13px;font-weight:600;white-space:nowrap">{var_code}</code>'
-                f'<span style="font-size:13px;color:#757575">{desc}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    # --- Preview com Dados Reais ---
-    with tpl_tab_preview:
-        section_header("Preview com Dados Reais", "preview")
-        active_templates = [t for t in templates if t.get("is_active")]
-        if not active_templates:
-            alert_banner("Crie um template ativo para ver o preview.", "info")
-        else:
-            try:
-                schools_preview = db.client.table("companies").select(
-                    "id,name,city,state,education_levels,admin_category,qualification_score"
-                ).order("qualification_score", desc=True).limit(20).execute().data or []
-            except Exception:
-                schools_preview = []
-
-            if schools_preview:
-                col_tmpl, col_school = st.columns(2)
-                with col_tmpl:
-                    selected_tmpl = st.selectbox(
-                        "Template:",
-                        active_templates,
-                        format_func=lambda t: t.get("name", "?"),
-                        key="comm_preview_tmpl",
-                    )
-                with col_school:
-                    selected_school = st.selectbox(
-                        "Escola:",
-                        schools_preview,
-                        format_func=lambda s: f"{s.get('name', '?')} ({s.get('city', '')})",
-                        key="comm_preview_school",
-                    )
-
-                if selected_tmpl and selected_school:
-                    contacts_preview = db.client.table("contacts").select("*").eq(
-                        "company_id", selected_school["id"]
-                    ).order("outreach_priority").execute().data or []
-                    contact_preview = contacts_preview[0] if contacts_preview else {"full_name": "Diretor(a)", "role": "Diretor(a)"}
-
-                    rendered = render_template(
-                        selected_tmpl["subject_template"],
-                        selected_tmpl["body_template"],
-                        selected_school,
-                        contact_preview,
-                    )
-
-                    st.markdown(
-                        f'<div class="data-card" style="border-left:4px solid {COLORS["primary"]}">'
-                        f'<div style="font-size:13px;color:#757575;margin-bottom:4px">Assunto:</div>'
-                        f'<div style="font-size:15px;font-weight:600;margin-bottom:12px">{rendered["subject"]}</div>'
-                        f'<div style="font-size:13px;color:#757575;margin-bottom:4px">Corpo:</div>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-                    st.text_area(
-                        "Corpo renderizado:",
-                        value=rendered["body"],
-                        height=200,
-                        disabled=True,
-                        key="comm_preview_result",
-                    )
-            else:
-                alert_banner("Nenhuma escola no banco para preview.", "info")
 
 
 # =============================================================================
