@@ -61,6 +61,14 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 if "escola_detail_id" not in st.session_state:
     st.session_state.escola_detail_id = None
+# Deep-link: coluna "Abrir" da lista gera ?escola=<id> (consumido aqui)
+_qp_escola = st.query_params.get("escola")
+if _qp_escola:
+    st.session_state.escola_detail_id = _qp_escola
+    try:
+        del st.query_params["escola"]
+    except Exception:
+        pass
 if "escola_msg" not in st.session_state:
     st.session_state.escola_msg = None
 
@@ -1125,13 +1133,38 @@ if st.session_state.escola_detail_id:
 
     st.markdown("")
 
-    # --- Tabs ---
-    tab_dados, tab_performance, tab_contatos, tab_msgs, tab_registrar, tab_hist, tab_acoes = st.tabs([
-        "Dados", "Performance ENEM", "Contatos", "Mensagens", "Registrar Contato", "Historico", "Acoes"
+    # --- Tabs (v2: 7 -> 4, mockup escola-ficha.html) ---
+    tab_dados, tab_performance, tab_contatos, tab_msgs = st.tabs([
+        "📋 Visao Geral", "📊 Desempenho", "👥 Pessoas", "💬 Conversas"
     ])
+    # Aliases: blocos da v1 renderizam dentro das 4 novas abas, sem mover codigo
+    tab_registrar = tab_msgs   # Registrar contato vive em Conversas
+    tab_hist = tab_msgs        # Historico fecha a aba Conversas
+    tab_acoes = tab_dados      # Acoes (relatorio/graficos/admin) no fim da Visao Geral
 
-    # === TAB DADOS (edicao) ===
+    # === TAB VISAO GERAL ===
     with tab_dados:
+        # --- Argumentos de venda (mockup escola-ficha.html) ---
+        try:
+            from agent.tools.agenda_tools import _build_argumentos
+            _args_venda = _build_argumentos(company)
+        except Exception:
+            _args_venda = []
+        if _args_venda:
+            _itens = "".join(
+                f'<div style="padding:7px 0;border-bottom:1px solid #F1F5F9;'
+                f'font-size:13.5px;color:#334155;line-height:1.45">{a}</div>'
+                for a in _args_venda
+            )
+            st.markdown(
+                f'<div style="background:#FFFFFF;border:1px solid #E2E8F0;'
+                f'border-left:4px solid #6C5CE7;border-radius:10px;'
+                f'padding:14px 18px;margin-bottom:14px">'
+                f'<div style="font-size:11px;font-weight:700;color:#6C5CE7;'
+                f'text-transform:uppercase;letter-spacing:0.7px;margin-bottom:4px">'
+                f'💡 Argumentos de venda</div>{_itens}</div>',
+                unsafe_allow_html=True,
+            )
         section_header("Informacoes da Escola", "edit")
 
         # ----- OWNERSHIP: badge do dono + reatribuicao (admin) -----
@@ -1921,7 +1954,8 @@ else:
                 "school_size, admin_dependency, admin_category, categoria_privada, "
                 "inep_code, created_at, fonte_dados, "
                 "matriculas_fund_af, matriculas_medio, total_docentes, "
-                "qt_coordenadores, nivel_tecnologico, urgency_score, urgency_tier"
+                "qt_coordenadores, nivel_tecnologico, urgency_score, urgency_tier, "
+                "commercial_stage, owner_username"
             ).order("created_at", desc=True).limit(1000).execute()
             rows = result.data or []
         except Exception as e:
@@ -1956,6 +1990,23 @@ else:
             fit = calcular_fit_score(row.to_dict())
             return fit["score"] if fit["score"] is not None else 0
         df["Fit"] = df.apply(_calc_fit, axis=1).astype(int)
+
+        # v2 (mockup escolas.html): Etapa unica (labels), Potencial R$/mes e Dono
+        from dashboard.labels import school_stage_label as _stage_lbl
+        _cs = df["commercial_stage"] if "commercial_stage" in df.columns else None
+        df["Etapa"] = [
+            _stage_lbl(s_, (_cs.iloc[i] if _cs is not None else None))
+            for i, s_ in enumerate(df["status"].fillna("raw"))
+        ]
+        try:
+            from integrations.agenda_config import agenda_config as _ag_cfg
+            _ticket = float(_ag_cfg.ticket_por_aluno())
+        except Exception:
+            _ticket = 7.99
+        df["Potencial R$"] = ((df["Fund AF"] + df["Medio"]) * _ticket).round(0).astype(int)
+        df["Dono"] = (df["owner_username"] if "owner_username" in df.columns
+                      else "").fillna("—")
+        df["Abrir"] = "?escola=" + df["id"].astype(str)
 
         # F2: Urgency badge
         try:
@@ -2051,7 +2102,7 @@ else:
 
         # Quarta linha: GEOGRAFICOS — UF + Cidade (cascata UF -> Cidade)
         # Padrao do Mapa.py / Importar.py (multiselect com cascata).
-        fc_uf, fc_city, _fc_filler = st.columns([1.2, 3, 1.8])
+        fc_uf, fc_city, fc_owner, _fc_filler = st.columns([1.2, 2.4, 1.3, 1.1])
         with fc_uf:
             _all_ufs_esc = sorted([u for u in df["UF"].dropna().unique().tolist() if u]) if "UF" in df.columns else []
             sel_uf_esc = st.multiselect(
@@ -2073,6 +2124,14 @@ else:
                 "Cidade", _all_cities_esc, default=[],
                 label_visibility="collapsed", placeholder="Cidade...",
                 key="esc_filter_city",
+            )
+        with fc_owner:
+            _all_owners = sorted([o for o in df["Dono"].dropna().unique().tolist()
+                                  if o and o != "—"]) if "Dono" in df.columns else []
+            sel_owner_esc = st.multiselect(
+                "Dono", _all_owners, default=[],
+                label_visibility="collapsed", placeholder="Dono...",
+                key="esc_filter_owner",
             )
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2110,6 +2169,8 @@ else:
             df_f = df_f[df_f["UF"].isin(sel_uf_esc)]
         if sel_city_esc and "Cidade" in df_f.columns:
             df_f = df_f[df_f["Cidade"].isin(sel_city_esc)]
+        if sel_owner_esc and "Dono" in df_f.columns:
+            df_f = df_f[df_f["Dono"].isin(sel_owner_esc)]
 
         # --- Metricas ---
         avg = df["Score"].replace(0, pd.NA).dropna().mean()
@@ -2138,9 +2199,35 @@ else:
             st.session_state.escola_msg = None
 
         # --- Tabela interativa com selecao por clique ---
-        table_cols = ["name", "city", "UF", "Bairro", "Tipo", "Fund AF", "Medio", "Tech",
-                      "Potencial", "Gap ENEM", "Trajet. Peer",
-                      "Coord", "Fit", "Score", "Status"]
+        _ALL_COLS = [c for c in [
+            "name", "Abrir", "city", "UF", "Bairro", "Etapa", "Fund AF", "Medio",
+            "Potencial R$", "Urgencia", "Dono", "Tipo", "Porte", "Tech",
+            "Potencial", "Gap ENEM", "Trajet. Peer", "Coord", "Fit",
+            "Score", "Status", "Fonte", "Importado",
+        ] if c in df_f.columns]
+        _COL_PRESETS = {
+            "Comercial": ["name", "Abrir", "city", "UF", "Etapa", "Fund AF", "Medio",
+                          "Potencial R$", "Urgencia", "Fit", "Dono"],
+            "Essencial": ["name", "Abrir", "city", "UF", "Etapa", "Potencial R$", "Dono"],
+            "Censo & ENEM": ["name", "Abrir", "city", "UF", "Tipo", "Porte", "Fund AF",
+                             "Medio", "Tech", "Coord", "Potencial", "Gap ENEM",
+                             "Trajet. Peer"],
+            "Tudo": list(_ALL_COLS),
+        }
+        with st.popover("Colunas", icon=":material/view_column:"):
+            _preset = st.radio(
+                "Conjunto", list(_COL_PRESETS.keys()), horizontal=True,
+                key="esc_cols_preset",
+            )
+            _default_cols = [c for c in _COL_PRESETS[_preset] if c in _ALL_COLS]
+            table_cols = st.multiselect(
+                "Colunas visiveis", _ALL_COLS, default=_default_cols,
+                key=f"esc_cols_custom_{_preset}",
+                format_func=lambda c: {"name": "Escola", "city": "Cidade"}.get(c, c),
+            )
+        if not table_cols:
+            table_cols = _COL_PRESETS["Comercial"]
+        table_cols = [c for c in table_cols if c in df_f.columns]
         col_config = {
             "name": st.column_config.TextColumn("Escola", width="large"),
             "city": st.column_config.TextColumn("Cidade", width="small"),
@@ -2181,6 +2268,29 @@ else:
             ),
             "Score": st.column_config.NumberColumn("Score", min_value=0, max_value=100, width="small"),
             "Status": st.column_config.SelectboxColumn("Status", options=list(STATUS_PT.values()), width="small"),
+            "Etapa": st.column_config.TextColumn(
+                "Etapa", width="small", disabled=True,
+                help="Etapa unica da escola no funil (status + kanban)",
+            ),
+            "Potencial R$": st.column_config.NumberColumn(
+                "Potencial R$/mes", width="small", disabled=True, format="R$ %d",
+                help="Alunos-alvo (Fund AF + Medio) x ticket por aluno",
+            ),
+            "Urgencia": st.column_config.TextColumn(
+                "Prioridade", width="small", disabled=True,
+                help="Prioridade de atendimento (score de urgencia 0-100)",
+            ),
+            "Dono": st.column_config.TextColumn(
+                "Dono", width="small", disabled=True,
+                help="Vendedor responsavel pela escola",
+            ),
+            "Abrir": st.column_config.LinkColumn(
+                "Ficha", display_text="↗ abrir", width="small",
+                help="Abre a ficha completa da escola",
+            ),
+            "Porte": st.column_config.TextColumn("Porte", width="small", disabled=True),
+            "Fonte": st.column_config.TextColumn("Fonte", width="small", disabled=True),
+            "Importado": st.column_config.TextColumn("Importado", width="small", disabled=True),
         }
 
         # Sinalizacao de contagem (1.1 Quick Win): total/filtrado/filtros ativos
@@ -2198,6 +2308,7 @@ else:
             "trajetoria": sel_traj if sel_traj else None,
             "gap<=": max_gap if max_gap < 200 else None,
             "busca": search if search else None,
+            "dono": sel_owner_esc if sel_owner_esc else None,
         })
         render_count(
             total=len(df),
@@ -2219,8 +2330,8 @@ else:
             on_change=None,
         )
 
-        # Detect inline edits and save them
-        if edited_df is not None:
+        # Detect inline edits and save them (so quando Status+Score visiveis)
+        if edited_df is not None and "Status" in edited_df.columns                 and "Score" in edited_df.columns:
             for idx_row in range(min(len(df_f_reset), len(edited_df))):
                 orig_status = df_f_reset.iloc[idx_row]["Status"]
                 orig_score = df_f_reset.iloc[idx_row]["Score"]
@@ -2324,15 +2435,27 @@ else:
                         st.session_state.pop("confirm_bulk_delete", None)
                         st.rerun()
 
-        # --- Exportar ---
+        # --- Exportar (1-clique, respeita filtros + colunas visiveis) ---
         st.divider()
-        csv_cols = [c for c in [
-            "name", "city", "UF", "Bairro", "inep_code", "Tipo", "Porte",
-            "Fund AF", "Medio", "Tech", "Coord", "Fonte",
-            "Status", "Score", "Fit",
-        ] if c in df_f.columns]
-        csv = df_f[csv_cols].to_csv(index=False)
-        st.download_button("Exportar CSV", csv, "escolas.csv", "text/csv", icon=":material/download:")
+        _exp_cols = [c for c in (["inep_code"] + table_cols) if c in df_f.columns]
+        _exp_x, _exp_c, _ = st.columns([1.6, 1, 3.4])
+        with _exp_x:
+            import io as _io
+            try:
+                _buf = _io.BytesIO()
+                with pd.ExcelWriter(_buf, engine="openpyxl") as _xw:
+                    df_f[_exp_cols].to_excel(_xw, index=False, sheet_name="Escolas")
+                st.download_button(
+                    "Exportar XLSX", _buf.getvalue(), "escolas.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    icon=":material/download:", type="primary",
+                    help="Escolas filtradas, com as colunas visiveis na tabela",
+                )
+            except Exception:
+                pass
+        with _exp_c:
+            csv = df_f[_exp_cols].to_csv(index=False)
+            st.download_button("CSV", csv, "escolas.csv", "text/csv")
 
     with tab_redes:
         render_redes_view()

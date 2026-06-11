@@ -33,6 +33,38 @@ st.set_page_config(
 )
 
 # =========================================================================
+# NAVEGACAO v2 — registrar ANTES do auth: num full reload (F5/deep-link) o
+# primeiro run para no gate (st.stop); sem st.navigation declarado, o
+# Streamlit nao reconhece a rota (/escolas etc.) e redireciona pra Home.
+# =========================================================================
+pages = {
+    "": [
+        st.Page("app.py", title="Hoje", icon="🏠", url_path="hoje", default=True),
+        st.Page("pages/0_💬_Chat_IAlex.py", title="IAlex", icon="🤖", url_path="ialex"),
+    ],
+    "Vender": [
+        st.Page("pages/5_📊_Pipeline.py", title="Prospectar", icon="🔍", url_path="prospectar"),
+        st.Page("pages/2_🏫_Escolas.py", title="Escolas", icon="🏫", url_path="escolas"),
+        st.Page("pages/6_✉️_Comunicacao.py", title="Mensagens", icon="✉️", url_path="mensagens"),
+        st.Page("pages/4_💼_Negocios.py", title="Negocios", icon="💼", url_path="negocios"),
+    ],
+    "Acompanhar": [
+        st.Page("pages/8_📈_Analytics.py", title="Resultados", icon="📊", url_path="resultados"),
+    ],
+    "Sistema": [
+        st.Page("pages/9_⚙️_Configuracoes.py", title="Ajustes", icon="⚙️", url_path="ajustes"),
+        st.Page("pages/10_📖_Manual.py", title="Ajuda", icon="❓", url_path="ajuda"),
+    ],
+    "Base (em migracao)": [
+        # Importar foi ABSORVIDO por Prospectar > Buscar no Brasil (rodada 1)
+        st.Page("pages/3_👥_Contatos.py", title="Contatos", icon="👥", url_path="contatos"),
+        st.Page("pages/4_🗺️_Mapa.py", title="Mapa", icon="🗺️", url_path="mapa"),
+        st.Page("pages/7_🎯_Inteligencia.py", title="Inteligencia", icon="🎯", url_path="inteligencia"),
+    ],
+}
+pg = st.navigation(pages, position="sidebar", expanded=True)
+
+# =========================================================================
 # AUTH CENTRAL (uma vez, para todas as paginas)
 # =========================================================================
 import yaml
@@ -70,35 +102,6 @@ with st.sidebar:
             st.error(f"Erro ao trocar senha: {_e}")
 
 # =========================================================================
-# NAVEGACAO v2 (sidebar do mockup) — titulos/icones aqui; arquivos intactos
+# RENDER da pagina ativa (navegacao ja registrada antes do auth)
 # =========================================================================
-_PG = "dashboard/pages"
-
-pages = {
-    "": [
-        st.Page("app.py", title="Hoje", icon="🏠", url_path="hoje", default=True),
-        st.Page(f"pages/0_💬_Chat_IAlex.py", title="IAlex", icon="🤖", url_path="ialex"),
-    ],
-    "Vender": [
-        st.Page(f"pages/5_📊_Pipeline.py", title="Prospectar", icon="🔍", url_path="prospectar"),
-        st.Page(f"pages/2_🏫_Escolas.py", title="Escolas", icon="🏫", url_path="escolas"),
-        st.Page(f"pages/6_✉️_Comunicacao.py", title="Mensagens", icon="✉️", url_path="mensagens"),
-        st.Page(f"pages/4_💼_Negocios.py", title="Negocios", icon="💼", url_path="negocios"),
-    ],
-    "Acompanhar": [
-        st.Page(f"pages/8_📈_Analytics.py", title="Resultados", icon="📊", url_path="resultados"),
-    ],
-    "Sistema": [
-        st.Page(f"pages/9_⚙️_Configuracoes.py", title="Ajustes", icon="⚙️", url_path="ajustes"),
-        st.Page(f"pages/10_📖_Manual.py", title="Ajuda", icon="❓", url_path="ajuda"),
-    ],
-    "Base (em migracao)": [
-        # Importar foi ABSORVIDO por Prospectar > Buscar no Brasil (rodada 1)
-        st.Page(f"pages/3_👥_Contatos.py", title="Contatos", icon="👥", url_path="contatos"),
-        st.Page(f"pages/4_🗺️_Mapa.py", title="Mapa", icon="🗺️", url_path="mapa"),
-        st.Page(f"pages/7_🎯_Inteligencia.py", title="Inteligencia", icon="🎯", url_path="inteligencia"),
-    ],
-}
-
-pg = st.navigation(pages, position="sidebar", expanded=True)
 pg.run()
