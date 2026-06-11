@@ -39,23 +39,73 @@ st.caption(
 # 12 Tabs
 # =============================================================================
 (
-    tab_visao, tab_fluxo, tab_passo, tab_crm,
+    tab_v2, tab_visao, tab_fluxo, tab_passo, tab_crm,
     tab_pipeline, tab_comunicacao, tab_intel, tab_ialex,
     tab_config, tab_boas, tab_usecases, tab_glossario,
 ) = st.tabs([
+    "🆕 O que mudou (v2)",
     "Visao Geral",
     "Fluxograma",
     "Passo a Passo",
     "CRM (Escolas)",
-    "Pipeline",
-    "Comunicacao",
+    "Prospectar (Pipeline)",
+    "Mensagens",
     "Inteligencia ENEM",
     "IAlex (Chat & WhatsApp)",
-    "Configuracoes",
+    "Ajustes",
     "Boas Praticas",
     "Use Cases",
     "Glossario",
 ])
+
+
+# #############################################################################
+# TAB 0 — O QUE MUDOU NA V2 (Rodada 4 do redesign)
+# #############################################################################
+with tab_v2:
+    section_header("A plataforma mudou de cara — mapa rapido", "new_releases")
+    st.markdown("""
+A v2 reorganizou o menu em volta do **dia de venda**: voce abre em **🏠 Hoje**
+(sua agenda do dia), vende pelos espacos do grupo **Vender** e acompanha em
+**Resultados**. Nada foi removido — algumas coisas so mudaram de endereco:
+
+| Onde era (v1) | Onde esta agora (v2) |
+|---|---|
+| Home com KPIs | **🏠 Hoje** — agenda do dia, numeros do dia, "Agir agora", metas |
+| 📥 Importar | **🔍 Prospectar → 🗺️ Buscar no Brasil** |
+| Ranking ENEM (Inteligencia) | **🔍 Prospectar → ⭐ Recomendadas** (com botao "Trabalhar") |
+| 📊 Pipeline (etapas) | **🔍 Prospectar → 📦 Preparar escolas** (1 botao faz tudo) |
+| Kanban comercial (aba do Pipeline) | **💼 Negocios** (pagina propria, com "Mover para ▸") |
+| ✉️ Comunicacao (sub-abas) | **✉️ Mensagens** — estados no topo: Aguardando / Aprovadas / Enviadas / Recebidas / Follow-ups / Modelos |
+| 📝 Templates (escondidos) | **✉️ Mensagens → 📄 Modelos** (com visibilidade compartilhado/pessoal) |
+| Ficha da escola (7 abas) | **🏫 Escolas → ficha em 4 abas**: Visao Geral (c/ Argumentos de venda), Desempenho, Pessoas, Conversas |
+| 📈 Analytics | **📊 Resultados** (+ secao de Metas por vendedor) |
+| ⚙️ Configuracoes | **⚙️ Ajustes** (+ aba 💼 Vendas & Agenda do gestor) |
+
+### Vocabulario novo (o que cada termo quer dizer)
+
+- **Etapa** — a posicao unica da escola no funil (de *Prospectado* ate *Cliente*
+  ou *Perdido*). Substitui a dupla status/kanban da v1.
+- **Prioridade** — quem atender primeiro (🔴 critica, 🟠 alta, 🟡 media, 🔵 baixa),
+  calculada por engajamento + ENEM + sinais. So existe DEPOIS do 1o contato.
+- **Potencial (★)** — o tamanho da oportunidade ANTES do contato (ranking ENEM).
+- **Potencial R$/mes** — alunos-alvo (Fund AF + Medio) × ticket por aluno
+  (configuravel em Ajustes → 💼 Vendas & Agenda).
+- **Atividade** — tarefa com prazo na sua agenda (Hoje). O motor cria e resolve
+  sozinho quando detecta a acao feita ("a agenda nunca mente").
+- **Meta** — objetivo mensal por vendedor (Resultados → Metas). Os numeros vem
+  de eventos imutaveis — mover uma escola de etapa depois nao reescreve o passado.
+- **Em conversa** — leads com dialogo ativo. Ha um teto por vendedor (Ajustes)
+  pra ninguem acumular conversa que nao avanca.
+
+### Por onde comecar (novato, dia 1)
+
+1. Abra **🏠 Hoje** e trabalhe a lista de cima pra baixo (Atrasadas primeiro).
+2. Sem atividades? **🔍 Prospectar → ⭐ Recomendadas** → "Trabalhar esta escola".
+3. Prepare e aprove: **📦 Preparar escolas** → **✉️ Mensagens → ⏳ Aguardando**.
+4. Respostas chegam em **💬 Recebidas**; negocios andam em **💼 Negocios**.
+5. Duvida? Pergunte ao **🤖 IAlex** (ele conhece todas as escolas e seus dados).
+""")
 
 
 # #############################################################################

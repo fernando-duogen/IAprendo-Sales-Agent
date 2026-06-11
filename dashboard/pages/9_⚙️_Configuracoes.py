@@ -544,8 +544,9 @@ def render_diagnostico() -> None:
 # =============================================================================
 # TABS: Configuracoes + Memorias + Diagnostico
 # =============================================================================
-tab_config, tab_memorias, tab_skills, tab_diag = st.tabs([
+tab_config, tab_vendas, tab_memorias, tab_skills, tab_diag = st.tabs([
     "⚙️ Configuracoes",
+    "💼 Vendas & Agenda",
     "🧠 Memorias",
     "⭐ Skills Aprendidas",
     "🩺 Diagnostico",
@@ -1396,3 +1397,130 @@ with tab_skills:
 
 with tab_diag:
     render_diagnostico()
+
+# =============================================================================
+# TAB: VENDAS & AGENDA (Rodada 4 — parametros do agenda_config + matriz modelos)
+# =============================================================================
+with tab_vendas:
+    try:
+        from utils.sender_profile import is_admin as _va_is_admin
+        _va_admin = _va_is_admin()
+    except Exception:
+        _va_admin = False
+
+    from integrations.agenda_config import agenda_config as _ag_cfg
+    _va_cfg = _ag_cfg.get_config()
+
+    section_header("Parametros de venda e agenda", "tune")
+    st.caption(
+        "Valores que alimentam o Potencial R$/mes (Escolas/Prospectar), o teto de "
+        "leads em conversa (Home) e os limites diarios de envio por canal."
+    )
+
+    if not _va_admin:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Ticket por aluno", f"R$ {_va_cfg['ticket_por_aluno']:.2f}")
+        c2.metric("Teto em conversa", _va_cfg["teto_em_conversa"])
+        c3.metric("Limite e-mail/dia", _va_cfg["limite_email_dia"])
+        c4.metric("Limite WhatsApp/dia", _va_cfg["limite_whatsapp_dia"])
+        alert_banner("Somente o gestor (admin) altera estes parametros.", "info")
+    else:
+        with st.form(key="va_form_params"):
+            _vc1, _vc2 = st.columns(2)
+            with _vc1:
+                _va_ticket = st.number_input(
+                    "Ticket por aluno (R$/mes)", min_value=0.10, max_value=500.0,
+                    value=float(_va_cfg["ticket_por_aluno"]), step=0.01, format="%.2f",
+                    help="Base do Potencial R$/mes: alunos-alvo x este valor.",
+                )
+                _va_teto = st.number_input(
+                    "Teto de leads em conversa (por vendedor)", min_value=1, max_value=100,
+                    value=int(_va_cfg["teto_em_conversa"]),
+                    help="Acima disso a Home alerta para fechar ou descartar antes de abrir novos.",
+                )
+            with _vc2:
+                _va_lim_email = st.number_input(
+                    "Limite de e-mails/dia (por vendedor)", min_value=1, max_value=500,
+                    value=int(_va_cfg["limite_email_dia"]),
+                    help="Anti-bloqueio de remetente (reputacao do dominio).",
+                )
+                _va_lim_wpp = st.number_input(
+                    "Limite de WhatsApp/dia (por vendedor)", min_value=1, max_value=200,
+                    value=int(_va_cfg["limite_whatsapp_dia"]),
+                    help="Anti-ban do numero (Baileys).",
+                )
+            if st.form_submit_button("Salvar parametros", type="primary"):
+                _va_cfg.update({
+                    "ticket_por_aluno": _va_ticket,
+                    "teto_em_conversa": int(_va_teto),
+                    "limite_email_dia": int(_va_lim_email),
+                    "limite_whatsapp_dia": int(_va_lim_wpp),
+                })
+                if _ag_cfg.save_config(_va_cfg):
+                    st.success("Parametros salvos. Valem imediatamente em todo o sistema.")
+                else:
+                    st.error("Falha ao salvar — veja os logs.")
+
+        # ----- Ausencias (ferias) — SPEC §5.2 -----
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        section_header("Ausencias (ferias)", "beach_access")
+        st.caption(
+            "Vendedor ausente nao recebe atividades novas do motor da agenda ate a "
+            "data marcada; os leads dele seguem visiveis pro gestor reatribuir."
+        )
+        try:
+            from workflows.activity_engine import all_usernames as _va_all_users
+            _va_users = sorted(_va_all_users())
+        except Exception:
+            _va_users = []
+        _va_away = _va_cfg.get("away") or {}
+        if _va_away:
+            for _u, _until in sorted(_va_away.items()):
+                _ac1, _ac2 = st.columns([4, 1])
+                _ac1.markdown(f"🏖️ **{_u}** — ausente ate **{_until}**")
+                if _ac2.button("Remover", key=f"va_away_rm_{_u}"):
+                    _ag_cfg.set_away(_u, None)
+                    st.rerun()
+        else:
+            st.caption("Ninguem marcado como ausente.")
+        if _va_users:
+            with st.form(key="va_form_away"):
+                _fc1, _fc2 = st.columns(2)
+                _va_away_user = _fc1.selectbox("Vendedor:", _va_users)
+                _va_away_until = _fc2.date_input("Ausente ate:")
+                if st.form_submit_button("Marcar ausencia"):
+                    if _ag_cfg.set_away(_va_away_user, _va_away_until.isoformat()):
+                        st.success(f"{_va_away_user} ausente ate {_va_away_until}.")
+                        st.rerun()
+                    else:
+                        st.error("Falha ao salvar ausencia.")
+
+    # ----- Selecao automatica de modelos (matriz fina prometida no banner) -----
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    section_header("Selecao automatica de modelos", "grid_view")
+    st.caption(
+        "No modo 'Template auto por alvo', o sistema escolhe o modelo pela matriz "
+        "publico (nominal/generico) × dados (matriculas/ENEM). Cobertura atual:"
+    )
+    try:
+        from database.supabase_client import db as _va_db
+        _va_tpls = (
+            _va_db.client.table("message_templates").select("*")
+            .eq("is_active", True).execute().data or []
+        )
+        from utils.template_selector import matriz_cobertura as _va_matriz
+        _va_cob = _va_matriz(_va_tpls)
+        _va_cols = st.columns(2)
+        for _i, _item in enumerate(_va_cob):
+            with _va_cols[_i % 2]:
+                _icon = "✅" if _item["coberto"] else "⬜"
+                _names = ", ".join(_item["templates"][:2]) if _item["templates"] else "_(faltando)_"
+                st.markdown(f"{_icon} **{_item['label']}** — {_names}")
+        _va_pess = len([t for t in _va_tpls if (t.get("visibility") or "shared") != "shared"])
+        st.caption(
+            f"{len(_va_tpls)} modelos ativos ({_va_pess} pessoais). "
+            "Criacao e edicao ficam em Mensagens → 📄 Modelos."
+        )
+    except Exception as _e_va_m:
+        st.caption(f"(matriz indisponivel: {_e_va_m})")
+    st.page_link("pages/6_✉️_Comunicacao.py", label="Abrir Mensagens → Modelos", icon="📄")
