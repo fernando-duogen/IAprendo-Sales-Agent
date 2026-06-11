@@ -1523,4 +1523,8 @@ with tab_vendas:
         )
     except Exception as _e_va_m:
         st.caption(f"(matriz indisponivel: {_e_va_m})")
-    st.page_link("pages/6_✉️_Comunicacao.py", label="Abrir Mensagens → Modelos", icon="📄")
+    try:
+        st.page_link("pages/6_✉️_Comunicacao.py", label="Abrir Mensagens → Modelos", icon="📄")
+    except Exception:
+        # fora do st.navigation (ex: AppTest standalone) o page_link nao resolve
+        st.caption("Criacao/edicao: ✉️ Mensagens → 📄 Modelos")

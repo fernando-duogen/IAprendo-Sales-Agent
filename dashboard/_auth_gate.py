@@ -26,4 +26,7 @@ def require_auth():
             st.session_state.get("authentication_status"):
         return
     from dashboard._auth import ensure_auth
-    ensure_auth(render_form=False)
+    # render_form=True: rodando SEM o entrypoint main.py (ex: janela do
+    # cutover em que o Cloud ainda aponta pro app.py), a pagina renderiza o
+    # FORM de login em vez de so um aviso — zero downtime na transicao.
+    ensure_auth(render_form=True)

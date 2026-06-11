@@ -79,7 +79,7 @@ class QueueManager:
             r = db.client.table("approval_queue").select(
                 "id, company_id, subject, status, created_at, "
                 "companies(name, city, state)"
-            ).eq("status", "pending_approval").lt("created_at", cutoff).order("created_at").limit(50).execute()
+            ).eq("status", "pending").lt("created_at", cutoff).order("created_at").limit(50).execute()
             return r.data or []
         except Exception as e:
             logger.debug(f"get_pending_older_than failed: {e}")
