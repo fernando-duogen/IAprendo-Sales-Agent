@@ -269,58 +269,60 @@ def render_execucao():
         )
 
     # --- Selecao rapida (botoes de preset) ---
-    st.caption("SELEÇÃO RÁPIDA")
-    preset_cols = st.columns(6)
-    with preset_cols[0]:
-        if st.button("Top 10 por score", use_container_width=True,
-                     icon=":material/trending_up:", key="preset_top_score"):
-            scored = [c for c in filtered_base if c.get("qualification_score")]
-            scored.sort(key=lambda x: x.get("qualification_score", 0), reverse=True)
-            st.session_state["pipeline_selected_ids"] = [c["id"] for c in scored[:10]]
-            _reset_ckbox_keys()
-            st.toast("Top 10 por score selecionadas!")
-            st.rerun()
-    with preset_cols[1]:
-        if st.button("Top 10 por Fit", use_container_width=True,
-                     icon=":material/diamond:", key="preset_top_fit",
-                     help="Escolas com maior Fit IAprendo (alvo x tech x coord x categoria)"):
-            by_fit = sorted(filtered_base, key=lambda x: x.get("_fit", 0), reverse=True)
-            by_fit = [c for c in by_fit if c.get("_fit", 0) > 0]
-            st.session_state["pipeline_selected_ids"] = [c["id"] for c in by_fit[:10]]
-            _reset_ckbox_keys()
-            st.toast("Top 10 por Fit IAprendo selecionadas!")
-            st.rerun()
-    with preset_cols[2]:
-        if st.button("Todas nao processadas", use_container_width=True,
-                     icon=":material/fiber_new:", key="preset_raw"):
-            raw = [c for c in filtered_base if c.get("status") == "raw"]
-            st.session_state["pipeline_selected_ids"] = [c["id"] for c in raw]
-            _reset_ckbox_keys()
-            st.toast(f"{len(raw)} escolas selecionadas!")
-            st.rerun()
-    with preset_cols[3]:
-        if st.button("Todas privadas", use_container_width=True,
-                     icon=":material/lock:", key="preset_private"):
-            private = [c for c in filtered_base if "privad" in (c.get("admin_dependency", "") or "").lower()]
-            st.session_state["pipeline_selected_ids"] = [c["id"] for c in private]
-            _reset_ckbox_keys()
-            st.toast(f"{len(private)} escolas privadas selecionadas!")
-            st.rerun()
-    with preset_cols[4]:
-        if st.button("Prontas p/ email", use_container_width=True,
-                     icon=":material/mark_email_read:", key="preset_ready"):
-            ready = [c for c in filtered_base if c.get("status") in ("qualified", "enriched", "contacted")]
-            st.session_state["pipeline_selected_ids"] = [c["id"] for c in ready]
-            _reset_ckbox_keys()
-            st.toast(f"{len(ready)} escolas prontas selecionadas!")
-            st.rerun()
-    with preset_cols[5]:
-        if st.button("Limpar selecao", use_container_width=True,
-                     icon=":material/delete_sweep:", key="preset_clear"):
-            st.session_state["pipeline_selected_ids"] = []
-            _reset_ckbox_keys()
-            st.toast("Selecao limpa!")
-            st.rerun()
+    with st.expander("Selecao rapida e presets (avancado)", expanded=False,
+                     icon=":material/bolt:"):
+        st.caption("Presets de selecao em 1 clique (combinam com os filtros de preparo).")
+        preset_cols = st.columns(6)
+        with preset_cols[0]:
+            if st.button("Top 10 por score", use_container_width=True,
+                         icon=":material/trending_up:", key="preset_top_score"):
+                scored = [c for c in filtered_base if c.get("qualification_score")]
+                scored.sort(key=lambda x: x.get("qualification_score", 0), reverse=True)
+                st.session_state["pipeline_selected_ids"] = [c["id"] for c in scored[:10]]
+                _reset_ckbox_keys()
+                st.toast("Top 10 por score selecionadas!")
+                st.rerun()
+        with preset_cols[1]:
+            if st.button("Top 10 por Fit", use_container_width=True,
+                         icon=":material/diamond:", key="preset_top_fit",
+                         help="Escolas com maior Fit IAprendo (alvo x tech x coord x categoria)"):
+                by_fit = sorted(filtered_base, key=lambda x: x.get("_fit", 0), reverse=True)
+                by_fit = [c for c in by_fit if c.get("_fit", 0) > 0]
+                st.session_state["pipeline_selected_ids"] = [c["id"] for c in by_fit[:10]]
+                _reset_ckbox_keys()
+                st.toast("Top 10 por Fit IAprendo selecionadas!")
+                st.rerun()
+        with preset_cols[2]:
+            if st.button("Todas nao processadas", use_container_width=True,
+                         icon=":material/fiber_new:", key="preset_raw"):
+                raw = [c for c in filtered_base if c.get("status") == "raw"]
+                st.session_state["pipeline_selected_ids"] = [c["id"] for c in raw]
+                _reset_ckbox_keys()
+                st.toast(f"{len(raw)} escolas selecionadas!")
+                st.rerun()
+        with preset_cols[3]:
+            if st.button("Todas privadas", use_container_width=True,
+                         icon=":material/lock:", key="preset_private"):
+                private = [c for c in filtered_base if "privad" in (c.get("admin_dependency", "") or "").lower()]
+                st.session_state["pipeline_selected_ids"] = [c["id"] for c in private]
+                _reset_ckbox_keys()
+                st.toast(f"{len(private)} escolas privadas selecionadas!")
+                st.rerun()
+        with preset_cols[4]:
+            if st.button("Prontas p/ email", use_container_width=True,
+                         icon=":material/mark_email_read:", key="preset_ready"):
+                ready = [c for c in filtered_base if c.get("status") in ("qualified", "enriched", "contacted")]
+                st.session_state["pipeline_selected_ids"] = [c["id"] for c in ready]
+                _reset_ckbox_keys()
+                st.toast(f"{len(ready)} escolas prontas selecionadas!")
+                st.rerun()
+        with preset_cols[5]:
+            if st.button("Limpar selecao", use_container_width=True,
+                         icon=":material/delete_sweep:", key="preset_clear"):
+                st.session_state["pipeline_selected_ids"] = []
+                _reset_ckbox_keys()
+                st.toast("Selecao limpa!")
+                st.rerun()
 
     # --- Tabela de selecao com checkbox (interativa, escala melhor que autocomplete) ---
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -657,7 +659,9 @@ def render_execucao():
     # PIPELINE EXECUTION
     # ======================================================================
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    section_header("Executar Pipeline", "play_circle")
+    section_header("Preparar escolas", "play_circle")
+    st.caption("1 acao, 3 etapas por tras (avaliar → buscar contatos → gerar "
+               "mensagens). Tudo termina na SUA aprovacao em Mensagens.")
 
     # Ler o estado atual do checkbox Forcar (renderizado mais abaixo) pra
     # calcular contadores corretos. Quando Forcar=True, TODAS as selecionadas
@@ -841,57 +845,68 @@ def render_execucao():
             "timestamp": datetime.now().isoformat() if "datetime" in globals() else "",
         }
 
-    pc1, pc2, pc3, pc4, pc5 = st.columns(5)
+    # Acao COMPOSTA (mockup 'Preparar escolas'): 1 botao roda a cascata toda;
+    # as etapas tecnicas viram detalhe avancado (blueprint v1.1 §4 Prospectar).
+    if st.button(f"▶ Preparar {sel_total} escola(s) — avaliar → buscar contatos → gerar mensagens",
+                 disabled=no_selection, type="primary", use_container_width=True,
+                 key="btn_preparar_tudo",
+                 help="Roda a cascata completa. Ao final, as mensagens vao para "
+                      "Mensagens aguardando SUA aprovacao — nada sai sem voce revisar."):
+        _cascade("write", ["qualify", "enrich", "contacts", "write"])
 
-    with pc1:
-        metric_card("Qualificar", raw_count, icon="grading", color=STATUS_COLORS["raw"])
-        if st.button("Qualificar", disabled=no_selection, key="btn_qualify",
-                      use_container_width=True, type="primary",
-                      help="Roda qualify na selecao (so processa schools em status raw)"):
-            _cascade("qualify", ["qualify"])
+    with st.expander("Etapas individuais (avancado)", expanded=False,
+                     icon=":material/tune:"):
+        pc1, pc2, pc3, pc4, pc5 = st.columns(5)
 
-    with pc2:
-        metric_card("Enriquecer", qualified_count, icon="auto_fix_high", color=STATUS_COLORS["qualified"])
-        if st.button("Enriquecer", disabled=no_selection, key="btn_enrich",
-                      use_container_width=True, type="primary",
-                      help="Cascata: qualify -> enrich. Qualifica raw e enriquece qualified."):
-            _cascade("enrich", ["qualify", "enrich"])
+        with pc1:
+            metric_card("Qualificar", raw_count, icon="grading", color=STATUS_COLORS["raw"])
+            if st.button("Qualificar", disabled=no_selection, key="btn_qualify",
+                          use_container_width=True, type="primary",
+                          help="Roda qualify na selecao (so processa schools em status raw)"):
+                _cascade("qualify", ["qualify"])
 
-    with pc3:
-        metric_card("Contatos", enriched_count, icon="person_search", color=STATUS_COLORS["enriched"])
-        if st.button("Buscar", disabled=no_selection, key="btn_contacts",
-                      use_container_width=True, type="primary",
-                      help="Cascata: qualify -> enrich -> contacts. Processa tudo ate busca de decisores."):
-            _cascade("contacts", ["qualify", "enrich", "contacts"])
+        with pc2:
+            metric_card("Enriquecer", qualified_count, icon="auto_fix_high", color=STATUS_COLORS["qualified"])
+            if st.button("Enriquecer", disabled=no_selection, key="btn_enrich",
+                          use_container_width=True, type="primary",
+                          help="Cascata: qualify -> enrich. Qualifica raw e enriquece qualified."):
+                _cascade("enrich", ["qualify", "enrich"])
 
-    with pc4:
-        metric_card("Emails", contactable_count, icon="edit_note", color=STATUS_COLORS["contacted"])
-        if st.button("Gerar", disabled=no_selection, key="btn_write",
-                      use_container_width=True, type="primary",
-                      help="Cascata: qualify -> enrich -> contacts -> write. Gera emails pra fila de aprovacao."):
-            _cascade("write", ["qualify", "enrich", "contacts", "write"])
+        with pc3:
+            metric_card("Contatos", enriched_count, icon="person_search", color=STATUS_COLORS["enriched"])
+            if st.button("Buscar", disabled=no_selection, key="btn_contacts",
+                          use_container_width=True, type="primary",
+                          help="Cascata: qualify -> enrich -> contacts. Processa tudo ate busca de decisores."):
+                _cascade("contacts", ["qualify", "enrich", "contacts"])
 
-    with pc5:
-        metric_card("Enviar", approved_count, icon="send", color=STATUS_COLORS["approved"])
-        if st.button("Enviar", disabled=(approved_count == 0), key="btn_send",
-                      use_container_width=True, type="primary",
-                      help="Envia emails ja aprovados (independente da selecao)."):
-            from workflows.daily_pipeline import run_pipeline
-            with st.spinner("Enviando emails aprovados..."):
-                report = run_pipeline(
-                    qualify_limit=0, enrich_limit=0, write_limit=0,
-                    send_approved=True, dry_run=dry_run,
-                    steps=["send"],
-                )
-            # Persistir em vez de toast (que some no proximo rerun)
-            st.session_state["pipeline_last_run"] = {
-                "kind": "execution",
-                "step_name": "send",
-                "step_list": ["send"],
-                "report": report,
-                "force_used": False,
-                "timestamp": datetime.now().isoformat(),
-            }
+        with pc4:
+            metric_card("Emails", contactable_count, icon="edit_note", color=STATUS_COLORS["contacted"])
+            if st.button("Gerar", disabled=no_selection, key="btn_write",
+                          use_container_width=True, type="primary",
+                          help="Cascata: qualify -> enrich -> contacts -> write. Gera emails pra fila de aprovacao."):
+                _cascade("write", ["qualify", "enrich", "contacts", "write"])
+
+        with pc5:
+            metric_card("Enviar", approved_count, icon="send", color=STATUS_COLORS["approved"])
+            if st.button("Enviar", disabled=(approved_count == 0), key="btn_send",
+                          use_container_width=True, type="primary",
+                          help="Envia emails ja aprovados (independente da selecao)."):
+                from workflows.daily_pipeline import run_pipeline
+                with st.spinner("Enviando emails aprovados..."):
+                    report = run_pipeline(
+                        qualify_limit=0, enrich_limit=0, write_limit=0,
+                        send_approved=True, dry_run=dry_run,
+                        steps=["send"],
+                    )
+                # Persistir em vez de toast (que some no proximo rerun)
+                st.session_state["pipeline_last_run"] = {
+                    "kind": "execution",
+                    "step_name": "send",
+                    "step_list": ["send"],
+                    "report": report,
+                    "force_used": False,
+                    "timestamp": datetime.now().isoformat(),
+                }
 
     # ======================================================================
     # FEEDBACK PERSISTENTE — sempre renderiza o ultimo resultado (sobrevive a reruns)
@@ -1255,221 +1270,107 @@ def render_descoberta():
     )
 
 
-def render_kanban_comercial():
-    """Aba Pipeline Comercial: kanban de stages reais (zona 2 do commit anterior)."""
-    from dashboard.theme import kanban_card_clickable
 
-    section_header("Pipeline Comercial", "view_kanban")
+def render_recomendadas():
+    """Tab Recomendadas (mockup): ranking ENEM (ex-Inteligencia>Ranking) com
+    Potencial ★ + 'Trabalhar esta escola' (importa + atribui ao usuario)."""
+    import json as _json
+    from dashboard.labels import POTENTIAL_STARS
 
-    COMMERCIAL_STAGES = [
-        {"key": "prospectado", "label": "Prospectado", "color": COLORS["primary"], "desc": "Novo lead"},
-        {"key": "contatado", "label": "Contatado", "color": COLORS["info"], "desc": "Email/WhatsApp enviado"},
-        {"key": "respondeu", "label": "Respondeu", "color": COLORS["secondary"], "desc": "Lead engajado"},
-        {"key": "reuniao", "label": "Reuniao", "color": COLORS["warning"], "desc": "Meeting realizada"},
-        {"key": "proposta", "label": "Proposta", "color": COLORS["accent"], "desc": "Orcamento enviado"},
-        {"key": "cliente", "label": "Cliente", "color": COLORS["success"], "desc": "Deal fechado"},
-    ]
+    st.caption("Escolas com alto potencial AINDA NAO trabalhadas, ordenadas pelo "
+               "encaixe pre-contato (ENEM/Censo). Apos o 1o contato, quem manda e "
+               "a Prioridade (🔴🟠🟡⚪) — veja em Hoje.")
+    rc1, rc2, rc3 = st.columns(3)
+    _uf = rc1.text_input("UF", value="", placeholder="ex: RS", key="rec_uf", max_chars=2)
+    _mun = rc2.text_input("Municipio", value="", placeholder="ex: Porto Alegre", key="rec_mun")
+    _dep = rc3.selectbox("Tipo", ["Todas", "Privada", "Estadual", "Municipal", "Federal"],
+                         key="rec_dep")
+    try:
+        from agent.tools.enem_tools import ENEM_TOOL_HANDLERS
+        _params = {"limite": 15}
+        if _uf.strip():
+            _params["uf"] = _uf.strip().upper()
+        if _mun.strip():
+            _params["municipio"] = _mun.strip()
+        if _dep != "Todas":
+            _params["dependencia"] = _dep
+        _raw = ENEM_TOOL_HANDLERS["priorizar_leads_enem"](_params)
+        _data = _json.loads(_raw)
+        _leads = _data.get("leads") or []
+    except Exception as _e:
+        st.warning(f"Ranking indisponivel: {str(_e)[:120]}")
+        _leads = []
+
+    if not _leads:
+        st.info("Nenhuma recomendacao com esses filtros. Tente ampliar a regiao.")
+        return
 
     try:
-        # Carrega companies com stage + valores comerciais.
-        # Fallback gracioso se migration 013 nao foi aplicada.
-        try:
-            comm_companies = db.client.table("companies").select(
-                "id,name,city,qualification_score,commercial_stage,valor_mensal_proposto,"
-                "valor_mensal_fechado,motivo_perda_texto,motivo_perda_categoria,data_fechamento,"
-                "matriculas_fund_af,matriculas_medio,nivel_tecnologico,status"
-            ).execute().data or []
-        except Exception as _migration_err:
-            if "commercial_stage" in str(_migration_err) or "42703" in str(_migration_err):
-                comm_companies = db.client.table("companies").select(
-                    "id,name,city,qualification_score,matriculas_fund_af,matriculas_medio,"
-                    "nivel_tecnologico,status"
-                ).execute().data or []
-                alert_banner(
-                    "Migration 013 ainda nao aplicada — pipeline comercial em modo read-only "
-                    "(inferencia automatica). Rode <code>database/migrations/APLICAR-013-COMMERCIAL-STAGES.sql</code> "
-                    "no Supabase SQL Editor pra habilitar campos Proposta/Cliente/Perdido.",
-                    "warning",
-                )
+        from integrations.agenda_config import agenda_config
+        _ticket = agenda_config.ticket_por_aluno()
+    except Exception:
+        _ticket = 7.99
+    _me = st.session_state.get("username", "fernando")
+
+    for _ld in _leads:
+        _stars = POTENTIAL_STARS.get(str(_ld.get("prioridade") or ""), "★☆☆")
+        _no_crm = not _ld.get("esta_em_companies")
+        c1, c2, c3, c4 = st.columns([0.9, 4.2, 3.2, 1.8])
+        c1.markdown(f'<span style="color:#F9A825;font-size:15px">{_stars}</span>',
+                    unsafe_allow_html=True)
+        c2.markdown(f"**{_ld.get('nome', '?')}**<br/>"
+                    f"<span style='font-size:12px;color:#94A3B8'>"
+                    f"{_ld.get('municipio', '')}/{_ld.get('uf', '')}</span>",
+                    unsafe_allow_html=True)
+        c3.markdown(f"<span style='font-size:12px;color:#64748B'>"
+                    f"{(_ld.get('motivo') or '')[:90]}</span>", unsafe_allow_html=True)
+        with c4:
+            if _no_crm:
+                if st.button("Trabalhar", key=f"rec_work_{_ld.get('inep')}",
+                             help="Importa a escola e atribui a voce"):
+                    try:
+                        _res = db.client.table("mec_catalog").select("*")                             .eq("inep_code", str(_ld.get("inep"))).limit(1).execute().data
+                        if _res:
+                            _cd = db._catalog_row_to_company(_res[0])
+                            _cd["source"] = "recomendadas"
+                            _cd["owner_username"] = _me
+                            _cid = db.insert_company(_cd)
+                            if _cid:
+                                st.toast(f"{_ld.get('nome')} importada e atribuida a voce! "
+                                         "Veja em Escolas.")
+                                st.rerun()
+                        else:
+                            st.toast("Escola fora do catalogo online — use Buscar no Brasil.")
+                    except Exception as _e:
+                        st.error(f"Falha ao importar: {str(_e)[:120]}")
             else:
-                raise
+                st.caption("ja no CRM ✓")
 
-        # Meetings + emails enviados pra inferencia automatica de stage
-        _meetings = db.client.table("meetings").select("company_id").execute().data or []
-        _meeting_set = {m["company_id"] for m in _meetings if m.get("company_id")}
-
-        _sent_emails = db.client.table("approval_queue").select(
-            "company_id,replied_at"
-        ).eq("status", "sent").execute().data or []
-        _email_map = {}
-        for _e in _sent_emails:
-            cid = _e.get("company_id")
-            if not cid:
-                continue
-            entry = _email_map.setdefault(cid, {"sent": False, "replied": False})
-            entry["sent"] = True
-            if _e.get("replied_at"):
-                entry["replied"] = True
-
-        # Inferencia do estagio do Kanban centralizada em utils/stage_sync
-        # (mesma logica/mapas usados pelo setter coerente do backend, evitando
-        # divergencia entre status tecnico e commercial_stage).
-        from utils.stage_sync import infer_stage as _shared_infer_stage
-
-        def _infer_stage(comp):
-            cid = comp["id"]
-            return _shared_infer_stage(
-                comp,
-                has_email=cid in _email_map,
-                has_reply=bool(_email_map.get(cid, {}).get("replied")),
-                has_meeting=cid in _meeting_set,
-            )
-
-        stage_buckets = {s["key"]: [] for s in COMMERCIAL_STAGES}
-        perdidos = []
-        for _c in comm_companies:
-            stage = _infer_stage(_c)
-            if stage == "perdido":
-                perdidos.append(_c)
-            elif stage in stage_buckets:
-                stage_buckets[stage].append(_c)
-
-        # KPI row: MRR + Win rate
-        mrr_potencial = sum(
-            float(c.get("valor_mensal_proposto") or 0) for c in stage_buckets["proposta"]
-        )
-        mrr_ativo = sum(
-            float(c.get("valor_mensal_fechado") or 0) for c in stage_buckets["cliente"]
-        )
-        total_fechados = len(stage_buckets["cliente"])
-        total_perdidos = len(perdidos)
-        win_rate = (
-            (total_fechados / (total_fechados + total_perdidos) * 100)
-            if (total_fechados + total_perdidos) > 0
-            else 0
-        )
-
-        mc1, mc2, mc3 = st.columns(3)
-        with mc1:
-            metric_card("MRR Potencial", f"R$ {mrr_potencial:,.0f}".replace(",", "."),
-                        icon="pending", color=COLORS["accent"],
-                        delta=f"{len(stage_buckets['proposta'])} proposta(s)")
-        with mc2:
-            metric_card("MRR Ativo", f"R$ {mrr_ativo:,.0f}".replace(",", "."),
-                        icon="payments", color=COLORS["success"],
-                        delta=f"{total_fechados} cliente(s)")
-        with mc3:
-            metric_card("Win Rate", f"{win_rate:.0f}%",
-                        icon="emoji_events", color=COLORS["primary"],
-                        delta=f"{total_fechados}/{total_fechados + total_perdidos} decisoes")
-
-        # Kanban: contagem + top 6 cards por stage
-        st.markdown("")
-        kanban_header_cols = st.columns(len(COMMERCIAL_STAGES))
-        for i, stage in enumerate(COMMERCIAL_STAGES):
-            with kanban_header_cols[i]:
-                count = len(stage_buckets[stage["key"]])
-                st.markdown(
-                    f'<p style="background:{stage["color"]}12;border-left:4px solid {stage["color"]};'
-                    f'padding:10px 12px;border-radius:8px;margin-bottom:8px">'
-                    f'<strong style="font-size:13px">{stage["label"]}</strong>'
-                    f' <span style="font-size:11px;color:{stage["color"]};font-weight:700">({count})</span><br/>'
-                    f'<span style="font-size:10px;color:#9E9E9E">{stage["desc"]}</span></p>',
-                    unsafe_allow_html=True,
-                )
-                items = stage_buckets[stage["key"]]
-                if not items:
-                    st.caption("—")
-                    continue
-
-                # Helper pra computar meta de cada escola
-                def _card_meta(comp, stage_key=stage["key"]):
-                    score = int(comp.get("qualification_score") or 0)
-                    name = ((comp.get("name") or "?")[:28]).rstrip()
-                    alvo_ = int((comp.get("matriculas_fund_af") or 0) + (comp.get("matriculas_medio") or 0))
-                    tech = comp.get("nivel_tecnologico") or ""
-                    sub = ""
-                    if stage_key == "proposta" and comp.get("valor_mensal_proposto"):
-                        sub = f"R$ {float(comp['valor_mensal_proposto']):,.0f}/mes".replace(",", ".")
-                    elif stage_key == "cliente" and comp.get("valor_mensal_fechado"):
-                        sub = f"R$ {float(comp['valor_mensal_fechado']):,.0f}/mes".replace(",", ".")
-                    return score, name, alvo_, tech, sub
-
-                # Top 6 cards visiveis (clicaveis)
-                sorted_items = sorted(items, key=lambda x: x.get("qualification_score") or 0, reverse=True)
-                for comp in sorted_items[:6]:
-                    score, name, alvo_, tech, sub = _card_meta(comp)
-                    if kanban_card_clickable(
-                        name=name,
-                        score=score,
-                        alvo=alvo_,
-                        nivel_tech=tech,
-                        color=stage["color"],
-                        key=f"kanban_{stage['key']}_{comp['id']}",
-                        subtitle=sub,
-                    ):
-                        st.session_state["escola_detail_id"] = comp["id"]
-                        st.switch_page("pages/2_🏫_Escolas.py")
-
-                # Expander com os restantes (clicaveis tambem)
-                if len(sorted_items) > 6:
-                    with st.expander(f"Ver mais {len(sorted_items) - 6}", expanded=False):
-                        for comp in sorted_items[6:]:
-                            score, name, alvo_, tech, sub = _card_meta(comp)
-                            if kanban_card_clickable(
-                                name=name,
-                                score=score,
-                                alvo=alvo_,
-                                nivel_tech=tech,
-                                color=stage["color"],
-                                key=f"kanban_exp_{stage['key']}_{comp['id']}",
-                                subtitle=sub,
-                            ):
-                                st.session_state["escola_detail_id"] = comp["id"]
-                                st.switch_page("pages/2_🏫_Escolas.py")
-
-        # Secao de perdidos colapsada
-        if perdidos:
-            with st.expander(f"Leads perdidos ({len(perdidos)})", expanded=False):
-                for p in sorted(perdidos, key=lambda x: (x.get("data_fechamento") or ""), reverse=True)[:15]:
-                    data_str = (p.get("data_fechamento") or "")[:10]
-                    categoria = p.get("motivo_perda_categoria") or "—"
-                    motivo_txt = (p.get("motivo_perda_texto") or "")[:120]
-                    st.markdown(
-                        f"**{p.get('name', '?')}** — {data_str} · "
-                        f"<span style='background:#FFCDD2;color:#B71C1C;padding:2px 8px;"
-                        f"border-radius:10px;font-size:11px;font-weight:600'>{categoria}</span>"
-                        f"<br/><span style='color:#757575;font-size:12px'>{motivo_txt}</span>",
-                        unsafe_allow_html=True,
-                    )
-
-        st.caption(
-            "💡 Os stages Proposta/Cliente/Perdido sao preenchidos pelo IAlex via WhatsApp: "
-            "\"mandei proposta pro Marista, R$ 15k/mes\" · "
-            "\"fechei o Anchieta, R$ 18k/mes\" · "
-            "\"perdi o Adventista, foi pra concorrencia\""
-        )
-    except Exception as _e:
-        st.warning(f"Erro ao carregar pipeline comercial: {_e}")
 
 
 # ==========================================================================
-# Render das 3 abas
+# Tabs do Prospectar (redesign v2 — mockup prospectar.html)
+# Kanban foi para a pagina propria 💼 Negocios.
 # ==========================================================================
-main_tab_exec, main_tab_desc, main_tab_kanban = st.tabs([
-    "🔧 Execucao",
-    "🔍 Descoberta",
-    "📋 Pipeline Comercial",
+tab_rec, tab_brasil, tab_prep, tab_sinais = st.tabs([
+    "⭐ Recomendadas",
+    "🗺️ Buscar no Brasil",
+    "📦 Preparar escolas",
+    "🔔 Sinais",
 ])
 
-with main_tab_exec:
+with tab_rec:
+    render_recomendadas()
+
+with tab_brasil:
+    from dashboard.helpers.importar_mec import render_buscar_brasil
+    render_buscar_brasil(embedded=True)
+
+with tab_prep:
     render_execucao()
 
-with main_tab_desc:
+with tab_sinais:
     render_descoberta()
-
-with main_tab_kanban:
-    render_kanban_comercial()
 
 
 # ======================================================================

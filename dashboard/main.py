@@ -83,6 +83,7 @@ pages = {
         st.Page(f"pages/5_📊_Pipeline.py", title="Prospectar", icon="🔍", url_path="prospectar"),
         st.Page(f"pages/2_🏫_Escolas.py", title="Escolas", icon="🏫", url_path="escolas"),
         st.Page(f"pages/6_✉️_Comunicacao.py", title="Mensagens", icon="✉️", url_path="mensagens"),
+        st.Page(f"pages/4_💼_Negocios.py", title="Negocios", icon="💼", url_path="negocios"),
     ],
     "Acompanhar": [
         st.Page(f"pages/8_📈_Analytics.py", title="Resultados", icon="📊", url_path="resultados"),
@@ -92,7 +93,7 @@ pages = {
         st.Page(f"pages/10_📖_Manual.py", title="Ajuda", icon="❓", url_path="ajuda"),
     ],
     "Base (em migracao)": [
-        st.Page(f"pages/1_📥_Importar.py", title="Importar", icon="📥", url_path="importar"),
+        # Importar foi ABSORVIDO por Prospectar > Buscar no Brasil (rodada 1)
         st.Page(f"pages/3_👥_Contatos.py", title="Contatos", icon="👥", url_path="contatos"),
         st.Page(f"pages/4_🗺️_Mapa.py", title="Mapa", icon="🗺️", url_path="mapa"),
         st.Page(f"pages/7_🎯_Inteligencia.py", title="Inteligencia", icon="🎯", url_path="inteligencia"),
