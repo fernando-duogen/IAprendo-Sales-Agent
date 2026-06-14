@@ -61,7 +61,8 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 if "escola_detail_id" not in st.session_state:
     st.session_state.escola_detail_id = None
-# Deep-link: coluna "Abrir" da lista gera ?escola=<id> (consumido aqui)
+# Deep-link opcional: ?escola=<id> na URL abre a ficha direto (ex: link externo).
+# A lista abre a ficha por SELECAO DE LINHA (mesma sessao), nao por este param.
 _qp_escola = st.query_params.get("escola")
 if _qp_escola:
     st.session_state.escola_detail_id = _qp_escola
@@ -1940,7 +1941,7 @@ if st.session_state.escola_detail_id:
                     st.rerun()
 
 # ===========================================================================
-# MODO LISTA (tabela com data_editor)
+# MODO LISTA (tabela com selecao de linha -> abre ficha na mesma tela)
 # ===========================================================================
 else:
     _ESC_SECOES = ["📋 Lista", "👥 Pessoas", "🔗 Redes", "🔬 Inteligencia"]
@@ -2011,7 +2012,6 @@ else:
         df["Potencial R$"] = ((df["Fund AF"] + df["Medio"]) * _ticket).round(0).astype(int)
         df["Dono"] = (df["owner_username"] if "owner_username" in df.columns
                       else "").fillna("—")
-        df["Abrir"] = "?escola=" + df["id"].astype(str)
 
         # F2: Urgency badge
         try:
@@ -2211,16 +2211,16 @@ else:
         if _ver_como == "📋 Tabela":
             # --- Tabela interativa com selecao por clique ---
             _ALL_COLS = [c for c in [
-                "name", "Abrir", "city", "UF", "Bairro", "Etapa", "Fund AF", "Medio",
+                "name", "city", "UF", "Bairro", "Etapa", "Fund AF", "Medio",
                 "Potencial R$", "Urgencia", "Dono", "Tipo", "Porte", "Tech",
                 "Potencial", "Gap ENEM", "Trajet. Peer", "Coord", "Fit",
                 "Score", "Status", "Fonte", "Importado",
             ] if c in df_f.columns]
             _COL_PRESETS = {
-                "Comercial": ["name", "Abrir", "city", "UF", "Etapa", "Fund AF", "Medio",
+                "Comercial": ["name", "city", "UF", "Etapa", "Fund AF", "Medio",
                               "Potencial R$", "Urgencia", "Fit", "Dono"],
-                "Essencial": ["name", "Abrir", "city", "UF", "Etapa", "Potencial R$", "Dono"],
-                "Censo & ENEM": ["name", "Abrir", "city", "UF", "Tipo", "Porte", "Fund AF",
+                "Essencial": ["name", "city", "UF", "Etapa", "Potencial R$", "Dono"],
+                "Censo & ENEM": ["name", "city", "UF", "Tipo", "Porte", "Fund AF",
                                  "Medio", "Tech", "Coord", "Potencial", "Gap ENEM",
                                  "Trajet. Peer"],
                 "Tudo": list(_ALL_COLS),
@@ -2295,10 +2295,6 @@ else:
                     "Dono", width="small", disabled=True,
                     help="Vendedor responsavel pela escola",
                 ),
-                "Abrir": st.column_config.LinkColumn(
-                    "Ficha", display_text="↗ abrir", width="small",
-                    help="Abre a ficha completa da escola",
-                ),
                 "Porte": st.column_config.TextColumn("Porte", width="small", disabled=True),
                 "Fonte": st.column_config.TextColumn("Fonte", width="small", disabled=True),
                 "Importado": st.column_config.TextColumn("Importado", width="small", disabled=True),
@@ -2328,35 +2324,34 @@ else:
                 label_singular="escola",
                 label_plural="escolas",
             )
-            st.caption("Clique em uma linha para ver acoes. Edite Status e Score diretamente na tabela.")
+            st.caption("Clique numa linha para abrir a ficha da escola (na mesma tela). "
+                       "Para alterar status/excluir, use as Acoes rapidas abaixo.")
 
             df_f_reset = df_f.reset_index(drop=True)
-            edited_df = st.data_editor(
+            _tbl_event = st.dataframe(
                 df_f_reset[table_cols],
                 use_container_width=True,
                 hide_index=True,
                 column_config=col_config,
-                num_rows="fixed",
                 key="escola_table",
-                on_change=None,
+                on_select="rerun",
+                selection_mode="single-row",
             )
-
-            # Detect inline edits and save them (so quando Status+Score visiveis)
-            if edited_df is not None and "Status" in edited_df.columns                 and "Score" in edited_df.columns:
-                for idx_row in range(min(len(df_f_reset), len(edited_df))):
-                    orig_status = df_f_reset.iloc[idx_row]["Status"]
-                    orig_score = df_f_reset.iloc[idx_row]["Score"]
-                    new_status = edited_df.iloc[idx_row]["Status"]
-                    new_score = edited_df.iloc[idx_row]["Score"]
-                    if new_status != orig_status or new_score != orig_score:
-                        cid = df_f_reset.iloc[idx_row]["id"]
-                        updates = {}
-                        if new_status != orig_status:
-                            updates["status"] = PT_TO_EN.get(new_status, "raw")
-                        if new_score != orig_score:
-                            updates["qualification_score"] = int(new_score)
-                        if updates:
-                            db.update_company(cid, updates)
+            # Clique numa linha -> abre a ficha na MESMA sessao (sem aba nova,
+            # sem re-login). Guard evita reabrir em loop ao voltar pra lista.
+            try:
+                _sel_rows = _tbl_event.selection.rows
+            except Exception:
+                _sel_rows = []
+            if _sel_rows:
+                _sel_cid = df_f_reset.iloc[_sel_rows[0]]["id"]
+                if st.session_state.get("_esc_open_guard") != _sel_cid:
+                    st.session_state["_esc_open_guard"] = _sel_cid
+                    go_to_detail(_sel_cid)
+                    st.rerun()
+            else:
+                # nenhuma linha selecionada neste render -> libera p/ reabrir a mesma
+                st.session_state.pop("_esc_open_guard", None)
 
             # --- Barra de acoes rapidas (logo abaixo da tabela) ---
             st.markdown(
