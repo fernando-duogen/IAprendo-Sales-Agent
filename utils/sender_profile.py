@@ -49,6 +49,50 @@ _USERS_YAML_PATH = Path(__file__).parent.parent / "config" / "users.yaml"
 _THREAD_LOCAL = threading.local()
 
 
+def _profiles_from_usernames(usernames: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Constroi o mapa username->perfil a partir do dict 'usernames' — mesma
+    estrutura no users.yaml e em st.secrets['auth']['credentials']['usernames']."""
+    profiles: Dict[str, Dict[str, Any]] = {}
+    for username, info in (usernames or {}).items():
+        if not isinstance(info, dict):
+            try:
+                info = dict(info)  # st.secrets AttrDict -> dict
+            except Exception:
+                continue
+        profiles[username] = {
+            "username": username,
+            "name": info.get("name", ""),
+            # email_sender_name eh usado APENAS pelo brevo_sender (Nome | DUOGEN).
+            # Fallback pra `name` se ausente — backward-compatible.
+            "email_sender_name": info.get("email_sender_name", info.get("name", "")),
+            "email": info.get("email", ""),
+            "phone": info.get("phone", ""),
+            "role": info.get("role", ""),
+            "is_admin": bool(info.get("is_admin", False)),
+            "whatsapp_numbers": [
+                "".join(c for c in str(n) if c.isdigit())
+                for n in (info.get("whatsapp_numbers") or [])
+            ],
+        }
+    return profiles
+
+
+def _usernames_from_secrets() -> Dict[str, Any]:
+    """Le os usernames de st.secrets['auth'] (Streamlit Cloud, onde nao ha
+    users.yaml). So funciona no contexto do dashboard (Streamlit rodando);
+    no IAlex/local o arquivo existe e este caminho nem e chamado."""
+    try:
+        import streamlit as st  # disponivel so no runtime do dashboard
+        auth = st.secrets.get("auth") if hasattr(st.secrets, "get") else st.secrets["auth"]
+        if not auth:
+            return {}
+        creds = auth.get("credentials", {}) or {}
+        usernames = creds.get("usernames", {}) or {}
+        return {u: dict(info) for u, info in usernames.items()}
+    except Exception:
+        return {}
+
+
 def _load_profiles() -> Dict[str, Dict[str, Any]]:
     """Carrega config/users.yaml e retorna mapa username -> perfil.
 
@@ -70,8 +114,18 @@ def _load_profiles() -> Dict[str, Dict[str, Any]]:
 
     try:
         if not _USERS_YAML_PATH.exists():
+            # Streamlit Cloud: nao ha users.yaml (gitignored). A auth vem de
+            # st.secrets["auth"] — carregar os perfis da MESMA fonte, senao
+            # get_active_sender_username() cai em None na nuvem e quebra anexos,
+            # assinatura e is_admin por usuario.
+            secret_users = _usernames_from_secrets()
+            if secret_users:
+                _PROFILES = _profiles_from_usernames(secret_users)
+                _PROFILES_MTIME = _cur_mtime
+                logger.info(f"Sender profiles de st.secrets[auth]: {list(_PROFILES.keys())}")
+                return _PROFILES
             logger.warning(
-                "config/users.yaml nao encontrado — fallback para settings.YOUR_*",
+                "config/users.yaml ausente e sem st.secrets[auth] — fallback YOUR_*",
                 extra={"path": str(_USERS_YAML_PATH)},
             )
             _PROFILES = {}
@@ -82,27 +136,9 @@ def _load_profiles() -> Dict[str, Dict[str, Any]]:
             data = yaml.safe_load(f) or {}
 
         usernames = data.get("credentials", {}).get("usernames", {})
-        profiles: Dict[str, Dict[str, Any]] = {}
-        for username, info in usernames.items():
-            profiles[username] = {
-                "username": username,
-                "name": info.get("name", ""),
-                # email_sender_name eh usado APENAS pelo brevo_sender (Nome | DUOGEN).
-                # Fallback pra `name` se ausente — backward-compatible.
-                # Outros lugares (saudacao IAlex, dashboard, prompts LLM) usam `name`.
-                "email_sender_name": info.get("email_sender_name", info.get("name", "")),
-                "email": info.get("email", ""),
-                "phone": info.get("phone", ""),
-                "role": info.get("role", ""),
-                "is_admin": bool(info.get("is_admin", False)),
-                "whatsapp_numbers": [
-                    "".join(c for c in str(n) if c.isdigit())
-                    for n in (info.get("whatsapp_numbers") or [])
-                ],
-            }
-        _PROFILES = profiles
+        _PROFILES = _profiles_from_usernames(usernames)
         _PROFILES_MTIME = _cur_mtime
-        logger.info(f"Sender profiles carregados: {list(profiles.keys())}")
+        logger.info(f"Sender profiles carregados: {list(_PROFILES.keys())}")
         return _PROFILES
     except Exception as e:
         logger.error(f"Erro ao carregar users.yaml: {e}")
