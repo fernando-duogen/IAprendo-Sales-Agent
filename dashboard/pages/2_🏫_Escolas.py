@@ -1117,21 +1117,29 @@ if st.session_state.escola_detail_id:
     if _next:
         _color_map = {"warning": "#FFA726", "info": "#29B6F6", "success": "#66BB6A"}
         _bg = _color_map.get(_next["type"], "#90A4AE")
-        _btn_html = ""
-        if _next.get("page"):
-            _btn_html = (
-                f'<a href="/{_next["page"]}" target="_self" '
-                f'style="background:{_bg};color:white;padding:6px 14px;border-radius:6px;'
-                f'text-decoration:none;font-weight:600;font-size:13px;margin-left:auto">'
-                f'Ir para {"Mensagens" if _next["page"] == "mensagens" else "Prospectar"} &rarr;</a>'
+        # Mapa pagina-logica -> arquivo (pra st.switch_page = navegacao INTERNA,
+        # sem reload/re-login. Link <a href> fazia reload total -> pisca login).
+        _page_file_map = {
+            "mensagens": "pages/6_✉️_Comunicacao.py",
+            "prospectar": "pages/5_📊_Pipeline.py",
+        }
+        _pg_file = _page_file_map.get(_next.get("page") or "")
+        _na_c1, _na_c2 = st.columns([4, 1.1])
+        with _na_c1:
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;'
+                f'background:{_bg}15;border-left:4px solid {_bg};border-radius:6px;margin:8px 0">'
+                f'<span style="font-size:14px;color:#212121">'
+                f'<strong>Proxima acao:</strong> {_next["label"]}</span></div>',
+                unsafe_allow_html=True,
             )
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;'
-            f'background:{_bg}15;border-left:4px solid {_bg};border-radius:6px;margin:8px 0">'
-            f'<span style="font-size:14px;color:#212121">'
-            f'<strong>Proxima acao:</strong> {_next["label"]}</span>{_btn_html}</div>',
-            unsafe_allow_html=True,
-        )
+        with _na_c2:
+            if _pg_file:
+                st.markdown('<div style="margin-top:10px"></div>', unsafe_allow_html=True)
+                _cta_lbl = "Ir para Mensagens" if _next["page"] == "mensagens" else "Ir para Prospectar"
+                if st.button(_cta_lbl, key="cta_next_action", use_container_width=True,
+                             icon=":material/arrow_forward:"):
+                    st.switch_page(_pg_file)
 
     st.markdown("")
 
