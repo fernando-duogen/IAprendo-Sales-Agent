@@ -9,4 +9,4 @@ BUILD ANTIGO, o app esta rodando processo velho (modulo cacheado em sys.modules)
 """
 
 # Formato: AAAA-MM-DD · descricao curta do que mudou
-BUILD = "2026-06-14 - fix-ficha-mesma-tela"
+BUILD = "2026-06-14 - fix-escolas-selecao-grupo"

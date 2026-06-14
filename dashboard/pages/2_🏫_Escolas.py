@@ -2324,8 +2324,9 @@ else:
                 label_singular="escola",
                 label_plural="escolas",
             )
-            st.caption("Clique numa linha para abrir a ficha da escola (na mesma tela). "
-                       "Para alterar status/excluir, use as Acoes rapidas abaixo.")
+            st.caption("Marque as caixas para acoes em grupo (status, exportar, excluir). "
+                       "Para abrir uma ficha, selecione 1 escola e clique 'Abrir ficha' "
+                       "(ou use o seletor por nome abaixo).")
 
             df_f_reset = df_f.reset_index(drop=True)
             _tbl_event = st.dataframe(
@@ -2335,23 +2336,91 @@ else:
                 column_config=col_config,
                 key="escola_table",
                 on_select="rerun",
-                selection_mode="single-row",
+                selection_mode="multi-row",
             )
-            # Clique numa linha -> abre a ficha na MESMA sessao (sem aba nova,
-            # sem re-login). Guard evita reabrir em loop ao voltar pra lista.
+            # Checkbox = SELECIONAR escolas p/ acao em grupo (nao navega).
             try:
-                _sel_rows = _tbl_event.selection.rows
+                _sel_rows = list(_tbl_event.selection.rows)
             except Exception:
                 _sel_rows = []
-            if _sel_rows:
-                _sel_cid = df_f_reset.iloc[_sel_rows[0]]["id"]
-                if st.session_state.get("_esc_open_guard") != _sel_cid:
-                    st.session_state["_esc_open_guard"] = _sel_cid
-                    go_to_detail(_sel_cid)
-                    st.rerun()
-            else:
-                # nenhuma linha selecionada neste render -> libera p/ reabrir a mesma
-                st.session_state.pop("_esc_open_guard", None)
+            _sel_ids = [df_f_reset.iloc[i]["id"] for i in _sel_rows]
+            _sel_names = [df_f_reset.iloc[i]["name"] for i in _sel_rows]
+
+            # --- Barra de SELECAO (so quando ha escolas marcadas) ---
+            if _sel_ids:
+                st.markdown(
+                    f'<p style="font-size:12px;font-weight:600;color:#1976D2;'
+                    f'text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 4px">'
+                    f'{len(_sel_ids)} escola(s) selecionada(s)</p>',
+                    unsafe_allow_html=True,
+                )
+                _sb1, _sb2, _sb3, _sb4 = st.columns([1.2, 2, 1.2, 1.2])
+                with _sb1:
+                    if st.button(
+                        "📄 Abrir ficha", type="primary", use_container_width=True,
+                        disabled=(len(_sel_ids) != 1),
+                        help="Selecione exatamente 1 escola para abrir a ficha.",
+                    ):
+                        go_to_detail(_sel_ids[0])
+                        st.rerun()
+                with _sb2:
+                    _sel_new_st = st.selectbox(
+                        "Alterar status:", list(STATUS_PT.values()),
+                        key="sel_bulk_status", label_visibility="collapsed",
+                    )
+                with _sb3:
+                    if st.button(f"Alterar status ({len(_sel_ids)})",
+                                 icon=":material/edit:", use_container_width=True):
+                        _en = PT_TO_EN.get(_sel_new_st, "raw")
+                        for _cid in _sel_ids:
+                            db.reset_company_status(_cid, _en)
+                        st.session_state.escola_msg = (
+                            "success", f"Status de {len(_sel_ids)} escola(s) alterado.")
+                        st.rerun()
+                with _sb4:
+                    if st.button(f"Excluir ({len(_sel_ids)})",
+                                 icon=":material/delete:", use_container_width=True):
+                        st.session_state["confirm_sel_delete"] = list(_sel_ids)
+
+                # Exportar selecionadas (XLSX, colunas visiveis)
+                try:
+                    import io as _io_sel
+                    _buf_sel = _io_sel.BytesIO()
+                    _exp_sel_cols = [c for c in (["inep_code"] + table_cols)
+                                     if c in df_f_reset.columns]
+                    with pd.ExcelWriter(_buf_sel, engine="openpyxl") as _xw_sel:
+                        df_f_reset.iloc[_sel_rows][_exp_sel_cols].to_excel(
+                            _xw_sel, index=False, sheet_name="Selecionadas")
+                    st.download_button(
+                        f"Exportar selecionadas ({len(_sel_ids)}) XLSX",
+                        _buf_sel.getvalue(), "escolas_selecionadas.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        icon=":material/download:", key="sel_export_xlsx",
+                    )
+                except Exception:
+                    pass
+
+                # Confirmacao de exclusao das selecionadas (chave propria p/ nao
+                # colidir com "Acoes em massa")
+                if st.session_state.get("confirm_sel_delete"):
+                    _ids_del = st.session_state["confirm_sel_delete"]
+                    alert_banner(
+                        f"Confirma exclusao de {len(_ids_del)} escola(s) e todos os dados?",
+                        "error")
+                    _dc1, _dc2 = st.columns(2)
+                    with _dc1:
+                        if st.button("Sim, excluir selecionadas", type="primary",
+                                     key="confirm_del_sel"):
+                            _n = db.bulk_delete_companies(_ids_del)
+                            st.session_state.escola_msg = ("success", f"{_n} escola(s) excluida(s).")
+                            st.session_state.pop("confirm_sel_delete", None)
+                            st.rerun()
+                    with _dc2:
+                        if st.button("Cancelar", key="cancel_del_sel"):
+                            st.session_state.pop("confirm_sel_delete", None)
+                            st.rerun()
+
+                st.divider()
 
             # --- Barra de acoes rapidas (logo abaixo da tabela) ---
             st.markdown(
