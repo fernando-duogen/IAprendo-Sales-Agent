@@ -1,20 +1,26 @@
 name: Keep Streamlit app awake
 
-# Mantem o app do Streamlit Community Cloud acordado.
+# Mantem o app do Streamlit Community Cloud acordado abrindo uma SESSAO REAL de
+# navegador (Playwright/Chromium headless) — ver scripts/keep_awake.py.
 #
-# Por que nao usar mais um ping simples no /_stcore/health:
-# a Streamlit passou a proteger /_stcore/health (e /) atras de um "auth dance"
-# (redirect -> share.streamlit.io -> volta com cookie de sessao anonima). Um GET
-# cru recebe 303 e NAO chega no app. Aqui usamos curl seguindo os redirects COM
-# cookie jar, igual a um navegador, ate o app responder 200 (o que de fato
-# reseta o timer de inatividade e impede o "app dormindo").
+# Por que mudou: a versao antiga fazia so um curl (ping HTTP). O Streamlit so
+# reseta o timer de inatividade quando ha uma sessao websocket de verdade (JS
+# carregado no navegador); o curl recebia 200 mas NUNCA abria essa sessao, entao
+# o app dormia mesmo com o "ping" dando sucesso. O robo agora carrega o app de
+# verdade e ainda clica em "Yes, get this app back up!" se estiver dormindo.
+#
+# Janela: dias uteis, ~06h-21h BRT (09-23 UTC), a cada 15 min. O GitHub as vezes
+# atrasa/pula agendamentos (best-effort), por isso a frequencia alta da varias
+# chances. Para 24/7, troque o cron por "*/15 * * * *". Para incluir sabado,
+# use "1-6" no campo de dia-da-semana.
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # a cada ~10 min (o GitHub pode atrasar; ok p/ keep-alive)
-  workflow_dispatch: {}        # permite rodar manualmente pela aba Actions
+    - cron: "*/15 9-23 * * 1-5"   # ~06h-21h BRT, seg-sex
+  workflow_dispatch: {}            # permite rodar manualmente pela aba Actions
 
-permissions: {}                # nenhum acesso ao repo necessario (so faz curl externo)
+permissions:
+  contents: read                   # so pra checkout do script
 
 concurrency:
   group: keep-alive
@@ -23,28 +29,17 @@ concurrency:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - name: Ping app (segue o auth dance com cookies ate 200)
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar Playwright + Chromium
         run: |
-          set -uo pipefail
-          URL="https://iaprendo-sales-agent.streamlit.app/"
-          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 keep-alive-bot"
-          CK="$(mktemp)"
-          code="000"
-          for attempt in 1 2 3 4; do
-            code=$(curl -sSL --max-time 60 \
-              --cookie-jar "$CK" --cookie "$CK" \
-              -A "$UA" \
-              -o /dev/null -w "%{http_code}" \
-              "$URL" || echo "000")
-            echo "Tentativa $attempt: HTTP $code"
-            if [ "$code" = "200" ]; then
-              echo "OK — app acordado (HTTP 200)."
-              exit 0
-            fi
-            # Se estava dormindo, o 1o request dispara o wake (~30-60s). Espera e tenta de novo.
-            sleep 20
-          done
-          echo "FALHOU — ultimo HTTP=$code (app pode estar com problema ou Streamlit fora do ar)."
-          exit 1
+          pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+      - name: Abrir o app num navegador real (mantem a sessao = acordado)
+        env:
+          KEEPALIVE_URL: "https://iaprendo-sales-agent.streamlit.app/"
+        run: python scripts/keep_awake.py
