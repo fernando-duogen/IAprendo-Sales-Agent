@@ -4,9 +4,27 @@ Componentes visuais reutilizaveis e CSS global.
 Importar em cada pagina: from theme import apply_theme, metric_card, ...
 """
 
+import base64
 import os
-import streamlit as st
+from pathlib import Path
 from typing import Optional
+
+import streamlit as st
+
+
+def _load_logo_data_uri() -> str:
+    """Le a marca (data/brand/logo_iaprendo.png, branca/transparente) e devolve
+    como data-URI base64 — pra estampar na faixa azul do sidebar sem depender de
+    URL externa. Vazio se o arquivo nao existir (fallback pra texto)."""
+    try:
+        p = Path(__file__).parent.parent / "data" / "brand" / "logo_iaprendo.png"
+        b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+        return f"data:image/png;base64,{b64}"
+    except Exception:
+        return ""
+
+
+_LOGO_DATA_URI = _load_logo_data_uri()
 
 
 def _sync_secrets_to_env():
@@ -158,7 +176,7 @@ h3 { font-size: 18px !important; }
     background: #FFFFFF;
     border-radius: 12px;
     padding: 16px 14px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    box-shadow: 0 1px 3px rgba(16,24,40,0.06);
     transition: box-shadow 0.2s ease;
     border-left: 4px solid #1976D2;
     min-height: 90px;
@@ -166,7 +184,7 @@ h3 { font-size: 18px !important; }
     overflow: hidden;
 }
 .metric-card:hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    box-shadow: 0 4px 14px rgba(16,24,40,0.10);
 }
 .metric-card .metric-value {
     font-size: 32px;
@@ -196,14 +214,14 @@ h3 { font-size: 18px !important; }
     background: #FFFFFF;
     border-radius: 12px;
     padding: 16px 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    box-shadow: 0 1px 3px rgba(16,24,40,0.06);
     margin-bottom: 12px;
     transition: all 0.2s ease;
-    border: 1px solid #F5F5F5;
+    border: 1px solid #EEF2F7;
 }
 .data-card:hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    border-color: #E0E0E0;
+    box-shadow: 0 6px 16px rgba(16,24,40,0.10);
+    border-color: #E3E8EF;
 }
 
 /* ===== ACTION TILES (Painel home) ===== */
@@ -721,14 +739,26 @@ div[data-testid="stElementContainer"]:has(.kanban-click) + div[data-testid="stEl
 # ============================================================================
 
 def _add_sidebar_home():
-    """Adiciona branding IAprendo + link Painel no topo do sidebar em todas as paginas."""
+    """Branding IAprendo no topo do sidebar (faixa azul + logo da marca)."""
     with st.sidebar:
-        st.markdown(
-            '<p style="text-align:center;padding:10px 0 6px 0;margin:0;border-bottom:1px solid #E0E0E0">'
-            '<strong style="font-size:18px;color:#1976D2">🎓 IAprendo</strong><br/>'
-            '<span style="font-size:11px;color:#9E9E9E">Agente de Vendas</span></p>',
-            unsafe_allow_html=True,
-        )
+        if _LOGO_DATA_URI:
+            brand = (
+                '<div style="background:linear-gradient(135deg,#1976D2 0%,#1565C0 100%);'
+                'border-radius:14px;padding:16px 14px 13px;margin:2px 0 10px;'
+                'box-shadow:0 1px 3px rgba(16,24,40,.10);text-align:center">'
+                f'<img src="{_LOGO_DATA_URI}" alt="IAprendo" '
+                'style="height:30px;display:block;margin:0 auto 5px"/>'
+                '<div style="font-size:10.5px;color:#BBDEFB;letter-spacing:.6px;'
+                'text-transform:uppercase">Agente de Vendas</div></div>'
+            )
+        else:
+            brand = (
+                '<p style="text-align:center;padding:10px 0 6px 0;margin:0;'
+                'border-bottom:1px solid #E0E0E0">'
+                '<strong style="font-size:18px;color:#1976D2">🎓 IAprendo</strong><br/>'
+                '<span style="font-size:11px;color:#9E9E9E">Agente de Vendas</span></p>'
+            )
+        st.markdown(brand, unsafe_allow_html=True)
         # v2: "Hoje" ja e o 1o item do st.navigation — sem page_link duplicado.
         # Carimbo de build — confirma num relance se o Cloud esta na versao nova.
         try:
