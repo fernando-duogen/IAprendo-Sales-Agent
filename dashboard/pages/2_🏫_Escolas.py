@@ -919,7 +919,8 @@ if st.session_state.escola_detail_id:
                 from tools.discovery_engine import discovery_engine
                 with st.status(f"Buscando sinais de {company.get('name', '?')}...",
                                 expanded=True) as status:
-                    st.write("🔍 Tentando DuckDuckGo (5 queries: rankings, noticias, imprensa local, ENEM, estado)...")
+                    st.write("🔍 Buscando rankings, premios e noticias na web "
+                             "(Perplexity no local; busca web por IA no app online)...")
                     sinais_result = discovery_engine.enrich_signals(company_id)
                     n_sinais = sinais_result.get("sinais_adicionados", 0)
                     n_found = sinais_result.get("sinais_encontrados", 0)

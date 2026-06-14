@@ -205,6 +205,44 @@ class DiscoveryEngine:
             logger.error(f"Perplexity error: {e}")
             return ""
 
+    def _search_via_openai_websearch(
+        self, name: str, city: str, state: str, timeout: int = 60
+    ) -> str:
+        """Busca web SERVER-SIDE via OpenAI (modelo *-search-preview).
+
+        Funciona no Streamlit Cloud, que NAO tem navegador headless (onde o
+        Perplexity-browser nao roda). Retorna texto livre com o que encontrou
+        (mesmo contrato do _ask_perplexity). Degrada pra "" em qualquer erro."""
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            logger.warning("OPENAI_API_KEY ausente — busca web IA pulada")
+            return ""
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            model = os.getenv("WEBSEARCH_MODEL", "gpt-4o-mini-search-preview")
+            prompt = (
+                f"Pesquise na web sobre a escola '{name}' em {city}/{state} (Brasil). "
+                f"Liste rankings educacionais, premios recebidos, noticias importantes, "
+                f"expansoes ou reconhecimentos recentes (2023-2026), com ano e fonte "
+                f"(URL) quando houver. Se nao encontrar nada relevante, diga isso."
+            )
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                web_search_options={},  # ativa a busca web nativa do modelo
+            )
+            txt = resp.choices[0].message.content or ""
+            logger.info("Busca web IA (OpenAI) respondeu",
+                        extra={"school": name, "len": len(txt)})
+            return txt
+        except Exception as e:
+            logger.warning(f"Busca web IA (OpenAI) falhou: {e}")
+            return ""
+
     def _discover_via_llm(
         self,
         cidade: str,
@@ -640,16 +678,31 @@ class DiscoveryEngine:
             except Exception as e:
                 logger.warning(f"enrich_signals Perplexity falhou: {e}")
 
+        # === Tentativa 3: busca web SERVER-SIDE via IA (OpenAI *-search-preview).
+        # SEM navegador -> funciona no Streamlit Cloud, onde a Tentativa 2
+        # (Perplexity-browser) e pulada. So roda se ainda nao ha sinais: no local
+        # o Perplexity ja resolveu (sem custo extra); no Cloud este e o caminho
+        # que funciona. Assim uma versao nao prejudica a outra. ===
+        if not signals:
+            ws_context = self._search_via_openai_websearch(name, city, state)
+            if ws_context and len(ws_context.strip()) >= 20:
+                signals = self._text_to_json_via_llm(ws_context, schema) or []
+                fonte_usada = "busca_web_ia"
+                logger.info("enrich_signals busca web IA extraiu N sinais",
+                            extra={"company_id": company_id, "count": len(signals)})
+
         if not signals:
             # Mensagem honesta — diz o que REALMENTE aconteceu
             if fonte_usada == "duckduckgo":
                 erro_msg = "DuckDuckGo retornou contexto mas nenhum sinal estruturado (ranking/premio/noticia) foi extraido"
             elif fonte_usada == "perplexity":
                 erro_msg = "Perplexity respondeu mas nenhum sinal estruturado foi extraido"
+            elif fonte_usada == "busca_web_ia":
+                erro_msg = "A busca web (IA) respondeu mas nenhum sinal estruturado (ranking/premio/noticia) foi extraido — a escola pode nao ter cobertura publica recente"
             elif ddg_context:
-                erro_msg = "Contexto web insuficiente + Perplexity indisponivel"
+                erro_msg = "Contexto web insuficiente"
             else:
-                erro_msg = "Nenhuma fonte retornou dados (DuckDuckGo sem resultados, Perplexity indisponivel)"
+                erro_msg = "Nenhuma fonte retornou sinais (busca web sem resultados relevantes para esta escola)"
             return {
                 "company_id": company_id,
                 "escola": name,
