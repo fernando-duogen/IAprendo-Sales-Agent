@@ -744,12 +744,10 @@ def _add_sidebar_home():
         if _LOGO_DATA_URI:
             brand = (
                 '<div style="background:linear-gradient(135deg,#1976D2 0%,#1565C0 100%);'
-                'border-radius:14px;padding:16px 14px 13px;margin:2px 0 10px;'
+                'border-radius:12px;padding:10px 14px;margin:2px 0 10px;'
                 'box-shadow:0 1px 3px rgba(16,24,40,.10);text-align:center">'
                 f'<img src="{_LOGO_DATA_URI}" alt="IAprendo" '
-                'style="height:30px;display:block;margin:0 auto 5px"/>'
-                '<div style="font-size:10.5px;color:#BBDEFB;letter-spacing:.6px;'
-                'text-transform:uppercase">Agente de Vendas</div></div>'
+                'style="height:28px;display:block;margin:0 auto"/></div>'
             )
         else:
             brand = (
