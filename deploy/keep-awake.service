@@ -1,0 +1,14 @@
+[Unit]
+Description=Mantem o app IAprendo (Streamlit Cloud) acordado via sessao real de navegador
+Documentation=file:deploy/KEEP_AWAKE_ORACLE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Ajuste User/paths se o usuario da VM nao for 'ubuntu' (rode: whoami)
+User=ubuntu
+WorkingDirectory=/home/ubuntu/IAprendo_Sales_Agent
+Environment=KEEPALIVE_URL=https://iaprendo-sales-agent.streamlit.app/
+ExecStart=/home/ubuntu/IAprendo_Sales_Agent/venv/bin/python scripts/keep_awake.py
+TimeoutStartSec=180

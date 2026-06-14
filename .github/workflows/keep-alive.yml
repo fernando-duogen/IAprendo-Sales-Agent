@@ -9,14 +9,15 @@ name: Keep Streamlit app awake
 # o app dormia mesmo com o "ping" dando sucesso. O robo agora carrega o app de
 # verdade e ainda clica em "Yes, get this app back up!" se estiver dormindo.
 #
-# Janela: dias uteis, ~06h-21h BRT (09-23 UTC), a cada 15 min. O GitHub as vezes
-# atrasa/pula agendamentos (best-effort), por isso a frequencia alta da varias
-# chances. Para 24/7, troque o cron por "*/15 * * * *". Para incluir sabado,
-# use "1-6" no campo de dia-da-semana.
+# NOTA: este keep-alive via GitHub Actions e um PALIATIVO. O agendador do GitHub
+# e best-effort (dropa/atrasa a maioria dos crons) — ruim pra keep-alive. O
+# keep-alive CONFIAVEL roda na VM Oracle via systemd timer (deploy/keep-awake.*).
+# Quando a Oracle estiver provada, este schedule sera removido (so resta o
+# workflow_dispatch pra teste manual).
 
 on:
   schedule:
-    - cron: "*/15 9-23 * * 1-5"   # ~06h-21h BRT, seg-sex
+    - cron: "*/15 * * * *"          # 24/7, a cada 15 min (best-effort)
   workflow_dispatch: {}            # permite rodar manualmente pela aba Actions
 
 permissions:

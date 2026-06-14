@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispara o keep-awake do app IAprendo a cada 10 min (mantem o Streamlit Cloud acordado)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
