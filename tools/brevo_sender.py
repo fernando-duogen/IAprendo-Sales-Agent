@@ -241,8 +241,13 @@ class BrevoSender:
         meeting_link = os.getenv("HUBSPOT_MEETING_LINK", "")
         meeting_link_text = os.getenv("HUBSPOT_MEETING_LINK_TEXT", "Agendar conversa com Fernando")
 
-        # Detectar se o body tem HTML embutido (charts/report inline)
-        _has_html = bool(re.search(r'<(img|a\s+href|div)\s', text))
+        # Detectar se o body tem HTML embutido (charts/report inline).
+        # IMPORTANTE: casar `<a `, `<img `, `<div ` — o padrao antigo
+        # (`<(img|a\s+href|div)\s`) NAO casava `<a href="..."` (exigia espaco
+        # depois de `href`, mas vem `=`), entao o report_link era tratado como
+        # texto puro e o linkificador de URL re-embrulhava a URL DENTRO da
+        # ancora -> link aninhado/quebrado.
+        _has_html = bool(re.search(r'<(?:a|img|div)\s', text))
 
         if _has_html:
             # Body ja tem HTML — proteger tags existentes antes de converter URLs
