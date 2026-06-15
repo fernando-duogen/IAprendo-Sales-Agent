@@ -1870,9 +1870,20 @@ if st.session_state.escola_detail_id:
         section_header("Relatorios e Graficos", "analytics")
         _inep_report = company.get("inep_code")
         if _inep_report:
+            from tools.insight_charts import charts_renderable as _can_render
+            _render_ok = _can_render()
+            if not _render_ok:
+                alert_banner(
+                    "A geracao de relatorio/graficos roda <strong>fora do app online</strong> "
+                    "(local/Oracle, onde o motor de graficos funciona). Aqui voce so "
+                    "<strong>abre</strong> o que ja foi gerado. Pra atualizar, rode "
+                    "<code>scripts/pregenerate_artifacts.py</code> ou peca ao IAlex.",
+                    "info",
+                )
             rp1, rp2, rp3 = st.columns(3)
             with rp1:
-                if st.button("Gerar One Page Report", icon=":material/description:", key="btn_opr"):
+                if st.button("Gerar One Page Report", icon=":material/description:",
+                             key="btn_opr", disabled=not _render_ok):
                     with st.spinner("Gerando report..."):
                         try:
                             from tools.report_generator import generate_and_upload_report
@@ -1886,11 +1897,15 @@ if st.session_state.escola_detail_id:
                             st.session_state.escola_msg = ("error", f"Erro: {_e}")
                     st.rerun()
             with rp2:
-                if st.button("Gerar Graficos", icon=":material/bar_chart:", key="btn_charts"):
+                if st.button("Gerar Graficos", icon=":material/bar_chart:",
+                             key="btn_charts", disabled=not _render_ok):
                     with st.spinner("Gerando graficos..."):
                         try:
                             from tools.insight_charts import generate_all_relevant_charts
+                            from database.supabase_client import db as _db_ch
                             _charts = generate_all_relevant_charts(str(_inep_report))
+                            for _ch in _charts:
+                                _db_ch.upload_chart(_ch["filename"], _ch["bytes"])
                             if _charts:
                                 st.session_state["charts_result"] = _charts
                                 st.session_state.escola_msg = ("success", f"{len(_charts)} grafico(s) gerado(s)!")

@@ -26,3 +26,11 @@ def test_render_charts_flag(monkeypatch):
     assert charts_renderable() is True
     monkeypatch.delenv("RENDER_CHARTS", raising=False)
     assert charts_renderable() is True  # default: renderiza (local/Oracle)
+
+
+def test_autodetect_streamlit_cloud(monkeypatch):
+    """Sem flag, mas rodando no Streamlit Cloud (/mount/src) -> nao renderiza."""
+    import tools.insight_charts as ic
+    monkeypatch.delenv("RENDER_CHARTS", raising=False)
+    monkeypatch.setattr(ic.os.path, "isdir", lambda p: p == "/mount/src")
+    assert ic.charts_renderable() is False

@@ -324,7 +324,7 @@ class WriterAgent(BaseAgent):
                     # report_link: OPR pre-gerado (so se existe no Storage)
                     try:
                         _base = _os.getenv("REPORT_BASE_URL", "https://dados.iaprendo.com.br").rstrip("/")
-                        _rep = _db.client.storage.from_("insight-charts").list("reports") or []
+                        _rep = _db.client.storage.from_("insight-charts").list("reports", {"limit": 2000}) or []
                         if f"{inep}.html" in {it.get("name") for it in _rep}:
                             extra_vars["report_link"] = _opr_anchor(f"{_base}/reports/{inep}.html")
                     except Exception as e:

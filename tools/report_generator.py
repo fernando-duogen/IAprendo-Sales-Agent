@@ -1139,6 +1139,29 @@ def generate_and_upload_report(inep: str, benchmark_dep: Optional[str] = None) -
         Dict com {"html_url": str, "escola_nome": str, "inep": str}
         ou None se falhar.
     """
+    # GATE: no Cloud (kaleido nao roda) NAO regenerar — senao sobrescreve o OPR
+    # bom (pre-gerado fora do Cloud) por uma versao chartless. Retorna a URL do
+    # OPR existente se houver no Storage. Geracao real roda local/Oracle.
+    try:
+        from tools.insight_charts import charts_renderable
+        if not charts_renderable():
+            _inep_s = str(inep or "").strip()
+            try:
+                from database.supabase_client import db as _db_gate
+                _base = os.getenv("REPORT_BASE_URL", "https://dados.iaprendo.com.br").rstrip("/")
+                _ls = _db_gate.client.storage.from_("insight-charts").list(
+                    "reports", {"limit": 2000}) or []
+                if _inep_s and f"{_inep_s}.html" in {it.get("name") for it in _ls}:
+                    logger.info("OPR ja existe (Cloud nao regenera)", extra={"inep": _inep_s})
+                    return {"html_url": f"{_base}/reports/{_inep_s}.html", "inep": _inep_s}
+            except Exception as _e:
+                logger.debug(f"OPR lookup (Cloud) falhou: {_e}")
+            logger.warning("OPR nao gerado: ambiente sem kaleido e sem pre-gerado",
+                           extra={"inep": _inep_s})
+            return None
+    except Exception:
+        pass
+
     result = generate_report(inep, benchmark_dep=benchmark_dep)
     if not result:
         return None

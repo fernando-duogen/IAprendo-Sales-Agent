@@ -47,9 +47,31 @@ _CHART_FILENAMES = {"radar": "radar.png", "gap": "gap.png", "trend": "trend_mat.
 
 def charts_renderable() -> bool:
     """True se este ambiente pode RENDERIZAR graficos/OPR (kaleido funciona).
-    No Streamlit Cloud, kaleido falha -> setar secret RENDER_CHARTS="false" pra
-    o Cloud apenas CONSUMIR artefatos pre-gerados (fora do Cloud)."""
-    return os.getenv("RENDER_CHARTS", "true").strip().lower() != "false"
+
+    No Streamlit Cloud kaleido falha; queremos que o Cloud apenas CONSUMA
+    artefatos pre-gerados (fora do Cloud). Robusto (nao depende do secret estar
+    perfeito):
+      1. flag RENDER_CHARTS em os.environ OU st.secrets (aceita string E boolean);
+      2. fallback: AUTO-DETECTA o Streamlit Cloud (monta o repo em /mount/src)
+         -> retorna False mesmo sem o secret.
+    Local/Oracle (sem flag e sem /mount/src) -> True (renderiza)."""
+    _v = os.getenv("RENDER_CHARTS")
+    if _v is None:
+        try:
+            import streamlit as st  # so existe no contexto do dashboard
+            if "RENDER_CHARTS" in st.secrets:
+                _v = st.secrets["RENDER_CHARTS"]  # pode ser bool TOML
+        except Exception:
+            _v = None
+    if _v is not None:
+        return str(_v).strip().lower() not in ("false", "0", "no", "off")
+    # Sem flag: auto-detecta o Streamlit Community Cloud (repo em /mount/src)
+    try:
+        if os.path.isdir("/mount/src"):
+            return False
+    except Exception:
+        pass
+    return True
 
 
 def chart_storage_path(inep: str, chart_type: str) -> str:

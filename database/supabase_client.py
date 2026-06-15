@@ -2225,6 +2225,10 @@ class Database:
                 file_options={
                     "content-type": "text/html; charset=utf-8",
                     "contentType": "text/html; charset=utf-8",
+                    # cache curto: re-geracao do OPR aparece rapido (evita CDN
+                    # servir versao antiga apos re-pregeracao)
+                    "cache-control": "public, max-age=300",
+                    "cacheControl": "300",
                     "x-upsert": "true",
                 },
             )

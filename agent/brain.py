@@ -5701,7 +5701,7 @@ def _handle_gerar_email(params: Dict) -> str:
                 # Cloud: usar OPR pre-gerado fora do Cloud (so se existe)
                 try:
                     _base_r = os.getenv("REPORT_BASE_URL", "https://dados.iaprendo.com.br").rstrip("/")
-                    _rep_ls = db.client.storage.from_("insight-charts").list("reports") or []
+                    _rep_ls = db.client.storage.from_("insight-charts").list("reports", {"limit": 2000}) or []
                     if f"{_inep_r}.html" in {it.get("name") for it in _rep_ls}:
                         report_url = f"{_base_r}/reports/{_inep_r}.html"
                 except Exception:
