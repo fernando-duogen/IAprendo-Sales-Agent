@@ -107,6 +107,44 @@ Pra não competir pela sessão WhatsApp: no PC, **não rode mais** o `start-iale
 
 ---
 
+## Fase 9 — (recomendada) Gráficos + OPR na VM (equivalência online = local)
+
+O **Streamlit Cloud não consegue renderizar os gráficos** (radar/gap/trend) nem o
+OPR — falta a lib de sistema do `kaleido` (render de PNG do Plotly). Por isso o
+app online apenas **consome** artefatos prontos do Supabase; **algo fora do Cloud
+precisa pré-gerá-los**. A VM (que já roda o IAlex 24/7) é o lugar natural pra
+isso — assim **o que você vê online fica igual ao local**.
+
+O scheduler do IAlex já tem o job de pré-geração embutido (noite: só escolas
+novas; domingo: refresh completo). Pra ele funcionar na VM, instale o `kaleido`:
+
+```
+cd ~/IAprendo_Sales_Agent
+./venv/bin/pip install kaleido
+# Se o render reclamar de libs de sistema (Chromium headless), instale:
+sudo apt-get update && sudo apt-get install -y libgbm1 libnss3 libasound2 libxshmfence1
+sudo systemctl restart ialex
+```
+
+**Não defina `RENDER_CHARTS` na VM.** O código auto-detecta: renderiza por padrão
+no PC/VM e só desliga no Streamlit Cloud (que tem `/mount/src`). `RENDER_CHARTS`
+é um override opcional — necessário apenas no Cloud, e mesmo lá é redundante com a
+auto-detecção.
+
+Testar 1x na VM (gera os artefatos de todas as escolas do CRM agora):
+```
+cd ~/IAprendo_Sales_Agent
+./venv/bin/python scripts/pregenerate_artifacts.py            # todas do CRM
+./venv/bin/python scripts/pregenerate_artifacts.py 22144714   # 1 INEP específico
+```
+Depois disso, o scheduler mantém tudo fresco sozinho (04:00 novas, dom 04:30 full).
+
+> Se preferir adiar o `kaleido`, o **núcleo do IAlex funciona sem ele** — só os
+> gráficos/OPR ficam desatualizados até você instalar. Enquanto a VM não estiver
+> pronta, rodar o `start-ialex.bat` no **PC** já cumpre esse papel (mesmo job).
+
+---
+
 ## Manutenção (na VM)
 | Tarefa | Comando |
 |---|---|
@@ -121,7 +159,9 @@ Pra não competir pela sessão WhatsApp: no PC, **não rode mais** o `start-iale
 - **Capacidade ARM da Oracle**: o A1 free às vezes dá "out of capacity" — insista/retente.
 - **ARM (kaleido/playwright)**: se os gráficos de email ou a busca Perplexity derem
   erro na VM, são deps opcionais ARM — instale depois (`pip install kaleido` /
-  `playwright install chromium`). O núcleo do IAlex funciona sem.
+  `playwright install chromium`). O núcleo do IAlex funciona sem. Para a
+  pré-geração de gráficos/OPR que mantém o Cloud fresco, **veja a Fase 9** (kaleido
+  é recomendado lá).
 - **Segurança**: mantenha só a 22 aberta; o QR via túnel SSH; a chave da Evolution
   (`AUTHENTICATION_API_KEY`) protege a 8080 mesmo internamente.
 - **Sessão WhatsApp = volume `evolution_instances`**: não apague esse volume Docker

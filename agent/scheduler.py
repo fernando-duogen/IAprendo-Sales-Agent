@@ -64,6 +64,17 @@ class IALexScheduler:
         # Retreino semanal do modelo preditivo (domingo 03:00)
         schedule.every().sunday.at("03:00").do(self._retrain_predictive_model)
 
+        # Pre-geracao de OPR + graficos de insight (kaleido) FORA do Cloud.
+        # O Streamlit Cloud nao roda kaleido — ele apenas CONSOME os artefatos
+        # prontos no Supabase. Este job (rodando onde o IAlex roda: PC/Oracle)
+        # mantem o Cloud sempre fresco => equivalencia entre online e local.
+        # Noite (04:00): so as escolas SEM artefato (novas importadas) — barato.
+        # Domingo (04:30): refresh COMPLETO (dado anual/ENEM/matriculas muda).
+        schedule.every().day.at("04:00").do(self._pregenerate_artifacts)
+        schedule.every().sunday.at("04:30").do(
+            self._pregenerate_artifacts, full_refresh=True
+        )
+
         # Outlook Calendar — poll + briefings + pós-reunião
         schedule.every(15).minutes.do(self._poll_outlook_calendar)
         schedule.every(5).minutes.do(self._check_pre_meeting_briefings)
@@ -868,6 +879,67 @@ class IALexScheduler:
                 logger.info(f"Retreino nao realizado: {result.get('reason')}")
         except Exception as e:
             logger.error(f"Erro no retreino do modelo preditivo: {e}")
+
+    # ============================================================
+    # PRE-GERACAO DE ARTEFATOS (OPR + graficos) FORA DO CLOUD
+    # ============================================================
+
+    def _pregenerate_artifacts(self, full_refresh: bool = False):
+        """Pre-gera OPR + graficos de insight (kaleido) FORA do Cloud.
+
+        Roda onde o IAlex roda (PC/Oracle). O Streamlit Cloud nao tem kaleido,
+        entao apenas CONSOME os artefatos prontos do Supabase. Manter este job
+        rodando mantem o Cloud sempre fresco => equivalencia online/local.
+
+        - full_refresh=False (noite, 04:00): so as escolas SEM OPR no Storage
+          (novas importadas) — barato, cobre o dia-a-dia.
+        - full_refresh=True (domingo, 04:30): refresh COMPLETO (dado anual muda).
+
+        Gate por charts_renderable(): no-op em ambiente sem render (ex: Cloud).
+        Silencioso (so logs) — manutencao, nao notifica o dono.
+        """
+        try:
+            from tools.insight_charts import charts_renderable
+            if not charts_renderable():
+                logger.debug("Pregeneracao pulada (ambiente sem render de graficos)")
+                return
+            from scripts.pregenerate_artifacts import (
+                pregenerate_school_artifacts, _crm_ineps,
+            )
+            ineps = _crm_ineps()
+            if not full_refresh:
+                # so as escolas que ainda nao tem OPR no Storage (novas)
+                try:
+                    from database.supabase_client import db as _db
+                    existing = _db.client.storage.from_("insight-charts").list(
+                        "reports", {"limit": 2000}
+                    ) or []
+                    have = {
+                        (f.get("name") or "").replace(".html", "")
+                        for f in existing
+                        if (f.get("name") or "").endswith(".html")
+                    }
+                    ineps = [i for i in ineps if i not in have]
+                except Exception as e:
+                    logger.debug(
+                        f"Pregeneracao: list reports falhou ({e}); processando todas"
+                    )
+            if not ineps:
+                logger.debug("Pregeneracao: nada a fazer (todas com artefato)")
+                return
+            ok = 0
+            for inep in ineps:
+                try:
+                    if pregenerate_school_artifacts(inep).get("ok"):
+                        ok += 1
+                except Exception as e:
+                    logger.debug(f"Pregeneracao {inep} falhou: {e}")
+            logger.info(
+                "Pregeneracao de artefatos concluida",
+                extra={"total": len(ineps), "ok": ok, "full_refresh": full_refresh},
+            )
+        except Exception as e:
+            logger.error(f"Erro na pregeneracao de artefatos: {e}")
 
     # ============================================================
     # PIPELINE AUTOMATICO (Item 5)
