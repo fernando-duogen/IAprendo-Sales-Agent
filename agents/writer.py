@@ -271,42 +271,64 @@ class WriterAgent(BaseAgent):
         if needs_charts:
             inep = company.get("inep_code")
             if inep:
-                # Graficos
-                try:
-                    from tools.insight_charts import generate_all_relevant_charts
-                    from database.supabase_client import db as _db
-                    charts = generate_all_relevant_charts(str(inep))
-                    for ch in charts:
-                        url = _db.upload_chart(ch["filename"], ch["bytes"])
-                        if url:
-                            chart_urls_list.append({"type": ch["type"], "url": url, "alt": ch.get("alt", "")})
-                            _img_style = ('style="width:100%;max-width:560px;display:block;'
-                                         'margin:0 auto;border-radius:8px"')
-                            _src_tag = (f'<div style="text-align:center;margin:16px 0">'
-                                        f'<img src="{url}" alt="{ch.get("alt", "")}" {_img_style} />'
-                                        f'<p style="color:#999;font-size:11px;margin-top:4px">'
-                                        f'Fonte: ENEM 2024 / Censo Escolar (INEP)</p></div>')
-                            if ch["type"] == "radar":
-                                extra_vars["chart_radar"] = _src_tag
-                            elif ch["type"] == "gap":
-                                extra_vars["chart_gap"] = _src_tag
-                            elif ch["type"] == "trend":
-                                extra_vars["chart_trend"] = _src_tag
-                except Exception as e:
-                    logger.debug(f"Template charts generation failed: {e}")
+                import os as _os
+                from tools.insight_charts import charts_renderable, chart_public_url
+                from database.supabase_client import db as _db
+                _img_style = ('style="width:100%;max-width:560px;display:block;'
+                              'margin:0 auto;border-radius:8px"')
 
-                # Report
-                try:
-                    from tools.report_generator import generate_and_upload_report
-                    report_result = generate_and_upload_report(str(inep))
-                    if report_result:
-                        _rurl = report_result["html_url"]
-                        extra_vars["report_link"] = (
-                            f'<a href="{_rurl}" style="color:#3BB8C4;font-weight:bold">'
-                            f'Ver diagnostico completo da {school_name}</a>'
-                        )
-                except Exception as e:
-                    logger.debug(f"Template report generation failed: {e}")
+                def _img_tag(_u, _alt):
+                    return (f'<div style="text-align:center;margin:16px 0">'
+                            f'<img src="{_u}" alt="{_alt}" {_img_style} />'
+                            f'<p style="color:#999;font-size:11px;margin-top:4px">'
+                            f'Fonte: ENEM 2024 / Censo Escolar (INEP)</p></div>')
+
+                def _opr_anchor(_url):
+                    return (f'<a href="{_url}" style="color:#3BB8C4;font-weight:bold">'
+                            f'Ver diagnostico completo da {school_name}</a>')
+
+                if charts_renderable():
+                    # LOCAL/Oracle: gera com kaleido + upload + inline
+                    try:
+                        from tools.insight_charts import generate_all_relevant_charts
+                        charts = generate_all_relevant_charts(str(inep))
+                        for ch in charts:
+                            url = _db.upload_chart(ch["filename"], ch["bytes"])
+                            if url:
+                                chart_urls_list.append({"type": ch["type"], "url": url, "alt": ch.get("alt", "")})
+                                _tag = _img_tag(url, ch.get("alt", ""))
+                                if ch["type"] == "radar":
+                                    extra_vars["chart_radar"] = _tag
+                                elif ch["type"] == "gap":
+                                    extra_vars["chart_gap"] = _tag
+                                elif ch["type"] == "trend":
+                                    extra_vars["chart_trend"] = _tag
+                    except Exception as e:
+                        logger.debug(f"Template charts generation failed: {e}")
+                    try:
+                        from tools.report_generator import generate_and_upload_report
+                        report_result = generate_and_upload_report(str(inep))
+                        if report_result:
+                            extra_vars["report_link"] = _opr_anchor(report_result["html_url"])
+                    except Exception as e:
+                        logger.debug(f"Template report generation failed: {e}")
+                else:
+                    # CLOUD (RENDER_CHARTS=false): kaleido nao roda — usa artefatos
+                    # PRE-GERADOS fora do Cloud (URLs deterministicas; so se existem).
+                    for _ct, _vk in (("radar", "chart_radar"), ("gap", "chart_gap"),
+                                     ("trend", "chart_trend")):
+                        _u = chart_public_url(str(inep), _ct)
+                        if _u:
+                            extra_vars[_vk] = _img_tag(_u, _ct)
+                            chart_urls_list.append({"type": _ct, "url": _u, "alt": _ct})
+                    # report_link: OPR pre-gerado (so se existe no Storage)
+                    try:
+                        _base = _os.getenv("REPORT_BASE_URL", "https://dados.iaprendo.com.br").rstrip("/")
+                        _rep = _db.client.storage.from_("insight-charts").list("reports") or []
+                        if f"{inep}.html" in {it.get("name") for it in _rep}:
+                            extra_vars["report_link"] = _opr_anchor(f"{_base}/reports/{inep}.html")
+                    except Exception as e:
+                        logger.debug(f"Cloud report_link lookup failed: {e}")
 
         rendered = render_template(
             subject_template=template_data["subject_template"],

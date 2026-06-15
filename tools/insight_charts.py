@@ -19,6 +19,7 @@ Usage:
     if png_bytes:
         url = db.upload_chart("43238203/radar_20260412.png", png_bytes)
 """
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -33,6 +34,47 @@ except ImportError:
     go = None  # type: ignore
 
 from utils.logger import logger
+
+
+# ============================================================================
+# PATHS DETERMINISTICOS no bucket insight-charts (overwrite-latest)
+# Permitem o Streamlit Cloud REFERENCIAR a URL do chart pre-gerado fora do
+# Cloud (kaleido nao roda no Cloud) sem regenerar. Ver FixB do fluxo OPR/email.
+# ============================================================================
+CHART_BUCKET = "insight-charts"
+_CHART_FILENAMES = {"radar": "radar.png", "gap": "gap.png", "trend": "trend_mat.png"}
+
+
+def charts_renderable() -> bool:
+    """True se este ambiente pode RENDERIZAR graficos/OPR (kaleido funciona).
+    No Streamlit Cloud, kaleido falha -> setar secret RENDER_CHARTS="false" pra
+    o Cloud apenas CONSUMIR artefatos pre-gerados (fora do Cloud)."""
+    return os.getenv("RENDER_CHARTS", "true").strip().lower() != "false"
+
+
+def chart_storage_path(inep: str, chart_type: str) -> str:
+    """Path deterministico do PNG no bucket (ex: '22144714/radar.png')."""
+    return f"{inep}/{_CHART_FILENAMES.get(chart_type, chart_type + '.png')}"
+
+
+def chart_public_url(inep: str, chart_type: str, check_exists: bool = True) -> Optional[str]:
+    """URL publica deterministica do chart pre-gerado. Retorna None se
+    check_exists e o arquivo nao existe no Storage (evita <img> quebrada)."""
+    base = os.getenv("SUPABASE_URL", "").rstrip("/")
+    if not base or not inep:
+        return None
+    fname = _CHART_FILENAMES.get(chart_type)
+    if not fname:
+        return None
+    if check_exists:
+        try:
+            from database.supabase_client import db
+            items = db.client.storage.from_(CHART_BUCKET).list(str(inep)) or []
+            if fname not in {it.get("name") for it in items}:
+                return None
+        except Exception:
+            return None
+    return f"{base}/storage/v1/object/public/{CHART_BUCKET}/{chart_storage_path(inep, chart_type)}"
 
 
 # ============================================================================
@@ -459,6 +501,17 @@ def generate_trend_chart(
     s_valid_raw = [(y, v) for y, v in zip(years, school_vals) if v is not None]
     b_valid_raw = [(y, v) for y, v in zip(years, bench_vals) if v is not None]
 
+    # Guard (FixC): re-basear no 1o ano com amostra razoavel (>=20 alunos) e
+    # descartar anos anteriores minusculos — senao escola nova/reestruturada (ex:
+    # 12 -> 1211 alunos) gera variacao absurda (+9000%). Alinha benchmark ao
+    # mesmo ano-base.
+    _MIN_BASE = 20
+    _bi = next((i for i, (_, v) in enumerate(s_valid_raw) if v and v >= _MIN_BASE), 0)
+    if s_valid_raw:
+        _base_year = s_valid_raw[_bi][0]
+        s_valid_raw = [(y, v) for (y, v) in s_valid_raw if y >= _base_year]
+        b_valid_raw = [(y, v) for (y, v) in b_valid_raw if y >= _base_year]
+
     s_base = s_valid_raw[0][1] if s_valid_raw else 1
     b_base = b_valid_raw[0][1] if b_valid_raw else 1
     s_base = max(s_base, 1)  # evita divisao por zero
@@ -573,8 +626,8 @@ def generate_all_relevant_charts(
     Returns:
         Lista de dicts: [{"type": "radar", "bytes": PNG, "filename": "..."}, ...]
     """
-    from datetime import date
-    today = date.today().strftime("%Y%m%d")
+    # Paths DETERMINISTICOS (overwrite-latest): permitem o Cloud referenciar a
+    # URL sem regenerar (geracao roda fora do Cloud). Ver CHART_FILENAMES.
     charts: List[Dict[str, Any]] = []
 
     # 1. Radar ENEM (sempre, se tiver amostra confiavel)
@@ -583,7 +636,7 @@ def generate_all_relevant_charts(
         charts.append({
             "type": "radar",
             "bytes": radar,
-            "filename": f"{inep}/radar_{today}.png",
+            "filename": chart_storage_path(inep, "radar"),
             "alt": "Performance ENEM 2024 por area",
         })
 
@@ -593,7 +646,7 @@ def generate_all_relevant_charts(
         charts.append({
             "type": "gap",
             "bytes": gap,
-            "filename": f"{inep}/gap_{today}.png",
+            "filename": chart_storage_path(inep, "gap"),
             "alt": "Diferenca vs escolas similares",
         })
 
@@ -603,7 +656,7 @@ def generate_all_relevant_charts(
         charts.append({
             "type": "trend",
             "bytes": trend,
-            "filename": f"{inep}/trend_mat_{today}.png",
+            "filename": chart_storage_path(inep, "trend"),
             "alt": "Evolucao de matriculas",
         })
 

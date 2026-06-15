@@ -5554,6 +5554,16 @@ def _generate_and_upload_charts(inep: str) -> List[Dict[str, str]]:
     """
     if not inep:
         return []
+    from tools.insight_charts import charts_renderable, chart_public_url
+    if not charts_renderable():
+        # Cloud (RENDER_CHARTS=false): kaleido nao roda — usar PRE-GERADOS
+        # (URLs deterministicas; so se existirem no Storage).
+        out = []
+        for _ct in ("radar", "gap", "trend"):
+            _u = chart_public_url(str(inep), _ct)
+            if _u:
+                out.append({"type": _ct, "url": _u, "alt": _ct})
+        return out
     try:
         from tools.insight_charts import generate_all_relevant_charts
         charts = generate_all_relevant_charts(str(inep), benchmark="municipio")
@@ -5675,15 +5685,27 @@ def _handle_gerar_email(params: Dict) -> str:
                 elif _cu.get("type") == "trend":
                     _chart_trend_url = _cu.get("url", "")
 
-            # Gerar One Page Report (best-effort)
+            # Gerar One Page Report (best-effort; env-aware)
             report_url = ""
-            try:
-                from tools.report_generator import generate_and_upload_report
-                report_result = generate_and_upload_report(str(escola.get("inep_code", "")))
-                if report_result:
-                    report_url = report_result["html_url"]
-            except Exception:
-                pass
+            _inep_r = str(escola.get("inep_code", "") or "")
+            from tools.insight_charts import charts_renderable as _charts_ok
+            if _charts_ok():
+                try:
+                    from tools.report_generator import generate_and_upload_report
+                    report_result = generate_and_upload_report(_inep_r)
+                    if report_result:
+                        report_url = report_result["html_url"]
+                except Exception:
+                    pass
+            elif _inep_r:
+                # Cloud: usar OPR pre-gerado fora do Cloud (so se existe)
+                try:
+                    _base_r = os.getenv("REPORT_BASE_URL", "https://dados.iaprendo.com.br").rstrip("/")
+                    _rep_ls = db.client.storage.from_("insight-charts").list("reports") or []
+                    if f"{_inep_r}.html" in {it.get("name") for it in _rep_ls}:
+                        report_url = f"{_base_r}/reports/{_inep_r}.html"
+                except Exception:
+                    pass
 
             # Substituir variaveis no template (inclui graficos e report)
             # Sender ativo: dashboard logado, IAlex thread-local (esposa pode mandar pelo WhatsApp dela), ou fallback YOUR_*

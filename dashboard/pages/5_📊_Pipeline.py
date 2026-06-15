@@ -1336,6 +1336,12 @@ def render_recomendadas():
                             _cd["owner_username"] = _me
                             _cid = db.insert_company(_cd)
                             if _cid:
+                                # Catalogo MEC nao tem matriculas -> sincronizar do
+                                # censo (senao detectar_dados/Potencial R$/OPR ficam zerados)
+                                try:
+                                    db.sync_company_matriculas_from_censo(str(_ld.get("inep")))
+                                except Exception:
+                                    pass
                                 st.toast(f"{_ld.get('nome')} importada e atribuida a voce! "
                                          "Veja em Escolas.")
                                 st.rerun()

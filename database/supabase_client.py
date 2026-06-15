@@ -57,6 +57,36 @@ class RecordNotFoundError(DatabaseError):
 
 
 # ============================================================================
+# CENSO -> COMPANY (matriculas/docentes) — usado por sync_company_matriculas_*
+# ============================================================================
+_CENSO_TO_COMPANY_MATRICULAS = {
+    "qt_mat_bas": "total_matriculas",
+    "qt_mat_inf": "matriculas_infantil",
+    "qt_mat_fund": "matriculas_fundamental",
+    "qt_mat_fund_ai": "matriculas_fund_ai",
+    "qt_mat_fund_af": "matriculas_fund_af",
+    "qt_mat_med": "matriculas_medio",
+    "qt_mat_eja": "matriculas_eja",
+    "qt_doc_bas": "total_docentes",
+}
+
+
+def _censo_row_to_company_matriculas(censo_row: Dict[str, Any]) -> Dict[str, Any]:
+    """Mapeia uma linha de school_censo_yearly -> dict de updates de matriculas/
+    docentes pra companies. Inclui so campos com valor numerico (ignora None)."""
+    out: Dict[str, Any] = {}
+    for c_col, comp_col in _CENSO_TO_COMPANY_MATRICULAS.items():
+        v = (censo_row or {}).get(c_col)
+        if v is None:
+            continue
+        try:
+            out[comp_col] = int(v)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+# ============================================================================
 # DATABASE CLIENT
 # ============================================================================
 
@@ -882,6 +912,73 @@ class Database:
                 exc_info=True
             )
             raise DatabaseError(f"Falha ao atualizar empresa {company_id}") from e
+
+    def sync_company_matriculas_from_censo(
+        self, inep: str, force: bool = False
+    ) -> Dict[str, Any]:
+        """Preenche matriculas/docentes da company a partir do school_censo_yearly
+        (vintage mais recente). Escolas importadas via Recomendadas (catalogo MEC)
+        entram SEM matriculas; isto sincroniza do censo pra detectar_dados,
+        Potencial R$/mes e OPR ficarem corretos.
+
+        Conservador: so atualiza se a company estiver com matriculas zeradas/
+        vazias (nao clobbera escolas do CSV/RS), a menos que force=True.
+
+        Returns: {"updated": bool, "fields"?: {...}, "vintage"?: int, "reason"?: str}
+        """
+        inep = str(inep or "").strip()
+        if not inep:
+            return {"updated": False, "reason": "sem inep"}
+        try:
+            cr = (self.client.table("companies")
+                  .select("id, total_matriculas, matriculas_fund_af, matriculas_medio")
+                  .eq("inep_code", inep).limit(1).execute().data)
+            if not cr:
+                return {"updated": False, "reason": "company nao encontrada"}
+            comp = cr[0]
+            ja_tem = bool((comp.get("total_matriculas") or 0)
+                          or (comp.get("matriculas_fund_af") or 0)
+                          or (comp.get("matriculas_medio") or 0))
+            if ja_tem and not force:
+                return {"updated": False, "reason": "company ja tem matriculas"}
+            cy = (self.client.table("school_censo_yearly").select("*")
+                  .eq("inep_code", inep).order("vintage_censo", desc=True)
+                  .limit(1).execute().data)
+            if not cy:
+                return {"updated": False, "reason": "sem censo"}
+            fields = _censo_row_to_company_matriculas(cy[0])
+            if not fields:
+                return {"updated": False, "reason": "censo sem matriculas"}
+            self.update_company(comp["id"], fields)
+            logger.info("Company matriculas sincronizadas do censo",
+                        extra={"inep": inep, "vintage": cy[0].get("vintage_censo"),
+                               "fields": list(fields.keys())})
+            return {"updated": True, "fields": fields, "vintage": cy[0].get("vintage_censo")}
+        except Exception as e:
+            logger.error(f"sync_company_matriculas_from_censo falhou: {e}",
+                         extra={"inep": inep})
+            return {"updated": False, "reason": str(e)[:120]}
+
+    def backfill_company_matriculas_from_censo(self, limit: int = 5000) -> Dict[str, int]:
+        """Sincroniza do censo todas as companies com matriculas zeradas que tem
+        INEP. Idempotente. Returns {checked, updated}."""
+        done = {"checked": 0, "updated": 0}
+        try:
+            rows = (self.client.table("companies")
+                    .select("id, inep_code, total_matriculas, matriculas_fund_af, matriculas_medio")
+                    .limit(limit).execute().data or [])
+            for c in rows:
+                if ((c.get("total_matriculas") or 0) or (c.get("matriculas_fund_af") or 0)
+                        or (c.get("matriculas_medio") or 0)):
+                    continue
+                if not c.get("inep_code"):
+                    continue
+                done["checked"] += 1
+                if self.sync_company_matriculas_from_censo(c["inep_code"]).get("updated"):
+                    done["updated"] += 1
+        except Exception as e:
+            logger.error(f"backfill matriculas falhou: {e}")
+        return done
 
     def get_companies_by_status(
         self,
