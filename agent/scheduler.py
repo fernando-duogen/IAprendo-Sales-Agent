@@ -885,6 +885,17 @@ class IALexScheduler:
     # ============================================================
 
     def _pregenerate_artifacts(self, full_refresh: bool = False):
+        """Dispara a pre-geracao em THREAD (nao bloqueia o loop do scheduler).
+
+        O lote pode levar ~1h no refresh completo; rodar inline travaria os
+        outros jobs agendados. Por isso roda em daemon thread.
+        """
+        threading.Thread(
+            target=self._pregenerate_artifacts_inner,
+            args=(full_refresh,), daemon=True,
+        ).start()
+
+    def _pregenerate_artifacts_inner(self, full_refresh: bool):
         """Pre-gera OPR + graficos de insight (kaleido) FORA do Cloud.
 
         Roda onde o IAlex roda (PC/Oracle). O Streamlit Cloud nao tem kaleido,
@@ -903,9 +914,7 @@ class IALexScheduler:
             if not charts_renderable():
                 logger.debug("Pregeneracao pulada (ambiente sem render de graficos)")
                 return
-            from scripts.pregenerate_artifacts import (
-                pregenerate_school_artifacts, _crm_ineps,
-            )
+            from scripts.pregenerate_artifacts import pregenerate_batch, _crm_ineps
             ineps = _crm_ineps()
             if not full_refresh:
                 # so as escolas que ainda nao tem OPR no Storage (novas)
@@ -927,16 +936,13 @@ class IALexScheduler:
             if not ineps:
                 logger.debug("Pregeneracao: nada a fazer (todas com artefato)")
                 return
-            ok = 0
-            for inep in ineps:
-                try:
-                    if pregenerate_school_artifacts(inep).get("ok"):
-                        ok += 1
-                except Exception as e:
-                    logger.debug(f"Pregeneracao {inep} falhou: {e}")
+            # resume=False: o filtro "sem artefato" (noite) ou o refresh completo
+            # (domingo) ja definem o conjunto exato a processar. Cada escola roda
+            # isolada com timeout dentro do pregenerate_batch.
+            stats = pregenerate_batch(ineps, resume=False)
             logger.info(
                 "Pregeneracao de artefatos concluida",
-                extra={"total": len(ineps), "ok": ok, "full_refresh": full_refresh},
+                extra={**stats, "full_refresh": full_refresh},
             )
         except Exception as e:
             logger.error(f"Erro na pregeneracao de artefatos: {e}")
