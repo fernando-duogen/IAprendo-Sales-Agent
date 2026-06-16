@@ -217,7 +217,7 @@ def main() -> None:
     # Proximos passos
     print(f"\n{'─' * 50}")
     print("PROXIMOS PASSOS:")
-    print("  1. Abra o dashboard:  streamlit run dashboard/app.py")
+    print("  1. Abra o dashboard:  streamlit run dashboard/main.py")
     print("  2. Va para 'Fila de Aprovacao'")
     print("  3. Revise e aprove a mensagem")
     print("  4. Envie:  python workflows/send_approved.py")

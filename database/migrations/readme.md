@@ -148,7 +148,7 @@ python database/migrations/002_import_schools.py --sample 50 --skip-validation
   Tabela: companies
 
 🎯 PRÓXIMOS PASSOS:
-  1. Verificar dados: streamlit run dashboard/app.py
+  1. Verificar dados: streamlit run dashboard/main.py
   2. Qualificar escolas: python workflows/daily_pipeline.py
   3. (Opcional) Geocodificar: python -m tools.geocoder
   4. (Opcional) Buscar telefones: python -m tools.phone_finder
@@ -190,7 +190,7 @@ ORDER BY total DESC;
 ### Via Dashboard
 
 ```bash
-streamlit run dashboard/app.py
+streamlit run dashboard/main.py
 ```
 
 Navegue para a página "Companies" para ver as escolas importadas.
@@ -228,7 +228,7 @@ tail -f logs/errors.log
 
 Após migrations concluídas:
 
-1. **Verificar dados**: `streamlit run dashboard/app.py`
+1. **Verificar dados**: `streamlit run dashboard/main.py`
 2. **Qualificar leads**: `python workflows/daily_pipeline.py`
 3. **(Opcional) Geocodificar**: `python -m tools.geocoder`
 4. **(Opcional) Buscar telefones**: `python -m tools.phone_finder`

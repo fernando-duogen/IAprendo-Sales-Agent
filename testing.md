@@ -103,7 +103,7 @@ python test_migrations.py
 🎯 PRÓXIMOS PASSOS:
   1. Execute: python database/migrations/001_setup_database.py
   2. Execute: python database/migrations/002_import_schools.py --sample 100
-  3. Verifique: streamlit run dashboard/app.py
+  3. Verifique: streamlit run dashboard/main.py
 ```
 
 ---
@@ -367,7 +367,7 @@ python database/migrations/002_import_schools.py --sample 10
   Tabela: companies
 
 🎯 PRÓXIMOS PASSOS:
-  1. Verificar dados: streamlit run dashboard/app.py
+  1. Verificar dados: streamlit run dashboard/main.py
   2. Qualificar escolas: python workflows/daily_pipeline.py
 
 ======================================================================
@@ -586,7 +586,7 @@ Após migrations concluídas com sucesso:
 
 1. **Dashboard** (opcional, se Streamlit instalado):
    ```bash
-   streamlit run dashboard/app.py
+   streamlit run dashboard/main.py
    ```
 
 2. **Implementar Agentes IA** (Fase 2):

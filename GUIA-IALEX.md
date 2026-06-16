@@ -345,7 +345,7 @@ O Dashboard é uma interface web com 10 páginas para gerenciar tudo visualmente
 ### Como rodar localmente:
 ```bash
 cd agente-de-vendas
-venv\Scripts\python.exe -m streamlit run dashboard/app.py
+venv\Scripts\python.exe -m streamlit run dashboard/main.py
 ```
 Abre no navegador em `http://localhost:8501`
 
@@ -680,7 +680,7 @@ O resultado é um score de 0 a 100 — quanto maior, melhor.
 - Se falhar, o IAlex pedirá para digitar
 
 **Dashboard não abre:**
-- Rode: `venv\Scripts\python.exe -m streamlit run dashboard/app.py`
+- Rode: `venv\Scripts\python.exe -m streamlit run dashboard/main.py`
 - Acesse: `http://localhost:8501`
 
 **Mudei a pasta do projeto e nada funciona:**

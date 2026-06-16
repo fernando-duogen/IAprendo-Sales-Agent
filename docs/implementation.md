@@ -432,10 +432,10 @@ python -c "from database.supabase_client import db; print(db.get_api_credits_use
 pip list | grep streamlit
 
 # 2. Tente porta diferente
-streamlit run dashboard/app.py --server.port 8502
+streamlit run dashboard/main.py --server.port 8502
 
 # 3. Veja erros
-streamlit run dashboard/app.py --logger.level=debug
+streamlit run dashboard/main.py --logger.level=debug
 ```
 
 ---
@@ -463,7 +463,7 @@ python workflows/weekly_analysis.py       # Análise semanal
 
 ### Dashboard
 ```bash
-streamlit run dashboard/app.py            # Iniciar dashboard
+streamlit run dashboard/main.py            # Iniciar dashboard
 ```
 
 ### Features Extras

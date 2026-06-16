@@ -1025,7 +1025,7 @@ def generate_report(
   Tabela: companies
 
 🎯 PRÓXIMOS PASSOS:
-  1. Verificar dados: streamlit run dashboard/app.py
+  1. Verificar dados: streamlit run dashboard/main.py
   2. Qualificar escolas: python workflows/daily_pipeline.py
 """
 

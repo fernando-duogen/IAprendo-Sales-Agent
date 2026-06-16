@@ -701,7 +701,7 @@ def generate_review_file(config: Dict):
 4. **Configure HubSpot** (campos customizados)
 5. **Inicie dashboard:**
 ```bash
-   streamlit run dashboard/app.py
+   streamlit run dashboard/main.py
 ```
 
 ## 📚 Documentação

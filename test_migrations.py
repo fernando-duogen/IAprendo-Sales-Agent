@@ -451,7 +451,7 @@ def main() -> int:
         print(f"{Colors.BOLD}🎯 PRÓXIMOS PASSOS:{Colors.END}")
         print("  1. Execute: python database/migrations/001_setup_database.py")
         print("  2. Execute: python database/migrations/002_import_schools.py --sample 100")
-        print("  3. Verifique: streamlit run dashboard/app.py")
+        print("  3. Verifique: streamlit run dashboard/main.py")
         print()
         return 0
     else:
