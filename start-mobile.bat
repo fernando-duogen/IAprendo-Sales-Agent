@@ -9,7 +9,7 @@ echo Iniciando Streamlit + Ngrok...
 echo.
 
 :: Iniciar Streamlit em background
-start /B "" venv\Scripts\python.exe -m streamlit run dashboard\app.py --server.port 8501 --server.headless true
+start /B "" venv\Scripts\python.exe -m streamlit run dashboard\main.py --server.port 8501 --server.headless true
 
 :: Esperar Streamlit iniciar
 echo Aguardando Streamlit iniciar...

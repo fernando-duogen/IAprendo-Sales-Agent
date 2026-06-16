@@ -12,5 +12,5 @@ echo Pressione Ctrl+C para encerrar.
 echo.
 
 cd /d "%~dp0"
-venv\Scripts\python.exe -m streamlit run dashboard\app.py --server.port 8502
+venv\Scripts\python.exe -m streamlit run dashboard\main.py --server.port 8502
 pause

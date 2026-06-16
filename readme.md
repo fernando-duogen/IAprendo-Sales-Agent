@@ -303,7 +303,7 @@ python database/migrations/002_import_schools.py
 
 ### Iniciar o Dashboard
 ```bash
-streamlit run dashboard/app.py
+streamlit run dashboard/main.py
 ```
 
 Acesse: **http://localhost:8501**
@@ -491,7 +491,7 @@ python workflows/daily_pipeline.py  # Pipeline manual
 python main.py                      # Orquestrador (loop)
 
 # DASHBOARD
-streamlit run dashboard/app.py      # Interface
+streamlit run dashboard/main.py     # Interface
 
 # TESTES
 pytest tests/                       # Todos os testes

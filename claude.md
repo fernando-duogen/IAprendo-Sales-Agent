@@ -61,8 +61,8 @@ python database/migrations/001_setup_database.py
 # 3. Importar CSV (teste)
 python database/migrations/002_import_schools.py --sample 100
 
-# 4. Dashboard
-streamlit run dashboard/app.py
+# 4. Dashboard (entrypoint = main.py, que monta o menu via st.navigation)
+streamlit run dashboard/main.py
 ```
 
 ---
@@ -361,7 +361,7 @@ python database/migrations/002_import_schools.py   # Importar CSV
 
 # EXECUÇÃO
 python workflows/daily_pipeline.py        # Pipeline manual
-streamlit run dashboard/app.py            # Dashboard UI
+streamlit run dashboard/main.py           # Dashboard UI (entrypoint st.navigation)
 
 # FEATURES EXTRAS
 python -m tools.geocoder                  # Geocodificar escolas

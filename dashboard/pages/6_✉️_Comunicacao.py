@@ -2424,7 +2424,7 @@ with tab_templates:
                 "⚠️ **Cache desatualizado** — o codigo foi atualizado mas o app esta servindo "
                 "uma versao antiga em memoria. **Reinicie o app**: canto inferior direito "
                 "do Streamlit Cloud → **Manage app** → menu **⋮** → **Reboot app** "
-                "(local: Ctrl+C no terminal e rodar `streamlit run dashboard/app.py` de novo)."
+                "(local: Ctrl+C no terminal e rodar `streamlit run dashboard/main.py` de novo)."
             )
         else:
             st.warning(f"Anexos indisponiveis (AttributeError): {_err_str}")
