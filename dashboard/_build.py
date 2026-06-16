@@ -9,4 +9,4 @@ BUILD ANTIGO, o app esta rodando processo velho (modulo cacheado em sys.modules)
 """
 
 # Formato: AAAA-MM-DD · descricao curta do que mudou
-BUILD = "2026-06-15 - pregeneracao-scheduler"
+BUILD = "2026-06-16 - opr-email-matriculas"

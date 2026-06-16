@@ -275,10 +275,10 @@ class WriterAgent(BaseAgent):
                 from tools.insight_charts import charts_renderable, chart_public_url
                 from database.supabase_client import db as _db
                 _img_style = ('style="width:100%;max-width:560px;display:block;'
-                              'margin:0 auto;border-radius:8px"')
+                              'border-radius:8px"')
 
                 def _img_tag(_u, _alt):
-                    return (f'<div style="text-align:center;margin:16px 0">'
+                    return (f'<div style="text-align:left;margin:16px 0">'
                             f'<img src="{_u}" alt="{_alt}" {_img_style} />'
                             f'<p style="color:#999;font-size:11px;margin-top:4px">'
                             f'Fonte: ENEM 2024 / Censo Escolar (INEP)</p></div>')
@@ -323,10 +323,11 @@ class WriterAgent(BaseAgent):
                             chart_urls_list.append({"type": _ct, "url": _u, "alt": _ct})
                     # report_link: OPR pre-gerado (so se existe no Storage)
                     try:
+                        from tools.report_generator import opr_version_suffix as _opr_ver
                         _base = _os.getenv("REPORT_BASE_URL", "https://dados.iaprendo.com.br").rstrip("/")
                         _rep = _db.client.storage.from_("insight-charts").list("reports", {"limit": 2000}) or []
                         if f"{inep}.html" in {it.get("name") for it in _rep}:
-                            extra_vars["report_link"] = _opr_anchor(f"{_base}/reports/{inep}.html")
+                            extra_vars["report_link"] = _opr_anchor(f"{_base}/reports/{inep}.html{_opr_ver(inep, _rep)}")
                     except Exception as e:
                         logger.debug(f"Cloud report_link lookup failed: {e}")
 

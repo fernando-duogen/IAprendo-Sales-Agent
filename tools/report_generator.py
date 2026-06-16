@@ -336,7 +336,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   <div class="header">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div>
-        <div class="subtitle">Diagnostico de Performance ENEM 2024</div>
+        <div class="subtitle">Diagnóstico de Performance ENEM 2024</div>
         <h1>{escola_nome}</h1>
         <div class="subtitle">{cidade}/{uf} &bull; {dependencia}</div>
       </div>
@@ -534,7 +534,7 @@ def _build_comparison_cards(
             mg_bench_display = ""
         cards_html.append(
             f'<div class="comp-card {mg_css}">'
-            f'<div class="area-name">Media Geral</div>'
+            f'<div class="area-name">Média Geral</div>'
             f'<div class="area-value">{mg_sv:.0f}</div>'
             f'<div class="area-diff {mg_diff_class}">{mg_diff_display}</div>'
             f'<div class="bench-val">{mg_bench_display}</div>'
@@ -1124,6 +1124,34 @@ _GITHUB_PAGES_BASE = os.getenv(
 _REPORTS_DIR = ROOT / "docs" / "reports"
 
 
+def opr_version_suffix(inep, storage_items=None) -> str:
+    """Sufixo '?v=<stamp>' p/ cache-busting do link do OPR (CDN/Cloudflare).
+
+    Usa o `updated_at` do arquivo no Storage como versao -> cada regeneracao
+    muda a URL e o usuario sempre pega a versao fresca. Retorna "" se nao achar.
+
+    Args:
+        inep: codigo INEP.
+        storage_items: lista ja obtida de storage.list("reports") — passe-a p/
+            evitar uma query extra quando o call-site ja listou.
+    """
+    try:
+        if storage_items is None:
+            from database.supabase_client import db as _db_v
+            storage_items = _db_v.client.storage.from_("insight-charts").list(
+                "reports", {"limit": 2000}) or []
+        fname = f"{str(inep).strip()}.html"
+        for it in storage_items:
+            if it.get("name") == fname:
+                ts = it.get("updated_at") or it.get("created_at") or ""
+                import re as _re
+                digits = _re.sub(r"\D", "", ts)[:14]
+                return f"?v={digits}" if digits else ""
+    except Exception:
+        pass
+    return ""
+
+
 def generate_and_upload_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[Dict[str, str]]:
     """Gera report HTML e faz upload para Supabase Storage.
 
@@ -1153,7 +1181,8 @@ def generate_and_upload_report(inep: str, benchmark_dep: Optional[str] = None) -
                     "reports", {"limit": 2000}) or []
                 if _inep_s and f"{_inep_s}.html" in {it.get("name") for it in _ls}:
                     logger.info("OPR ja existe (Cloud nao regenera)", extra={"inep": _inep_s})
-                    return {"html_url": f"{_base}/reports/{_inep_s}.html", "inep": _inep_s}
+                    _v = opr_version_suffix(_inep_s, _ls)
+                    return {"html_url": f"{_base}/reports/{_inep_s}.html{_v}", "inep": _inep_s}
             except Exception as _e:
                 logger.debug(f"OPR lookup (Cloud) falhou: {_e}")
             logger.warning("OPR nao gerado: ambiente sem kaleido e sem pre-gerado",
@@ -1183,8 +1212,9 @@ def generate_and_upload_report(inep: str, benchmark_dep: Optional[str] = None) -
             logger.warning(f"Supabase upload failed: {upload_err}")
 
         # URL final: dominio customizado se Supabase OK, senao fallback GitHub Pages
+        # (+ cache-busting via ?v=<updated_at> p/ o CDN nao servir versao velha)
         if supabase_ok:
-            url = f"{_REPORT_BASE_URL}/reports/{inep}.html"
+            url = f"{_REPORT_BASE_URL}/reports/{inep}.html{opr_version_suffix(inep)}"
         else:
             url = f"{_GITHUB_PAGES_BASE}/reports/{inep}.html"
 

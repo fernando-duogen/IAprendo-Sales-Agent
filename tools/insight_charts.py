@@ -456,7 +456,7 @@ def generate_gap_indicator(inep: str) -> Optional[bytes]:
 def generate_trend_chart(
     inep: str,
     metric: str = "qt_mat_bas",
-    metric_label: str = "Matriculas Totais",
+    metric_label: str = "Matrículas Totais",
 ) -> Optional[bytes]:
     """Gera grafico de linhas: escola vs media do municipio ao longo dos anos.
 
@@ -558,7 +558,7 @@ def generate_trend_chart(
             x=[p[0] for p in b_valid],
             y=[p[1] for p in b_valid],
             mode="lines+markers+text",
-            name=f"Media {city}",
+            name=f"Média de {city}",
             line=dict(color=COLOR_TREND_BENCH, width=2, dash="dot"),
             marker=dict(size=6, color=COLOR_TREND_BENCH),
             text=[f"{p[1]:+.0f}%" for p in b_valid],
@@ -590,18 +590,26 @@ def generate_trend_chart(
     else:
         y_range = None
 
-    # Subtitulo com valores absolutos do primeiro e ultimo ano
-    first_year = s_valid_raw[0][0] if s_valid_raw else "?"
-    last_year = s_valid_raw[-1][0] if s_valid_raw else "?"
-    first_val = int(s_valid_raw[0][1]) if s_valid_raw else "?"
-    last_val = int(s_valid_raw[-1][1]) if s_valid_raw else "?"
+    # Subtitulo: ABSOLUTO real (serie completa) p/ concretude/confianca + % desde
+    # o ano-base. O EIXO segue em % (compara escolas de portes diferentes de forma
+    # justa); o numero absoluto vive so no texto.
+    def _fmt_int(n):
+        try:
+            return f"{int(n):,}".replace(",", ".")
+        except Exception:
+            return str(n)
+
+    _abs_first = _fmt_int(school_vals[0])
+    _abs_last = _fmt_int(school_vals[-1])
+    _base_year = s_valid_raw[0][0] if s_valid_raw else years[0]
+    _growth = s_valid[-1][1] if s_valid else 0
 
     fig.update_layout(
         title=dict(
-            text=f"Variação de {metric_label} (base {first_year})<br>"
+            text=f"Crescimento de {metric_label} (%)<br>"
                  f"<span style='font-size:11px;color:#666'>"
-                 f"{nome[:35]}: {first_val}\u2192{last_val} alunos | "
-                 f"vs Média de {city}</span>",
+                 f"{nome[:35]}: {_abs_first}\u2192{_abs_last} alunos · "
+                 f"{_growth:+.0f}% desde {_base_year} · vs média de {city}</span>",
             font=dict(size=14, color="#333"),
             x=0.5, xanchor="center",
         ),
@@ -611,7 +619,7 @@ def generate_trend_chart(
             tickfont=dict(size=11),
         ),
         yaxis=dict(
-            title="Variação %",
+            title="Crescimento (%)",
             gridcolor="#F3F4F6",
             tickfont=dict(size=11),
             ticksuffix="%",
@@ -673,7 +681,7 @@ def generate_all_relevant_charts(
         })
 
     # 3. Trend de matriculas (se tiver serie historica)
-    trend = generate_trend_chart(inep, "qt_mat_bas", "Matriculas Totais")
+    trend = generate_trend_chart(inep, "qt_mat_bas", "Matrículas Totais")
     if trend:
         charts.append({
             "type": "trend",
@@ -800,7 +808,7 @@ def generate_comparison_trend(
     inep1: str,
     inep2: str,
     metric: str = "qt_mat_bas",
-    metric_label: str = "Matriculas Totais",
+    metric_label: str = "Matrículas Totais",
 ) -> Optional[bytes]:
     """Gera grafico de evolucao comparando 2 escolas (variacao %).
 

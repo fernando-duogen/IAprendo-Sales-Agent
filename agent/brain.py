@@ -5528,9 +5528,9 @@ def _chart_inline_img(url: str, alt: str) -> str:
     if not url:
         return ""
     return (
-        '<div style="text-align:center;margin:16px 0">'
+        '<div style="text-align:left;margin:16px 0">'
         f'<img src="{url}" alt="{alt}" '
-        'style="width:100%;max-width:560px;display:block;margin:0 auto;border-radius:8px" />'
+        'style="width:100%;max-width:560px;display:block;border-radius:8px" />'
         f'<p style="color:#999;font-size:11px;margin-top:4px">Fonte: ENEM 2024 / Censo Escolar (INEP)</p>'
         '</div>'
     )
@@ -5700,10 +5700,11 @@ def _handle_gerar_email(params: Dict) -> str:
             elif _inep_r:
                 # Cloud: usar OPR pre-gerado fora do Cloud (so se existe)
                 try:
+                    from tools.report_generator import opr_version_suffix as _opr_ver
                     _base_r = os.getenv("REPORT_BASE_URL", "https://dados.iaprendo.com.br").rstrip("/")
                     _rep_ls = db.client.storage.from_("insight-charts").list("reports", {"limit": 2000}) or []
                     if f"{_inep_r}.html" in {it.get("name") for it in _rep_ls}:
-                        report_url = f"{_base_r}/reports/{_inep_r}.html"
+                        report_url = f"{_base_r}/reports/{_inep_r}.html{_opr_ver(_inep_r, _rep_ls)}"
                 except Exception:
                     pass
 
