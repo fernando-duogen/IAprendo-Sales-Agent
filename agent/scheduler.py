@@ -9,12 +9,23 @@ import os
 import time
 import threading
 import schedule
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.logger import logger
+
+# Fuso de Sao Paulo para a regra de horario comercial dos envios automaticos.
+# Mesmo padrao usado em workflows/activity_engine.py.
+try:
+    from zoneinfo import ZoneInfo
+    BRT = ZoneInfo("America/Sao_Paulo")
+except Exception:  # pragma: no cover
+    BRT = timezone(timedelta(hours=-3))
+
+# Janela de envio automatico (BRT): envia somente entre 8h e 18h.
+BUSINESS_SEND_START, BUSINESS_SEND_END = 8, 18
 
 
 class IALexScheduler:
@@ -470,7 +481,23 @@ class IALexScheduler:
         """Verifica e envia mensagens agendadas cujo horario ja passou.
         Roda a cada 5 minutos. Se scheduled_send_at <= NOW() ou NULL, envia.
         Notifica Fernando sobre envios E bloqueios (sem email).
+
+        Regra de horario comercial: o envio AUTOMATICO so ocorre entre 8h e 18h
+        (America/Sao_Paulo). Fora dessa janela, as mensagens aprovadas ficam
+        represadas e o envio e retomado as 8h. O botao "Enviar agora" do
+        dashboard e a tool `enviar_aprovados` do WhatsApp chamam
+        send_approved_messages() diretamente e NAO passam por este check.
         """
+        now_brt = datetime.now(BRT)
+        if not (BUSINESS_SEND_START <= now_brt.hour < BUSINESS_SEND_END):
+            logger.info(
+                f"Envio agendado pulado: fora do horario comercial "
+                f"({now_brt.strftime('%H:%M')} BRT). "
+                f"Janela: {BUSINESS_SEND_START}h-{BUSINESS_SEND_END}h. "
+                f"Mensagens aprovadas seguem represadas ate as {BUSINESS_SEND_START}h."
+            )
+            return
+
         try:
             from workflows.send_approved import send_approved_messages
             result = send_approved_messages(limit=20)
