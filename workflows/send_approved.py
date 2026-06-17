@@ -11,27 +11,38 @@ from tools.brevo_sender import brevo_sender
 from utils.logger import logger
 
 
-def send_approved_messages(limit: int = 50) -> Dict[str, Any]:
+def send_approved_messages(limit: int = 50, only_queue_id: str = None) -> Dict[str, Any]:
     """
     Envia APENAS mensagens com status approved na approval_queue.
     NUNCA envia sem aprovacao humana previa.
-    
+
+    Args:
+        limit: maximo de mensagens por chamada.
+        only_queue_id: se informado, envia SO essa mensagem (botao "Enviar agora"
+            do dashboard) e IGNORA o agendamento (envio manual explicito). Sem ele,
+            roda em lote respeitando scheduled_send_at (uso do scheduler de 5min).
+
     Returns:
         Dict com: sent, failed, skipped, details
     """
-    logger.info("Iniciando envio de mensagens aprovadas", extra={"limit": limit})
+    logger.info("Iniciando envio de mensagens aprovadas",
+                extra={"limit": limit, "only_queue_id": only_queue_id})
     # Buscar apenas approved que ainda nao foram enviadas
     # Respeita agendamento: se scheduled_send_at existe, so envia quando hora chegar
     try:
         from datetime import datetime, timezone
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        result = db.client.table("approval_queue")
-        q = result.select(
+        _qb = db.client.table("approval_queue").select(
             "id, company_id, contact_id, subject, body, channel, scheduled_send_at, chart_urls"
-        ).eq("status", "approved").is_("sent_at", "null").or_(
-            f"scheduled_send_at.is.null,scheduled_send_at.lte.{now_iso}"
-        ).limit(limit).execute()
+        ).eq("status", "approved").is_("sent_at", "null")
+        if only_queue_id:
+            # Envio manual explicito ("Enviar agora"): ignora o agendamento.
+            _qb = _qb.eq("id", only_queue_id)
+        else:
+            # Lote (scheduler): respeita scheduled_send_at (null ou ja vencido).
+            _qb = _qb.or_(f"scheduled_send_at.is.null,scheduled_send_at.lte.{now_iso}")
+        q = _qb.limit(limit).execute()
         approved_msgs = q.data
     except Exception as e:
         logger.error("Erro ao buscar aprovadas", extra={"error": str(e)})

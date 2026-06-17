@@ -20,6 +20,7 @@ Status codes:
 """
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -53,6 +54,23 @@ def _safe_check(name: str, fn) -> Dict[str, Any]:
     except Exception as e:
         logger.debug(f"Health check '{name}' crashou: {e}")
         return {"status": "unknown", "detail": f"check crashou: {type(e).__name__}: {str(e)[:100]}"}
+
+
+def _on_streamlit_cloud() -> bool:
+    """True se rodando no Streamlit Community Cloud (monta o repo em /mount/src).
+
+    Os checks que batem em localhost (webhook :5001, Evolution :8080) so fazem
+    sentido onde o IAlex roda (PC/Oracle). No Cloud sao falso-vermelho garantido —
+    entao la viram 'N/A' em vez de critico. Mesmo sinal usado em insight_charts.
+    """
+    try:
+        return os.path.isdir("/mount/src")
+    except Exception:
+        return False
+
+
+# Status neutro p/ checks locais quando vistos do Cloud (nao conta como problema)
+_NA_CLOUD = {"status": "unknown", "detail": "N/A no Cloud (IAlex roda no PC/Oracle)"}
 
 
 # ============================================================================
@@ -110,6 +128,8 @@ def _check_bridge_whatsapp() -> Dict[str, Any]:
     A 'bridge' Node.js antiga (porta 8090) foi descontinuada — checagem agora
     eh feita via WhatsAppBridge.check_connection() que bate em /instance/connectionState.
     """
+    if _on_streamlit_cloud():
+        return dict(_NA_CLOUD)
     try:
         from agent.whatsapp_bridge import WhatsAppBridge
         bridge = WhatsAppBridge()
@@ -148,6 +168,8 @@ def _check_bridge_whatsapp() -> Dict[str, Any]:
 
 def _check_webhook_flask() -> Dict[str, Any]:
     """Checa webhook Flask do IAlex (porta 5001)."""
+    if _on_streamlit_cloud():
+        return dict(_NA_CLOUD)
     try:
         r = requests.get("http://localhost:5001/health", timeout=3)
         if r.status_code != 200:

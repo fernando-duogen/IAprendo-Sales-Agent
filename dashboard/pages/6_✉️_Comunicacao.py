@@ -114,6 +114,33 @@ with tab_aprovacao:
 
     # ---- Sub-tab: Aprovadas (aguardando envio) ----
     with aprov_tab_approved:
+        # Resultado de um envio manual anterior (exibido apos o st.rerun)
+        _send_res = st.session_state.pop("_approved_send_result", None)
+        if _send_res:
+            _ns, _nb, _nf = _send_res
+            if _ns:
+                st.success(f"✅ {_ns} mensagem(ns) enviada(s) agora.")
+            if _nb:
+                st.warning(f"⚠️ {_nb} bloqueada(s) — contato sem email/telefone.")
+            if _nf:
+                st.error(f"❌ {_nf} falha(s) no envio. Verifique os logs.")
+            if not (_ns or _nb or _nf):
+                st.info("Nada a enviar (ja enviada ou ainda agendada para o futuro).")
+
+        def _do_send_now(only_id=None):
+            """Envia aprovado(s) AGORA via Brevo. Funciona do Cloud (HTTP), sem o
+            IAlex local. only_id=None envia todos os aprovados elegiveis."""
+            try:
+                from workflows.send_approved import send_approved_messages
+                with st.spinner("Enviando..."):
+                    _r = send_approved_messages(only_queue_id=only_id)
+                st.session_state["_approved_send_result"] = (
+                    _r.get("sent", 0), _r.get("skipped", 0), _r.get("failed", 0),
+                )
+            except Exception:
+                st.session_state["_approved_send_result"] = (0, 0, 1)
+            st.rerun()
+
         try:
             approved_msgs = db.client.table("approval_queue").select(
                 "id,subject,company_id,contact_id,channel,approved_at,scheduled_send_at,"
@@ -128,6 +155,10 @@ with tab_aprovacao:
             alert_banner("Nenhuma mensagem aprovada aguardando envio.", "info")
         else:
             st.caption(f"{len(approved_msgs)} mensagem(ns) aprovada(s), aguardando envio.")
+
+            if st.button("📤 Enviar todos agora", key="send_all_approved_now",
+                         type="primary"):
+                _do_send_now()
 
             for msg in approved_msgs:
                 comp = msg.get("companies") or {}
@@ -155,10 +186,13 @@ with tab_aprovacao:
                     f'</div></div>',
                     unsafe_allow_html=True,
                 )
+                if st.button("📤 Enviar agora", key=f"send_now_{msg['id']}"):
+                    _do_send_now(only_id=msg["id"])
 
             st.caption(
-                "Mensagens sem agendamento serao enviadas automaticamente pelo scheduler (a cada 5 min). "
-                "Mensagens agendadas serao enviadas no horario definido."
+                "**Enviar agora** dispara o e-mail na hora (funciona do Cloud, via Brevo). "
+                "Sem isso, o envio automatico (a cada 5 min) so acontece com o IAlex ligado "
+                "(seu PC/Oracle); mensagens agendadas saem no horario definido."
             )
 
     # ---- Sub-tab: Enviadas (historico com corpo completo) ----
