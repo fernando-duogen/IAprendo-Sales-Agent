@@ -21,6 +21,7 @@ Usage:
 """
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -219,6 +220,14 @@ def _resolve_school_name(inep: str) -> str:
         return f"INEP {inep}"
 
 
+# kaleido (engine do fig.to_image) NAO e thread-safe: usa um subprocesso Chromium
+# unico e compartilhado. Renders concorrentes (ex: as 4 variantes do OPR geradas
+# em ThreadPoolExecutor em report_generator) disputam o stdio do subprocesso e
+# so um sobrevive — os outros voltam None. Este lock SERIALIZA todos os renders
+# (os fetches de dados continuam paralelos; so a conversao p/ PNG e serial).
+_RENDER_LOCK = threading.Lock()
+
+
 def _to_png(fig: "go.Figure", width: int, height: int, scale: Optional[float] = None) -> Optional[bytes]:
     """Exporta Plotly figure para PNG bytes.
 
@@ -229,10 +238,11 @@ def _to_png(fig: "go.Figure", width: int, height: int, scale: Optional[float] = 
     if go is None:
         return None
     try:
-        return fig.to_image(
-            format="png", width=width, height=height,
-            scale=scale if scale is not None else EXPORT_SCALE,
-        )
+        with _RENDER_LOCK:  # kaleido nao e thread-safe — serializa o render
+            return fig.to_image(
+                format="png", width=width, height=height,
+                scale=scale if scale is not None else EXPORT_SCALE,
+            )
     except Exception as e:
         logger.warning(f"insight_charts: to_image failed: {e}")
         return None
