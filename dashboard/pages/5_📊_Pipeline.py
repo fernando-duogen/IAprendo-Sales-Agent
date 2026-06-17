@@ -687,6 +687,7 @@ def render_execucao():
             "Modo de mensagem:",
             ["IA (personalizada)", "Template (padrao)", "Template (auto por alvo)"],
             key="pipe_write_mode",
+            index=2,  # padrao = Template (auto por alvo)
             help=(
                 "IA: Claude escreve do zero. "
                 "Template (padrao): usa o template marcado como padrao. "
