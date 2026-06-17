@@ -47,12 +47,24 @@ STAGE_ORDER = [
 ]
 
 
+def _clean(v: Any) -> str:
+    """Normaliza qualquer valor para string limpa em minusculas.
+
+    Trata None E NaN (float) como vazio: colunas de DataFrame vem como NaN
+    quando nulas, e `NaN or ""` retorna o proprio NaN (truthy), quebrando
+    `.strip()` com "'float' object has no attribute 'strip'".
+    """
+    if v is None or (isinstance(v, float) and v != v):  # v != v capta NaN
+        return ""
+    return str(v).strip().lower()
+
+
 def school_stage(status: Optional[str], commercial_stage: Optional[str] = None) -> Tuple[str, str]:
     """(label, cor) da etapa VISIVEL da escola. commercial_stage > status."""
-    cs = (commercial_stage or "").strip().lower()
+    cs = _clean(commercial_stage)
     if cs in _COMMERCIAL_TO_STAGE_LABEL:
         return _COMMERCIAL_TO_STAGE_LABEL[cs]
-    st_ = (status or "raw").strip().lower()
+    st_ = _clean(status) or "raw"
     return _STATUS_TO_STAGE_LABEL.get(st_, ("Nova", "#90A4AE"))
 
 
@@ -115,7 +127,7 @@ MESSAGE_STATUS: Dict[str, Dict[str, str]] = {
 
 def message_status_label(status: Optional[str], scheduled_hint: Optional[str] = None) -> str:
     """'⏳ Aguardando sua aprovacao' (com hora opcional p/ aprovadas agendadas)."""
-    m = MESSAGE_STATUS.get((status or "pending").strip().lower())
+    m = MESSAGE_STATUS.get(_clean(status) or "pending")
     if not m:
         return str(status or "?")
     label = f"{m['icon']} {m['label']}"
@@ -173,7 +185,7 @@ ACTIVITY_RESOLUTIONS = (
 
 
 def activity_label(type_: Optional[str]) -> str:
-    t = ACTIVITY_TYPES.get((type_ or "tarefa").strip().lower())
+    t = ACTIVITY_TYPES.get(_clean(type_) or "tarefa")
     return f"{t['emoji']} {t['label']}" if t else str(type_ or "Tarefa")
 
 
@@ -193,7 +205,7 @@ GOAL_METRICS: Dict[str, Dict[str, str]] = {
 
 
 def goal_metric_label(metric: Optional[str]) -> str:
-    g = GOAL_METRICS.get((metric or "").strip().lower())
+    g = GOAL_METRICS.get(_clean(metric))
     return g["label"] if g else str(metric or "?")
 
 

@@ -33,6 +33,17 @@ class TestSchoolStage:
         assert school_stage_label(None) == "Nova"
         assert school_stage_label("xyz") == "Nova"
 
+    def test_nan_float_nao_quebra(self):
+        # pandas manda NaN (float) em celulas nulas; `NaN or ""` retornava o NaN
+        # (truthy) e quebrava .strip() -> 'float' has no attribute 'strip'.
+        nan = float("nan")
+        assert school_stage_label("contacted", nan) == "Contatada"  # cai no status
+        assert school_stage_label(nan, nan) == "Nova"               # ambos NaN -> Nova
+        # os outros helpers com .strip().lower() tambem nao quebram com NaN
+        assert isinstance(message_status_label(nan), str)
+        assert isinstance(activity_label(nan), str)
+        assert isinstance(goal_metric_label(nan), str)
+
     def test_toda_etapa_tem_cor_hex(self):
         for status in ["raw", "qualified", "enriched", "contacted", "responded"]:
             label, cor = school_stage(status)
