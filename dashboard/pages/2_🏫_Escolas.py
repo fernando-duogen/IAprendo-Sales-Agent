@@ -97,9 +97,9 @@ def _fetch_analytics_by_inep_list(inep_list: tuple) -> dict:
         rows = db.fetch_in_chunks(
             "school_analytics",
             "inep_code,enem_amostra_confiavel,enem_potencial_melhoria,"
-            "peer_trajetoria_5y,enem_gap_vs_peer_2024,enem_dependencia,"
+            "peer_trajetoria_6y,enem_gap_vs_peer_2025,enem_dependencia,"
             "enem_media_geral,enem_media_geral_sem_redacao,enem_area_mais_fraca,"
-            "enem_presentes,peer_delta_media_geral_2022_2024",
+            "enem_presentes,peer_delta_media_geral_2022_2025",
             "inep_code", list(inep_list),
         )
         return {str(row["inep_code"]): row for row in rows}
@@ -237,7 +237,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
         section_header("Performance ENEM 2024", "trending_up")
         media_com = float(row.get("enem_media_geral") or 0)
         media_sem = row.get("enem_media_geral_sem_redacao")
-        gap = row.get("enem_gap_vs_peer_2024")
+        gap = row.get("enem_gap_vs_peer_2025")
         presentes = row.get("enem_presentes") or 0
 
         mc1, mc2, mc3, mc4 = st.columns(4)
@@ -343,7 +343,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
     st.markdown("")
 
     # --- Peer group (sempre mostra, mesmo sem amostra individual) ---
-    peer_traj = row.get("peer_trajetoria_5y")
+    peer_traj = row.get("peer_trajetoria_6y")
     if peer_traj:
         section_header("Peer group — escolas do mesmo municipio x mesma dependencia", "groups")
         st.caption(
@@ -358,7 +358,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
             metric_card("Trajetoria 5 anos", str(peer_traj),
                         COLORS["accent"], icon="timeline")
         with pc2:
-            delta = row.get("peer_delta_media_geral_2022_2024")
+            delta = row.get("peer_delta_media_geral_2022_2025")
             if delta is not None:
                 delta_f = float(delta)
                 metric_card(
@@ -368,19 +368,19 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
                     icon="trending_flat",
                 )
         with pc3:
-            media_2024 = row.get("peer_media_geral_2024")
+            media_2024 = row.get("peer_media_geral_2025")
             if media_2024 is not None:
                 metric_card("Media peer 2024", f"{float(media_2024):.1f}",
                             COLORS["info"], icon="analytics")
         with pc4:
-            presentes_2024 = row.get("peer_presentes_2024")
+            presentes_2024 = row.get("peer_presentes_2025")
             if presentes_2024 is not None:
                 metric_card("Presentes peer", f"{int(presentes_2024):,}".replace(",", "."),
                             COLORS["secondary"], icon="groups")
 
         # --- Serie historica 2020-2024 ---
         serie = {}
-        for ano in range(2020, 2025):
+        for ano in range(2020, 2026):
             v = row.get(f"peer_media_geral_{ano}")
             if v is not None:
                 serie[ano] = float(v)
@@ -405,7 +405,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
     st.markdown("")
 
     # --- Contexto municipal (sempre rotulado) ---
-    renda_2024 = row.get("socio_renda_idx_media_2024")
+    renda_2024 = row.get("socio_renda_idx_media_2025")
     if renda_2024 is not None:
         section_header("Contexto do municipio (perfil socioeconomico)", "location_city")
         st.caption(
@@ -417,13 +417,13 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
             metric_card("Indice de renda 2024", f"{float(renda_2024):.2f}",
                         COLORS["primary"], icon="paid")
         with sc2:
-            pais_sup = row.get("socio_pct_pais_superior_2024")
+            pais_sup = row.get("socio_pct_pais_superior_2025")
             if pais_sup is not None:
                 pct = float(pais_sup) * 100 if float(pais_sup) < 1 else float(pais_sup)
                 metric_card("% pais com superior", f"{pct:.1f}%",
                             COLORS["info"], icon="school")
         with sc3:
-            delta_renda = row.get("socio_delta_renda_2020_2024")
+            delta_renda = row.get("socio_delta_renda_2020_2025")
             if delta_renda is not None:
                 metric_card(
                     "Delta renda 2020-2024",
@@ -2054,13 +2054,13 @@ else:
         )
         df["Gap ENEM"] = df["inep_code"].apply(
             lambda i: (
-                float(analytics_map.get(str(i).strip(), {}).get("enem_gap_vs_peer_2024") or 0)
+                float(analytics_map.get(str(i).strip(), {}).get("enem_gap_vs_peer_2025") or 0)
                 if i and analytics_map.get(str(i).strip(), {}).get("enem_amostra_confiavel")
                 else None
             )
         )
         df["Trajet. Peer"] = df["inep_code"].apply(
-            lambda i: (analytics_map.get(str(i).strip(), {}) or {}).get("peer_trajetoria_5y") or "—"
+            lambda i: (analytics_map.get(str(i).strip(), {}) or {}).get("peer_trajetoria_6y") or "—"
         )
 
         # --- Filtros inline (barra horizontal) ---

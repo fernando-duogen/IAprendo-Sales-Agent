@@ -50,11 +50,15 @@ BATCH_SIZE = 500
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--year", type=int, default=2024,
+                        help="vintage_enem a gravar (default 2024). "
+                             "Use --year 2025 apos importar o ENEM 2025.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    year = args.year
 
     print("=" * 72)
-    print("SEED ENEM 2024 <- school_analytics")
+    print(f"SEED ENEM {year} <- school_analytics")
     print("=" * 72)
     print(f"dry_run: {args.dry_run}\n")
 
@@ -97,8 +101,8 @@ def main():
             k: v for k, v in row.items()
             if v is not None and k in ANALYTICS_COLS
         }
-        rec["vintage_enem"] = 2024
-        rec["source_file"] = "school_analytics (vintage 2024 snapshot)"
+        rec["vintage_enem"] = year
+        rec["source_file"] = f"school_analytics (vintage {year} snapshot)"
         records.append(rec)
 
     print(f"Records montados: {len(records):,}")
@@ -140,7 +144,7 @@ def main():
     print()
     print("Verificacao SQL:")
     print("  SELECT vintage_enem, COUNT(*) FROM school_enem_yearly")
-    print("  WHERE vintage_enem=2024 GROUP BY vintage_enem;")
+    print(f"  WHERE vintage_enem={year} GROUP BY vintage_enem;")
 
 
 if __name__ == "__main__":

@@ -428,8 +428,8 @@ def _analytics(inep: Optional[str]) -> Dict[str, Any]:
         return {}
     try:
         rows = db.client.table("school_analytics").select(
-            "enem_media_geral,enem_gap_vs_peer_2024,enem_area_mais_fraca,"
-            "enem_amostra_confiavel,peer_trajetoria_5y,enem_potencial_melhoria"
+            "enem_media_geral,enem_gap_vs_peer_2025,enem_area_mais_fraca,"
+            "enem_amostra_confiavel,peer_trajetoria_6y,enem_potencial_melhoria"
         ).eq("inep_code", str(inep).strip()).limit(1).execute().data or []
         return rows[0] if rows else {}
     except Exception:
@@ -441,14 +441,14 @@ def _build_argumentos(company: Dict[str, Any]) -> List[str]:
     args: List[str] = []
     ana = _analytics(company.get("inep_code"))
     confiavel = bool(ana.get("enem_amostra_confiavel"))
-    gap = ana.get("enem_gap_vs_peer_2024")
+    gap = ana.get("enem_gap_vs_peer_2025")
     area = ana.get("enem_area_mais_fraca")
     if confiavel and gap is not None and float(gap) <= -15:
         args.append(f"📉 {area or 'Uma area'} esta {abs(float(gap)):.0f} pontos abaixo "
                     f"de escolas semelhantes no ENEM — dor clara que o IAprendo ataca.")
     elif confiavel and area:
         args.append(f"📊 {area} e a area mais fraca da escola no ENEM — bom gancho de conversa.")
-    traj = (ana.get("peer_trajetoria_5y") or "").lower()
+    traj = (ana.get("peer_trajetoria_6y") or "").lower()
     fund = int(company.get("matriculas_fund_af") or 0)
     medio = int(company.get("matriculas_medio") or 0)
     alvo = fund + medio

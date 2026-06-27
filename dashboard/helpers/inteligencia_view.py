@@ -531,7 +531,7 @@ def render_inteligencia() -> None:
                 f"enem_redacao_comp{i}_media" for i in range(1, 6)
             ],
             "peer_media_geral_2020..2024 (serie temporal)": [
-                f"peer_media_geral_{y}" for y in range(2020, 2025)
+                f"peer_media_geral_{y}" for y in range(2020, 2026)
             ],
             "socio_renda_idx_media_2024": ["socio_renda_idx_media_2024"],
             "pnt_pct_pais_superior": ["pnt_pct_pais_superior"],

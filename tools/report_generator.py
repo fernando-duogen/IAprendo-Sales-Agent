@@ -685,7 +685,7 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
     uf = school.get("peer_uf_sigla") or "?"
     dep = school.get("enem_dependencia") or "?"
     presentes = school.get("enem_presentes")
-    gap = school.get("enem_gap_vs_peer_2024")
+    gap = school.get("enem_gap_vs_peer_2025")
     area_fraca = school.get("enem_area_mais_fraca")
     confiavel = school.get("enem_amostra_confiavel") is True
 

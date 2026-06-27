@@ -4412,8 +4412,8 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
                 })
 
             # ANGULO 9: pressao competitiva (peer_trajetoria = Subindo*)
-            peer_traj = sa_row.get("peer_trajetoria_5y")
-            delta_22_24 = sa_row.get("peer_delta_media_geral_2022_2024")
+            peer_traj = sa_row.get("peer_trajetoria_6y")
+            delta_22_24 = sa_row.get("peer_delta_media_geral_2022_2025")
             mun = sa_row.get("peer_mun_nome") or escola.get("city") or "seu municipio"
             dep_peer = sa_row.get("enem_dependencia") or escola.get("admin_dependency") or ""
             if peer_traj in ("Subindo", "Subindo forte") and delta_22_24 is not None:
@@ -4441,7 +4441,7 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
                 })
 
             # ANGULO 10: contexto socioeconomico do municipio em evolucao
-            delta_renda = sa_row.get("socio_delta_renda_2020_2024")
+            delta_renda = sa_row.get("socio_delta_renda_2020_2025")
             if delta_renda is not None and float(delta_renda) > 0.3:
                 _id += 1
                 angulos.append({

@@ -427,7 +427,7 @@ class UrgencyScorer:
 
             # Buscar dados ENEM
             sa = db.client.table("school_analytics").select(
-                "enem_media_geral,enem_percentil_br,enem_delta_2020_2024,amostra_confiavel"
+                "enem_media_geral,enem_percentil_br,amostra_confiavel"
             ).eq("inep_code", str(inep)).limit(1).execute()
             if not sa.data:
                 return ENEM_DEFAULT_SCORE
@@ -438,7 +438,7 @@ class UrgencyScorer:
 
             # Classificacao simplificada P1/P2/P3
             percentil = row.get("enem_percentil_br") or 0
-            delta = row.get("enem_delta_2020_2024") or 0
+            delta = 0
 
             if percentil >= 70 and delta >= 0:
                 priority = "P1"  # Alta performance + melhorando

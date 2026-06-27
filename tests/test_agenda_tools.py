@@ -140,8 +140,8 @@ class TestMetasEArgumentos:
                    "matriculas_fund_af": 300, "matriculas_medio": 300,
                    "qt_coordenadores": 0, "nivel_tecnologico": "Baixo"}
         mock_db.client.table.return_value = make_query(data=[{
-            "enem_gap_vs_peer_2024": -23, "enem_area_mais_fraca": "Matematica",
-            "enem_amostra_confiavel": True, "peer_trajetoria_5y": "crescendo",
+            "enem_gap_vs_peer_2025": -23, "enem_area_mais_fraca": "Matematica",
+            "enem_amostra_confiavel": True, "peer_trajetoria_6y": "crescendo",
             "enem_media_geral": 512, "enem_potencial_melhoria": 80}])
         with patch("integrations.agenda_config.agenda_config.ticket_por_aluno",
                    return_value=7.99):
@@ -157,7 +157,7 @@ class TestMetasEArgumentos:
                    "matriculas_fund_af": 100, "matriculas_medio": 0,
                    "qt_coordenadores": 1, "nivel_tecnologico": "Medio"}
         mock_db.client.table.return_value = make_query(data=[{
-            "enem_gap_vs_peer_2024": -30, "enem_area_mais_fraca": "Redacao",
+            "enem_gap_vs_peer_2025": -30, "enem_area_mais_fraca": "Redacao",
             "enem_amostra_confiavel": False}])
         with patch("integrations.agenda_config.agenda_config.ticket_por_aluno",
                    return_value=7.99):

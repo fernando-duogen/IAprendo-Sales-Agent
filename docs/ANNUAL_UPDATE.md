@@ -474,6 +474,7 @@ R: Tem, mas a recomendação atual é **manual**. A INEP às vezes muda o schema
 | Data | Operador | O que foi feito |
 |---|---|---|
 | 2026-04-11 | Fernando + Claude | Setup inicial: Censo 2020-2025 + ENEM 2024 |
+| 2026-06-27 | Fernando + Claude + Cowork | ENEM 2025: pipeline Cowork gerou o CSV enriquecido (307 col); migration 021 (31 colunas novas + 2 indices Disk IO); import_school_analytics (185k, snapshot agora 2025); seed_enem --year 2025 (serie ganhou 2025; fica 2024+2025); migracao de codigo de leitura 2024->2025/6y (~50 sites, whitelists mantem os 2 anos); re-pre-geracao de OPRs/graficos |
 
 **Quando fizer uma atualização, adicione uma linha aqui.** Isso ajuda você (ou outra pessoa) a saber o que foi rodado e quando, especialmente quando algo sair "estranho".
 

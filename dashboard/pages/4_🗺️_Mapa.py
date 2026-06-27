@@ -252,8 +252,8 @@ if not is_csv_mode:
             rows = db.fetch_in_chunks(
                 "school_analytics",
                 "inep_code,enem_amostra_confiavel,enem_potencial_melhoria,"
-                "peer_trajetoria_5y,enem_gap_vs_peer_2024,enem_dependencia,"
-                "enem_presentes,peer_delta_media_geral_2022_2024",
+                "peer_trajetoria_6y,enem_gap_vs_peer_2025,enem_dependencia,"
+                "enem_presentes,peer_delta_media_geral_2022_2025",
                 "inep_code", list(inep_tuple),
             )
             return {str(row["inep_code"]): row for row in rows}
@@ -328,8 +328,8 @@ if not is_csv_mode:
             # Regra #1: so citar metricas individuais se amostra_confiavel
             if sa_row.get("enem_amostra_confiavel"):
                 enem_pot = sa_row.get("enem_potencial_melhoria")
-                enem_gap = sa_row.get("enem_gap_vs_peer_2024")
-            enem_traj = sa_row.get("peer_trajetoria_5y")
+                enem_gap = sa_row.get("enem_gap_vs_peer_2025")
+            enem_traj = sa_row.get("peer_trajetoria_6y")
             # Classificar prioridade usando helper oficial
             row_for_helper = dict(sa_row)
             row_for_helper["admin_dependency"] = c.get("admin_dependency")

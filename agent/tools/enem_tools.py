@@ -1,7 +1,7 @@
 """
 IAlex ENEM analytics tools.
 
-Provides 4 tools that query school_analytics (vintage 2024):
+Provides 4 tools that query school_analytics (vintage 2025):
   1. analisar_performance_escola     — snapshot of ONE school
   2. priorizar_leads_enem            — P1/P2/P3 ranking
   3. buscar_escolas_por_enem         — filtered search
@@ -69,62 +69,65 @@ ALLOWED_ANALYTICS_METRICS = frozenset({
     "enem_percentil_uf_dep", "enem_percentil_uf", "enem_percentil_br",
     "enem_rank_uf_dep", "enem_rank_uf", "enem_rank_br", "enem_rank_mun",
     "enem_quartil_br",
-    "enem_gap_vs_peer_2024",
+    "enem_gap_vs_peer_2024", "enem_gap_vs_peer_2025",
+    "enem_rank_nacional", "enem_rank_uf", "enem_rank_dependencia",
+    "enem_percentil_nacional", "enem_classificacao",
     "enem_presentes", "enem_inscritos",
     "enem_presentes_cn", "enem_presentes_ch",
     "enem_presentes_lc", "enem_presentes_mt",
     # --- peer_* (grupo, SEM gate amostra_confiavel) ---
     "peer_media_geral_2020", "peer_media_geral_2021", "peer_media_geral_2022",
-    "peer_media_geral_2023", "peer_media_geral_2024",
+    "peer_media_geral_2023", "peer_media_geral_2024", "peer_media_geral_2025",
     "peer_media_cn_2020", "peer_media_cn_2021", "peer_media_cn_2022",
-    "peer_media_cn_2023", "peer_media_cn_2024",
+    "peer_media_cn_2023", "peer_media_cn_2024", "peer_media_cn_2025",
     "peer_media_ch_2020", "peer_media_ch_2021", "peer_media_ch_2022",
-    "peer_media_ch_2023", "peer_media_ch_2024",
+    "peer_media_ch_2023", "peer_media_ch_2024", "peer_media_ch_2025",
     "peer_media_lc_2020", "peer_media_lc_2021", "peer_media_lc_2022",
-    "peer_media_lc_2023", "peer_media_lc_2024",
+    "peer_media_lc_2023", "peer_media_lc_2024", "peer_media_lc_2025",
     "peer_media_mt_2020", "peer_media_mt_2021", "peer_media_mt_2022",
-    "peer_media_mt_2023", "peer_media_mt_2024",
+    "peer_media_mt_2023", "peer_media_mt_2024", "peer_media_mt_2025",
     "peer_media_redacao_2020", "peer_media_redacao_2021",
     "peer_media_redacao_2022", "peer_media_redacao_2023",
-    "peer_media_redacao_2024",
+    "peer_media_redacao_2024", "peer_media_redacao_2025",
     "peer_presentes_2020", "peer_presentes_2021", "peer_presentes_2022",
-    "peer_presentes_2023", "peer_presentes_2024",
+    "peer_presentes_2023", "peer_presentes_2024", "peer_presentes_2025",
     "peer_pct_acima_500_2020", "peer_pct_acima_500_2021",
     "peer_pct_acima_500_2022", "peer_pct_acima_500_2023",
-    "peer_pct_acima_500_2024",
+    "peer_pct_acima_500_2024", "peer_pct_acima_500_2025",
     "peer_pct_acima_600_2020", "peer_pct_acima_600_2021",
     "peer_pct_acima_600_2022", "peer_pct_acima_600_2023",
-    "peer_pct_acima_600_2024",
+    "peer_pct_acima_600_2024", "peer_pct_acima_600_2025",
     "peer_pct_acima_700_2020", "peer_pct_acima_700_2021",
     "peer_pct_acima_700_2022", "peer_pct_acima_700_2023",
-    "peer_pct_acima_700_2024",
+    "peer_pct_acima_700_2024", "peer_pct_acima_700_2025",
     "peer_redacao_pct_problemas_2020", "peer_redacao_pct_problemas_2021",
     "peer_redacao_pct_problemas_2022", "peer_redacao_pct_problemas_2023",
-    "peer_redacao_pct_problemas_2024",
-    "peer_delta_media_geral_2020_2024",
-    "peer_delta_media_geral_2022_2024",
-    "peer_slope_media_geral_ppa",
-    "peer_delta_presentes_2020_2024",
-    "peer_pct_evolucao_alunos_2020_2024",
+    "peer_redacao_pct_problemas_2024", "peer_redacao_pct_problemas_2025",
+    "peer_delta_media_geral_2020_2024", "peer_delta_media_geral_2020_2025",
+    "peer_delta_media_geral_2022_2024", "peer_delta_media_geral_2022_2025",
+    "peer_slope_media_geral_ppa", "peer_slope_media_geral_6y",
+    "peer_delta_presentes_2020_2024", "peer_delta_presentes_2020_2025",
+    "peer_pct_evolucao_alunos_2020_2024", "peer_pct_evolucao_alunos_2020_2025",
+    "peer_trajetoria_6y",
     # --- socio_* (SEMPRE rotulado como "perfil do municipio") ---
     "socio_renda_idx_media_2020", "socio_renda_idx_media_2021",
     "socio_renda_idx_media_2022", "socio_renda_idx_media_2023",
-    "socio_renda_idx_media_2024",
+    "socio_renda_idx_media_2024", "socio_renda_idx_media_2025",
     "socio_pct_pais_superior_2020", "socio_pct_pais_superior_2021",
     "socio_pct_pais_superior_2022", "socio_pct_pais_superior_2023",
-    "socio_pct_pais_superior_2024",
+    "socio_pct_pais_superior_2024", "socio_pct_pais_superior_2025",
     "socio_pct_renda_ate_1sm_2020", "socio_pct_renda_ate_1sm_2021",
     "socio_pct_renda_ate_1sm_2022", "socio_pct_renda_ate_1sm_2023",
-    "socio_pct_renda_ate_1sm_2024",
+    "socio_pct_renda_ate_1sm_2024", "socio_pct_renda_ate_1sm_2025",
     "socio_pct_renda_acima_7sm_2020", "socio_pct_renda_acima_7sm_2021",
     "socio_pct_renda_acima_7sm_2022", "socio_pct_renda_acima_7sm_2023",
-    "socio_pct_renda_acima_7sm_2024",
+    "socio_pct_renda_acima_7sm_2024", "socio_pct_renda_acima_7sm_2025",
     "socio_total_inscritos_2020", "socio_total_inscritos_2021",
     "socio_total_inscritos_2022", "socio_total_inscritos_2023",
-    "socio_total_inscritos_2024",
-    "socio_delta_renda_2020_2024",
-    "socio_delta_pais_superior_2020_2024",
-    "socio_pct_evolucao_volume_2020_2024",
+    "socio_total_inscritos_2024", "socio_total_inscritos_2025",
+    "socio_delta_renda_2020_2024", "socio_delta_renda_2020_2025",
+    "socio_delta_pais_superior_2020_2024", "socio_delta_pais_superior_2020_2025",
+    "socio_pct_evolucao_volume_2020_2024", "socio_pct_evolucao_volume_2020_2025",
     # --- pnt_* SAFE (13 campos, sempre rotulados) ---
     "pnt_total_inscritos", "pnt_pct_treineiros",
     "pnt_pct_ja_concluiu", "pnt_pct_concluindo", "pnt_pct_ate_18_anos",
@@ -181,7 +184,9 @@ AMOSTRA_CONFIAVEL_GATED = frozenset({
     "enem_redacao_comp5_media",
     "enem_percentil_uf_dep", "enem_percentil_uf", "enem_percentil_br",
     "enem_rank_uf_dep", "enem_rank_uf", "enem_rank_br", "enem_rank_mun",
-    "enem_quartil_br", "enem_gap_vs_peer_2024",
+    "enem_quartil_br", "enem_gap_vs_peer_2024", "enem_gap_vs_peer_2025",
+    "enem_rank_nacional", "enem_rank_uf", "enem_rank_dependencia",
+    "enem_percentil_nacional", "enem_classificacao",
 })
 
 # Campos que o LLM pode usar em GROUP BY / distribuicao.
@@ -189,7 +194,7 @@ ALLOWED_GROUPINGS = frozenset({
     "city", "state", "admin_dependency", "admin_category", "school_size",
     "nivel_tecnologico", "categoria_privada",
     "enem_dependencia", "enem_potencial_melhoria", "enem_area_mais_fraca",
-    "peer_trajetoria_5y",
+    "peer_trajetoria_5y", "peer_trajetoria_6y",
 })
 
 ALLOWED_OPERATIONS = frozenset({
@@ -298,7 +303,7 @@ def _formatar_performance_individual(row: Dict[str, Any]) -> Optional[Dict[str, 
         "presentes": row.get("enem_presentes"),
         "dependencia": row.get("enem_dependencia"),
         "potencial_melhoria": row.get("enem_potencial_melhoria"),
-        "gap_vs_peer_2024": _n("enem_gap_vs_peer_2024"),
+        "gap_vs_peer_2024": _n("enem_gap_vs_peer_2025"),
         "taxa_presenca": _n("enem_taxa_presenca"),
     }
     # Rankings (oferece o mais granular disponivel primeiro)
@@ -377,7 +382,7 @@ def _formatar_trajetoria_peer(
     """
     if not row:
         return None
-    traj = row.get("peer_trajetoria_5y")
+    traj = row.get("peer_trajetoria_6y")
     if not traj:
         return None
 
@@ -405,15 +410,15 @@ def _formatar_trajetoria_peer(
         "municipio": municipio,
         "dependencia": dep,
         "trajetoria_5y": traj,
-        "media_2024": _n("peer_media_geral_2024"),
+        "media_2024": _n("peer_media_geral_2025"),
         "media_2022": _n("peer_media_geral_2022"),
         "media_2020": _n("peer_media_geral_2020"),
         # Regra #7: preferir delta 2022-2024 (sem distorcao da pandemia)
-        "delta_2022_2024_preferido": _n("peer_delta_media_geral_2022_2024"),
-        "delta_2020_2024_alternativo": _n("peer_delta_media_geral_2020_2024"),
+        "delta_2022_2024_preferido": _n("peer_delta_media_geral_2022_2025"),
+        "delta_2020_2024_alternativo": _n("peer_delta_media_geral_2020_2025"),
         "slope_media_ppa": _n("peer_slope_media_geral_ppa"),
-        "presentes_2024": row.get("peer_presentes_2024"),
-        "evolucao_alunos_2020_2024": _n("peer_pct_evolucao_alunos_2020_2024"),
+        "presentes_2024": row.get("peer_presentes_2025"),
+        "evolucao_alunos_2020_2024": _n("peer_pct_evolucao_alunos_2020_2025"),
     }
     # Frase pronta para o LLM citar
     delta = out["delta_2022_2024_preferido"]
@@ -444,9 +449,9 @@ def _formatar_contexto_municipal(
     """
     if not row:
         return None
-    renda_2024 = row.get("socio_renda_idx_media_2024")
-    pais_superior_2024 = row.get("socio_pct_pais_superior_2024")
-    delta_renda = row.get("socio_delta_renda_2020_2024")
+    renda_2024 = row.get("socio_renda_idx_media_2025")
+    pais_superior_2024 = row.get("socio_pct_pais_superior_2025")
+    delta_renda = row.get("socio_delta_renda_2020_2025")
     if renda_2024 is None and pais_superior_2024 is None:
         return None
 
@@ -474,9 +479,9 @@ def _formatar_contexto_municipal(
             if pais_superior_2024 and pais_superior_2024 < 1
             else None
         ),
-        "delta_renda_2020_2024": _n("socio_delta_renda_2020_2024"),
-        "delta_pais_superior_2020_2024": _n("socio_delta_pais_superior_2020_2024"),
-        "evolucao_volume_2020_2024": _n("socio_pct_evolucao_volume_2020_2024"),
+        "delta_renda_2020_2024": _n("socio_delta_renda_2020_2025"),
+        "delta_pais_superior_2020_2024": _n("socio_delta_pais_superior_2020_2025"),
+        "evolucao_volume_2020_2024": _n("socio_pct_evolucao_volume_2020_2025"),
     }
 
 
@@ -492,11 +497,11 @@ def _classificar_prioridade(row: Dict[str, Any]) -> Optional[str]:
         return None
 
     potencial = row.get("enem_potencial_melhoria")
-    traj = row.get("peer_trajetoria_5y")
+    traj = row.get("peer_trajetoria_6y")
     presentes = row.get("enem_presentes") or 0
     dep = row.get("enem_dependencia") or ""
-    gap = row.get("enem_gap_vs_peer_2024")
-    delta_22_24 = row.get("peer_delta_media_geral_2022_2024")
+    gap = row.get("enem_gap_vs_peer_2025")
+    delta_22_24 = row.get("peer_delta_media_geral_2022_2025")
 
     subindo = traj in ("Subindo", "Subindo forte")
     caindo = traj in ("Caindo", "Caindo forte")
@@ -540,9 +545,9 @@ def _motivo_prioridade(
         or "seu municipio"
     )
     dep = row.get("enem_dependencia") or "Privada"
-    gap = row.get("enem_gap_vs_peer_2024")
-    delta = row.get("peer_delta_media_geral_2022_2024")
-    traj = row.get("peer_trajetoria_5y") or ""
+    gap = row.get("enem_gap_vs_peer_2025")
+    delta = row.get("peer_delta_media_geral_2022_2025")
+    traj = row.get("peer_trajetoria_6y") or ""
 
     if prioridade == "P1":
         return (
@@ -935,8 +940,8 @@ def _handle_priorizar_leads_enem(params: Dict) -> str:
     # Campos que precisamos para classificar
     select_fields = (
         "inep_code,company_id,enem_dependencia,enem_amostra_confiavel,"
-        "enem_potencial_melhoria,enem_presentes,enem_gap_vs_peer_2024,"
-        "peer_trajetoria_5y,peer_delta_media_geral_2022_2024,"
+        "enem_potencial_melhoria,enem_presentes,enem_gap_vs_peer_2025,"
+        "peer_trajetoria_6y,peer_delta_media_geral_2022_2025,"
         "peer_mun_nome,socio_mun_nome"
     )
 
@@ -971,7 +976,7 @@ def _handle_priorizar_leads_enem(params: Dict) -> str:
     priority_order = {"P1": 0, "P2": 1, "P3": 2}
     ranked.sort(key=lambda t: (
         priority_order.get(t[0], 99),
-        float(t[1].get("enem_gap_vs_peer_2024") or 0),
+        float(t[1].get("enem_gap_vs_peer_2025") or 0),
     ))
 
     # Resolver nomes para os top N via cascata companies -> school_censo_yearly
@@ -995,8 +1000,8 @@ def _handle_priorizar_leads_enem(params: Dict) -> str:
             "prioridade": prio,
             "motivo": _motivo_prioridade(row, prio, municipio_clean=municipio_clean),
             "presentes": row.get("enem_presentes"),
-            "gap_vs_peer_2024": float(row.get("enem_gap_vs_peer_2024")) if row.get("enem_gap_vs_peer_2024") is not None else None,
-            "trajetoria_peer": row.get("peer_trajetoria_5y"),
+            "gap_vs_peer_2024": float(row.get("enem_gap_vs_peer_2025")) if row.get("enem_gap_vs_peer_2025") is not None else None,
+            "trajetoria_peer": row.get("peer_trajetoria_6y"),
             "esta_em_companies": info.get("company_id") is not None,
             "company_id": info.get("company_id"),
             "fonte_nome": info.get("fonte_nome"),
@@ -1048,8 +1053,8 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
     select_fields = (
         "inep_code,company_id,enem_dependencia,enem_amostra_confiavel,"
         "enem_media_geral,enem_media_geral_sem_redacao,enem_area_mais_fraca,"
-        "enem_potencial_melhoria,enem_gap_vs_peer_2024,enem_presentes,"
-        "peer_trajetoria_5y,peer_mun_nome,peer_uf_sigla"
+        "enem_potencial_melhoria,enem_gap_vs_peer_2025,enem_presentes,"
+        "peer_trajetoria_6y,peer_mun_nome,peer_uf_sigla"
     )
 
     try:
@@ -1059,11 +1064,11 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
         if potencial:
             q = q.eq("enem_potencial_melhoria", potencial)
         if trajetoria:
-            q = q.in_("peer_trajetoria_5y", trajetoria)
+            q = q.in_("peer_trajetoria_6y", trajetoria)
         if area_fraca:
             q = q.ilike("enem_area_mais_fraca", f"%{area_fraca}%")
         if gap_max is not None:
-            q = q.lte("enem_gap_vs_peer_2024", float(gap_max))
+            q = q.lte("enem_gap_vs_peer_2025", float(gap_max))
         if dependencia:
             q = q.eq("enem_dependencia", dependencia)
         if uf:
@@ -1072,7 +1077,7 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
             q = q.ilike("peer_mun_nome", f"%{cidade}%")
 
         r = q.order(
-            "enem_gap_vs_peer_2024", desc=False
+            "enem_gap_vs_peer_2025", desc=False
         ).limit(limite).execute()
     except Exception as e:
         return json.dumps({"erro": f"Falha na busca: {str(e)[:200]}"})
@@ -1097,8 +1102,8 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
             "media_sem_redacao": row.get("enem_media_geral_sem_redacao"),
             "area_fraca": row.get("enem_area_mais_fraca"),
             "potencial": row.get("enem_potencial_melhoria"),
-            "gap_vs_peer_2024": row.get("enem_gap_vs_peer_2024"),
-            "trajetoria_peer": row.get("peer_trajetoria_5y"),
+            "gap_vs_peer_2024": row.get("enem_gap_vs_peer_2025"),
+            "trajetoria_peer": row.get("peer_trajetoria_6y"),
             "esta_em_companies": info.get("company_id") is not None,
             "company_id": info.get("company_id"),
             "fonte_nome": info.get("fonte_nome"),
@@ -1212,7 +1217,7 @@ def _fetch_filtered(
             trajs = filtros["trajetoria_peer"]
             if isinstance(trajs, str):
                 trajs = [trajs]
-            q = q.in_("peer_trajetoria_5y", trajs)
+            q = q.in_("peer_trajetoria_6y", trajs)
         if filtros.get("area_fraca"):
             q = q.ilike("enem_area_mais_fraca", f"%{filtros['area_fraca']}%")
         if filtros.get("uf"):
@@ -1811,7 +1816,7 @@ def _detectar_insights(
         }
 
         # Gap geral vs peer
-        gap_geral = enem_data.get("enem_gap_vs_peer_2024")
+        gap_geral = enem_data.get("enem_gap_vs_peer_2025")
         if gap_geral is not None and gap_geral < -15:
             insights_enem.append(
                 f"Performance geral {abs(int(gap_geral))} pontos abaixo da média "
@@ -2473,7 +2478,7 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
                 },
                 "agrupar_por": {
                     "type": "string",
-                    "enum": ["city", "state", "admin_dependency", "admin_category", "school_size", "nivel_tecnologico", "categoria_privada", "enem_dependencia", "enem_potencial_melhoria", "enem_area_mais_fraca", "peer_trajetoria_5y"],
+                    "enum": ["city", "state", "admin_dependency", "admin_category", "school_size", "nivel_tecnologico", "categoria_privada", "enem_dependencia", "enem_potencial_melhoria", "enem_area_mais_fraca", "peer_trajetoria_5y", "peer_trajetoria_6y"],
                     "description": "Obrigatorio para distribuicao.",
                 },
                 "comparar_com": {
