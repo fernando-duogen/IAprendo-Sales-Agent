@@ -93,7 +93,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Diagnóstico ENEM 2024 — {escola_nome}</title>
+<title>Diagnóstico ENEM {enem_ano} — {escola_nome}</title>
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
@@ -336,7 +336,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   <div class="header">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div>
-        <div class="subtitle">Diagnóstico de Performance ENEM 2024</div>
+        <div class="subtitle">Diagnóstico de Performance ENEM {enem_ano}</div>
         <h1>{escola_nome}</h1>
         <div class="subtitle">{cidade}/{uf} &bull; {dependencia}</div>
       </div>
@@ -374,7 +374,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
   <!-- FOOTER -->
   <div class="footer" style="display:flex;justify-content:space-between;align-items:center">
     <div>
-      Fonte: Microdados ENEM 2024 e Censo Escolar 2020-2025 (INEP/MEC)<br>
+      Fonte: Microdados ENEM {enem_ano} e Censo Escolar 2020-2025 (INEP/MEC)<br>
       Análise gerada por <a href="https://iaprendo.com.br" target="_blank" style="color:#2563eb;text-decoration:none">IAprendo</a> &bull; {data_geracao}
     </div>
     {robot_html}
@@ -688,6 +688,9 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
     gap = school.get("enem_gap_vs_peer_2025")
     area_fraca = school.get("enem_area_mais_fraca")
     confiavel = school.get("enem_amostra_confiavel") is True
+    # Ano do ENEM exibido nos rotulos (dinamico: pega do dado, fallback 2025).
+    # Evita "ENEM 2024" hardcoded quando a base ja e de outro ano.
+    enem_ano_disp = int(school.get("enem_ano") or 2025)
 
     # Fetch media_geral WITHOUT confiavel gate — raw INEP data, always valid
     media_geral_raw = _fetch_media_geral(str(inep))
@@ -829,7 +832,7 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
       <img src="{v_radar_b64}" alt="Radar ENEM 5 áreas" />
       <div class="chart-caption">Azul: {nome[:30]} &bull; Cinza: {v_caption}</div>
     </div>
-    <div class="footnote">&#185; Fonte: Microdados ENEM 2024 (INEP). Comparação com {v_bench_count} escolas {v_dep_plural} de {cidade}.</div>
+    <div class="footnote">&#185; Fonte: Microdados ENEM {enem_ano_disp} (INEP). Comparação com {v_bench_count} escolas {v_dep_plural} de {cidade}.</div>
   </div>'''
             except Exception as exc:
                 logger.debug(f"variant {dep_name} radar fail: {exc}")
@@ -1047,6 +1050,7 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
         data_geracao=date.today().strftime("%d/%m/%Y"),
         inep=str(inep),
         track_url=track_url,
+        enem_ano=enem_ano_disp,
     )
 
     # Computar highlights de comparacao (para LLM usar no pitch balanceado)

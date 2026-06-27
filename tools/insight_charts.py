@@ -159,7 +159,7 @@ def _fetch_school_data(inep: str) -> Optional[Dict[str, Any]]:
     db = _get_db()
     try:
         fields = ",".join(AREA_KEYS + COMP_KEYS + [
-            "inep_code", "enem_dependencia", "enem_gap_vs_peer_2024",
+            "inep_code", "enem_dependencia", "enem_gap_vs_peer_2025", "enem_ano",
             "enem_area_mais_fraca", "enem_potencial_melhoria",
             "enem_amostra_confiavel", "enem_presentes",
             "peer_mun_nome", "peer_uf_sigla",
@@ -374,7 +374,7 @@ def generate_radar_chart(
             font=dict(size=10),
         ),
         title=dict(
-            text=f"Performance ENEM 2024<br><span style='font-size:11px;color:#666'>"
+            text=f"Performance ENEM {int(school.get('enem_ano') or 2025)}<br><span style='font-size:11px;color:#666'>"
                  f"{nome[:45]} vs {bench_label[:55]}</span>",
             font=dict(size=14, color="#333"),
             x=0.5,
@@ -407,7 +407,7 @@ def generate_gap_indicator(inep: str) -> Optional[bytes]:
     if not school:
         return None
 
-    gap = school.get("enem_gap_vs_peer_2024")
+    gap = school.get("enem_gap_vs_peer_2025")
     area_fraca = school.get("enem_area_mais_fraca")
     if gap is None or area_fraca is None:
         return None
@@ -677,7 +677,7 @@ def generate_all_relevant_charts(
             "type": "radar",
             "bytes": radar,
             "filename": chart_storage_path(inep, "radar"),
-            "alt": "Performance ENEM 2024 por area",
+            "alt": "Performance ENEM 2025 por area",
         })
 
     # 2. Gap indicator (se gap significativo)
@@ -798,7 +798,7 @@ def generate_comparison_radar(
         showlegend=True,
         legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(size=9)),
         title=dict(
-            text=f"Comparativo ENEM 2024<br><span style='font-size:11px;color:#666'>"
+            text=f"Comparativo ENEM {int(s1.get('enem_ano') or 2025)}<br><span style='font-size:11px;color:#666'>"
                  f"{nome1[:25]} vs {nome2[:25]}</span>",
             font=dict(size=14, color="#333"), x=0.5, xanchor="center",
         ),
