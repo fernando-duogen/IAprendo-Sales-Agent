@@ -1607,9 +1607,10 @@ def _handle_consultar_escolas(params: Dict) -> str:
     query = db.client.table("companies").select("*")
 
     # Aceita 'nome' ou 'query' (alias para flexibilidade)
+    # NAO filtra o nome no SQL: ilike e acento-sensitivel ("joao" != "João").
+    # Filtra em Python (acento-insensitivel) mais abaixo, sobre o CRM (~121).
     nome_filtro = params.get("nome") or params.get("query")
-    if nome_filtro:
-        query = query.ilike("name", f"%{nome_filtro}%")
+    _nome_words = [w for w in _normalize(nome_filtro).split() if len(w) >= 2] if nome_filtro else []
     if params.get("cidade"):
         query = query.ilike("city", f"%{params['cidade']}%")
     if params.get("estado"):
@@ -1626,10 +1627,20 @@ def _handle_consultar_escolas(params: Dict) -> str:
     query = query.order(order_field, desc=order_desc, nullsfirst=False)
 
     limite = min(int(params.get("limite", 100) or 100), 1000)
-    result = query.limit(limite).execute()
+    # Se ha filtro de nome (aplicado em Python), buscar amplo e cortar depois
+    # — senao o .limit cortaria antes do filtro e perderia matches.
+    _fetch_limit = 2000 if _nome_words else limite
+    result = query.limit(_fetch_limit).execute()
+
+    _rows = result.data or []
+    if _nome_words:
+        _rows = [
+            r for r in _rows
+            if all(w in _normalize(r.get("name") or "") for w in _nome_words)
+        ][:limite]
 
     escolas = []
-    for s in result.data:
+    for s in _rows:
         escolas.append({
             "id": s["id"],
             "nome": s["name"],
@@ -2704,13 +2715,12 @@ def _handle_registrar_resultado_reuniao(params: Dict) -> str:
         if not escola_nome:
             return json.dumps({"erro": "Informe o nome da escola."})
 
-        # Buscar escola
-        r = db.client.table("companies").select("id,name").ilike(
-            "name", f"%{escola_nome}%"
-        ).limit(1).execute()
-        if not r.data:
+        # Buscar escola (acento-insensitivel + ambiguidade via resolver canonico)
+        company, _err = _resolve_company_strict(params, select="id,name")
+        if _err:
+            return _err
+        if not company:
             return json.dumps({"erro": f"Escola '{escola_nome}' nao encontrada."})
-        company = r.data[0]
         company_id = company["id"]
 
         # Buscar meeting mais recente desta escola
@@ -2809,20 +2819,17 @@ def _handle_registrar_contato(params: Dict) -> str:
                 ensure_ascii=False,
             )
 
-        # Resolver escola
-        r = (
-            db.client.table("companies")
-            .select("id,name,status,commercial_stage")
-            .ilike("name", f"%{escola_nome}%")
-            .limit(1)
-            .execute()
+        # Resolver escola (acento-insensitivel + ambiguidade via resolver canonico)
+        company, _err = _resolve_company_strict(
+            params, select="id,name,status,commercial_stage"
         )
-        if not r.data:
+        if _err:
+            return _err
+        if not company:
             return json.dumps(
                 {"erro": f"Escola '{escola_nome}' nao encontrada."},
                 ensure_ascii=False,
             )
-        company = r.data[0]
         company_id = company["id"]
 
         # Registrar via helper canonico
@@ -6663,12 +6670,17 @@ def _resolve_company_strict(
                 "erro": f"Escola nao encontrada por id/inep '{eid_s}'."
             }, ensure_ascii=False))
 
-    # === Via nome (busca inteligente por palavras-chave) ===
+    # === Via nome (busca inteligente por palavras-chave, ACENTO-INSENSIVEL) ===
     nome = params.get("escola_nome") or params.get("nome")
     if nome:
-        # Normalizar: remover acentos e lowercase
-        import unicodedata as _ud
-        _nome_clean = _ud.normalize("NFKD", nome).encode("ASCII", "ignore").decode("ASCII").lower()
+        # Filtros opcionais de localizacao p/ desambiguar (nome + cidade/uf)
+        _cidade = params.get("cidade") or params.get("municipio")
+        _uf = params.get("uf") or params.get("estado")
+        _cidade_norm = _normalize(_cidade) if _cidade else ""
+        _uf_norm = (str(_uf).strip().upper()[:2]) if _uf else ""
+
+        # Normalizar nome: remover acentos + lowercase
+        _nome_clean = _normalize(nome)
 
         # Stop words: prefixos comuns que nao discriminam escolas
         _STOP = {"colegio", "col", "escola", "esc", "instituto", "inst",
@@ -6679,60 +6691,38 @@ def _resolve_company_strict(
         if not _palavras:
             _palavras = [p for p in _nome_clean.split() if len(p) >= 2]
 
+        # O CRM e pequeno (~121) -> buscar tudo e filtrar em PYTHON.
+        # Postgres ilike e case-insensitive mas ACENTO-sensitivel
+        # ("joao" NAO casa "João") -> normalizar dos dois lados resolve.
         try:
-            # Buscar com AND de cada palavra significativa (max 3)
-            q = db.client.table("companies").select(select)
-            for _pw in _palavras[:3]:
-                q = q.ilike("name", f"%{_pw}%")
-            r = q.limit(10).execute()
-            matches = r.data or []
-
-            # Fallback: se 0 resultados e tinha stop words filtradas, tentar nome original
-            if not matches:
-                r = db.client.table("companies").select(select).ilike(
-                    "name", f"%{nome}%"
-                ).limit(10).execute()
-                matches = r.data or []
+            _crm_rows = (
+                db.client.table("companies").select("*").limit(2000).execute().data
+            ) or []
         except Exception as e:
             return (None, json.dumps({
                 "erro": f"Falha ao buscar escola por nome: {str(e)[:200]}"
             }, ensure_ascii=False))
 
-        if len(matches) == 0:
-            # Fallback: buscar em school_analytics (escola pode existir no ENEM
-            # mas nao estar importada no CRM ainda)
-            try:
-                sa_q = db.client.table("school_analytics").select(
-                    "co_entidade, no_entidade, peer_mun_nome, peer_uf_sigla, enem_dependencia"
-                )
-                for _pw in _palavras[:3]:
-                    sa_q = sa_q.ilike("no_entidade", f"%{_pw}%")
-                sa_result = sa_q.limit(5).execute()
-                sa_matches = sa_result.data or []
-                if sa_matches:
-                    sugestoes = []
-                    for sa in sa_matches[:3]:
-                        sugestoes.append(
-                            f"- {sa.get('no_entidade', '?')} (INEP {sa.get('co_entidade', '?')}, "
-                            f"{sa.get('peer_mun_nome', '?')}/{sa.get('peer_uf_sigla', '?')}, "
-                            f"{sa.get('enem_dependencia', '?')})"
-                        )
-                    return (None, json.dumps({
-                        "erro": f"Escola '{nome}' nao esta no CRM, mas encontrei na base ENEM/Censo.",
-                        "escolas_encontradas": "\n".join(sugestoes),
-                        "dica": (
-                            "Para gerar o OPR, posso usar o INEP diretamente. "
-                            "Chame novamente com o parametro inep. "
-                            "Ex: gerar_relatorio_escola(inep='43105009')"
-                        ),
-                    }, ensure_ascii=False))
-            except Exception:
-                pass
+        def _loc_ok(row: Dict) -> bool:
+            if _cidade_norm and _cidade_norm not in _normalize(row.get("city") or ""):
+                return False
+            if _uf_norm and str(row.get("state") or "").strip().upper()[:2] != _uf_norm:
+                return False
+            return True
 
-            return (None, json.dumps({
-                "erro": f"Nenhuma escola encontrada com '{nome}' no nome.",
-                "dica": "Tente apenas o sobrenome da escola (ex: 'Kennedy' em vez de 'Colegio Kennedy').",
-            }, ensure_ascii=False))
+        # Match principal: AND de todas as palavras significativas (acento-insensitivel)
+        matches = [
+            r for r in _crm_rows
+            if all(w in _normalize(r.get("name") or "") for w in _palavras)
+            and _loc_ok(r)
+        ]
+        # Fallback: substring do nome inteiro normalizado (pega casos sem palavra util)
+        if not matches:
+            _full = _nome_clean.strip()
+            matches = [
+                r for r in _crm_rows
+                if _full and _full in _normalize(r.get("name") or "") and _loc_ok(r)
+            ]
 
         if len(matches) > 1:
             return (None, json.dumps({
@@ -6748,18 +6738,67 @@ def _resolve_company_strict(
                         "uf": m.get("state"),
                         "dependencia": m.get("admin_dependency"),
                     }
-                    for m in matches
+                    for m in matches[:10]
                 ],
                 "orientacao": (
                     f"Encontrei {len(matches)} escolas no CRM com '{nome}' no nome. "
                     "NAO escolha silenciosamente — apresente a lista ao Fernando "
                     "(incluindo cidade e bairro para diferenciar) e pergunte qual "
                     "ele quer. Quando ele responder, chame esta tool de novo passando "
-                    "o parametro `inep` ou `escola_id` especifico."
+                    "o parametro `inep` ou `escola_id` especifico. (Dica: passar "
+                    "`cidade` ou `uf` junto com o nome ja desambigua.)"
                 ),
             }, ensure_ascii=False))
 
-        return (matches[0], None)
+        if len(matches) == 1:
+            return (matches[0], None)
+
+        # === 0 matches no CRM: cair na base COMPLETA do MEC (185k) ===
+        # Antes consultava school_analytics.no_entidade (colunas inexistentes) ->
+        # fallback quebrado. Agora reusa search_mec_catalog (name_norm/city_norm
+        # normalizados + indices), o mesmo motor do buscar_escola_brasil.
+        try:
+            _mec = db.search_mec_catalog(
+                {"nome": nome, "cidade": _cidade or "", "uf": _uf or ""},
+                limit=5,
+            )
+            _rows = (_mec or {}).get("rows") or []
+        except Exception:
+            _rows = []
+
+        if _rows:
+            sugestoes = [
+                f"- {sa.get('name', '?')} (INEP {sa.get('inep_code', '?')}, "
+                f"{sa.get('city', '?')}/{sa.get('state', '?')}, "
+                f"{sa.get('admin_dependency', '?')})"
+                for sa in _rows[:5]
+            ]
+            _payload = {
+                "erro": f"Escola '{nome}' nao esta no CRM, mas encontrei na base MEC/ENEM (185k).",
+                "escolas_encontradas": "\n".join(sugestoes),
+                "dica": (
+                    "Para seguir, use o INEP diretamente — as ferramentas por INEP "
+                    "cobrem as 185k escolas. Chame novamente com o parametro `inep`."
+                ),
+            }
+            if len(_rows) == 1:
+                _ie = str(_rows[0].get("inep_code") or "")
+                _payload["inep_sugerido"] = _ie
+                _payload["dica"] = (
+                    f"Encontrei 1 escola forte na base: {_rows[0].get('name')} "
+                    f"(INEP {_ie}). Chame novamente passando inep='{_ie}'."
+                )
+            return (None, json.dumps(_payload, ensure_ascii=False))
+
+        _onde = ((f" em {_cidade}" if _cidade else "")
+                 + (f"/{_uf_norm}" if _uf_norm else ""))
+        return (None, json.dumps({
+            "erro": f"Nenhuma escola encontrada com '{nome}'{_onde}.",
+            "dica": (
+                "Tente so o nome distintivo (ex: 'Kennedy' em vez de 'Colegio "
+                "Kennedy') ou inclua a cidade/UF para desambiguar."
+            ),
+        }, ensure_ascii=False))
 
     # Nenhum parametro passado
     return (None, None)
@@ -8345,6 +8384,10 @@ contextual sem ter que formula-los do zero.
 
 *Buscar escolas:*
 - Escola especifica ou por nome/cidade → *consultar_escolas* (banco + fallback MEC)
+  A busca por nome NAO depende de acento ("sao jose" = "São José") e cobre as 185k
+  escolas (CRM primeiro, depois base MEC). Passe `cidade` e/ou `uf` junto com o nome
+  para desambiguar quando houver homonimas; se a escola nao estiver no CRM, voce
+  recebe o INEP da base — use-o nas ferramentas por INEP.
 - Filtros avancados (porte, tipo, nivel, rural/urbana) → *buscar_escola_brasil*
 - Por proximidade/localizacao → *escolas_proximas* (SEMPRE informe se buscou no banco, MEC ou ambos)
   IMPORTANTE: ao mostrar resultados de escolas_proximas, SEMPRE diga a fonte: "do nosso banco" ou "da base MEC"
