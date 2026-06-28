@@ -4399,13 +4399,13 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
                     "id": _id,
                     "titulo": f"Performance ENEM — ponto fraco em {area_fraca}",
                     "descricao": (
-                        f"Os dados ENEM 2024 apontam {area_fraca} como a area mais "
+                        f"Os dados ENEM 2025 apontam {area_fraca} como a area mais "
                         f"fraca desta escola especificamente. IAprendo tem trilhas "
                         f"adaptativas por area do conhecimento — esse e o tipo de "
                         f"problema que o sistema resolve melhor. Tom tecnico, "
                         f"concreto, focado em diagnostico+remedio."
                     ),
-                    "dados_destaque": [f"Area mais fraca ENEM 2024: {area_fraca}"],
+                    "dados_destaque": [f"Area mais fraca ENEM 2025: {area_fraca}"],
                     "tom_sugerido": "tecnico",
                     "foco": "demo",
                     "baseado_em_analytics": True,
@@ -5531,7 +5531,7 @@ def _chart_inline_img(url: str, alt: str) -> str:
         '<div style="text-align:left;margin:16px 0">'
         f'<img src="{url}" alt="{alt}" '
         'style="width:100%;max-width:560px;display:block;border-radius:8px" />'
-        f'<p style="color:#999;font-size:11px;margin-top:4px">Fonte: ENEM 2024 / Censo Escolar (INEP)</p>'
+        f'<p style="color:#999;font-size:11px;margin-top:4px">Fonte: ENEM 2025 / Censo Escolar (INEP)</p>'
         '</div>'
     )
 
@@ -8100,10 +8100,10 @@ que tem (endereco, telefone, etapas, porte). Exemplos:
 **Se fonte_dados = 'manual' ou None**: cadastro antigo/manual — use o que tem
 no banco.
 
-== DADOS ANALITICOS ENEM (vintage 2024) ==
+== DADOS ANALITICOS ENEM (vintage 2025) ==
 
 Voce tem acesso a uma camada analitica com ~185k escolas do Brasil, que
-inclui performance ENEM 2024, trajetoria do peer group 2020-2024 e
+inclui performance ENEM 2025, trajetoria do peer group 2020-2025 e
 contexto socioeconomico municipal. Esses dados permitem conversas muito
 mais concretas com escolas — mas so se voce mantiver clareza sobre *o que
 cada numero representa*. E dessa clareza que sai a diferenca entre uma
@@ -8128,10 +8128,11 @@ A. **A escola individual** — campos `enem_*` (ENEM) + campos do Censo
 
    A.1 **Desempenho ENEM** (campos `enem_*`)
        Representa o que aconteceu com os alunos da escola no ENEM.
-       Snapshot atual: ENEM 2024 (ENEM individual historico 2020-2023
-       NAO existe — os microdados publicos foram anonimizados pelo
-       INEP). So tem significado estatistico quando a amostra e
-       suficiente (o payload sinaliza via `amostra_confiavel`).
+       Snapshot atual: ENEM 2025. A serie individual tem 2024 E 2025
+       (2020-2023 NAO existem — anonimizados pelo INEP). Para COMPARAR
+       anos de uma escola (ex: 2025 vs 2024) use analisar_trajetoria_escola.
+       So tem significado estatistico quando a amostra e suficiente
+       (o payload sinaliza via `amostra_confiavel`).
 
    A.2 **Estrutura e evolucao — Censo Escolar** (serie 2020-2025)
        Matriculas por etapa, equipe docente, tecnologia, infraestrutura.
@@ -8247,7 +8248,7 @@ Voce tem cinco tools analiticas. Aqui e sobre o que cada uma faz, nao
 sobre etica (a etica esta nas secoes acima e vale para todas as tools).
 
 - **analisar_performance_escola** (inep | escola_nome | escola_id)
-  Snapshot completo de UMA escola no ano mais recente (hoje 2024):
+  Snapshot completo de UMA escola no ano mais recente (hoje 2025):
   performance individual (se amostra confiavel), area mais fraca,
   trajetoria do peer group, contexto municipal, prioridade sugerida.
   Use ANTES de gerar email para escolas com Ensino Medio. Se Fernando
@@ -9140,7 +9141,8 @@ Quando Fernando pedir menu, ajuda, ou disser "o que voce faz", mostre TODAS as c
 • Importar escola do MEC para o CRM
 
 📈 *Inteligencia ENEM e Censo:*
-• Performance ENEM 2024 de uma escola (media, ranking, peer, area fraca)
+• Performance ENEM 2025 de uma escola (media, ranking, peer, area fraca)
+• Comparar ENEM 2024 vs 2025 de uma escola (trajetoria/evolucao)
 • Ranking P1/P2/P3 de leads por temperatura ENEM
 • Buscar escolas por criterios ENEM (area fraca, potencial, trajetoria)
 • Consulta livre de dados analytics (comparacao, ranking, distribuicao)

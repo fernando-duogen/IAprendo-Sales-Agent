@@ -281,7 +281,7 @@ class WriterAgent(BaseAgent):
                     return (f'<div style="text-align:left;margin:16px 0">'
                             f'<img src="{_u}" alt="{_alt}" {_img_style} />'
                             f'<p style="color:#999;font-size:11px;margin-top:4px">'
-                            f'Fonte: ENEM 2024 / Censo Escolar (INEP)</p></div>')
+                            f'Fonte: ENEM 2025 / Censo Escolar (INEP)</p></div>')
 
                 def _opr_anchor(_url):
                     return (f'<a href="{_url}" style="color:#3BB8C4;font-weight:bold">'

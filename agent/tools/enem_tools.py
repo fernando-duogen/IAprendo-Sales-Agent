@@ -30,6 +30,13 @@ from database.supabase_client import db
 from utils.logger import logger
 
 
+# Ano do ENEM "atual" (snapshot mais recente em school_analytics). FONTE UNICA
+# usada no system prompt, descricoes de tools e rotulos de saida. Ao importar um
+# ENEM novo (runbook ANNUAL_UPDATE.md), bump aqui. Nas saidas POR-escola prefira
+# row.get("enem_ano") (ja vem no dado) e use isto so como fallback.
+ENEM_VINTAGE = 2025
+
+
 # ===========================================================================
 # WHITELISTS (immutable module-level constants)
 # ===========================================================================
@@ -303,7 +310,8 @@ def _formatar_performance_individual(row: Dict[str, Any]) -> Optional[Dict[str, 
         "presentes": row.get("enem_presentes"),
         "dependencia": row.get("enem_dependencia"),
         "potencial_melhoria": row.get("enem_potencial_melhoria"),
-        "gap_vs_peer_2024": _n("enem_gap_vs_peer_2025"),
+        "ano_enem": row.get("enem_ano") or ENEM_VINTAGE,
+        "gap_vs_peer": _n("enem_gap_vs_peer_2025"),
         "taxa_presenca": _n("enem_taxa_presenca"),
     }
     # Rankings (oferece o mais granular disponivel primeiro)
@@ -360,7 +368,7 @@ def _formatar_area_fraca(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "fonte": "calculada a partir da menor media entre as 4 areas de conhecimento + redacao",
         "uso_no_pitch": (
             f"A area mais fraca desta escola e: {fraca}. Use este texto literal "
-            f"no email. Ex: 'Pelos dados ENEM 2024, {fraca} aparece como ponto "
+            f"no email. Ex: 'Pelos dados ENEM {int(row.get('enem_ano') or ENEM_VINTAGE)}, {fraca} aparece como ponto "
             f"de atencao — e justamente onde o IAprendo tem trilhas especificas'."
         ),
     }
@@ -409,26 +417,26 @@ def _formatar_trajetoria_peer(
         ),
         "municipio": municipio,
         "dependencia": dep,
-        "trajetoria_5y": traj,
-        "media_2024": _n("peer_media_geral_2025"),
+        "trajetoria": traj,
+        "media_atual": _n("peer_media_geral_2025"),
         "media_2022": _n("peer_media_geral_2022"),
         "media_2020": _n("peer_media_geral_2020"),
-        # Regra #7: preferir delta 2022-2024 (sem distorcao da pandemia)
-        "delta_2022_2024_preferido": _n("peer_delta_media_geral_2022_2025"),
-        "delta_2020_2024_alternativo": _n("peer_delta_media_geral_2020_2025"),
+        # Regra #7: preferir delta 2022->atual (sem distorcao da pandemia)
+        "delta_2022_atual_preferido": _n("peer_delta_media_geral_2022_2025"),
+        "delta_2020_atual_alternativo": _n("peer_delta_media_geral_2020_2025"),
         "slope_media_ppa": _n("peer_slope_media_geral_ppa"),
-        "presentes_2024": row.get("peer_presentes_2025"),
-        "evolucao_alunos_2020_2024": _n("peer_pct_evolucao_alunos_2020_2025"),
+        "presentes_atual": row.get("peer_presentes_2025"),
+        "evolucao_alunos_2020_atual": _n("peer_pct_evolucao_alunos_2020_2025"),
     }
     # Frase pronta para o LLM citar
-    delta = out["delta_2022_2024_preferido"]
+    delta = out["delta_2022_atual_preferido"]
     if delta is not None:
         if delta > 5:
-            dir_txt = f"vem subindo {delta:+.1f} pts entre 2022 e 2024"
+            dir_txt = f"vem subindo {delta:+.1f} pts entre 2022 e {ENEM_VINTAGE}"
         elif delta < -5:
-            dir_txt = f"vem caindo {delta:+.1f} pts entre 2022 e 2024"
+            dir_txt = f"vem caindo {delta:+.1f} pts entre 2022 e {ENEM_VINTAGE}"
         else:
-            dir_txt = f"estavel ({delta:+.1f} pts entre 2022 e 2024)"
+            dir_txt = f"estavel ({delta:+.1f} pts entre 2022 e {ENEM_VINTAGE})"
         out["frase_pronta"] = (
             f"suas concorrentes diretas em {municipio} ({dep}) {dir_txt}"
         )
@@ -473,15 +481,15 @@ def _formatar_contexto_municipal(
             "perfil do municipio e X'. NUNCA 'os alunos desta escola sao X'."
         ),
         "municipio": municipio,
-        "renda_indice_2024": round(float(renda_2024), 2) if renda_2024 else None,
-        "pct_pais_com_superior_2024": (
+        "renda_indice_atual": round(float(renda_2024), 2) if renda_2024 else None,
+        "pct_pais_com_superior_atual": (
             round(float(pais_superior_2024) * 100, 1)
             if pais_superior_2024 and pais_superior_2024 < 1
             else None
         ),
-        "delta_renda_2020_2024": _n("socio_delta_renda_2020_2025"),
-        "delta_pais_superior_2020_2024": _n("socio_delta_pais_superior_2020_2025"),
-        "evolucao_volume_2020_2024": _n("socio_pct_evolucao_volume_2020_2025"),
+        "delta_renda_2020_atual": _n("socio_delta_renda_2020_2025"),
+        "delta_pais_superior_2020_atual": _n("socio_delta_pais_superior_2020_2025"),
+        "evolucao_volume_2020_atual": _n("socio_pct_evolucao_volume_2020_2025"),
     }
 
 
@@ -854,7 +862,7 @@ def _handle_analisar_performance_escola(params: Dict) -> str:
             "aviso": (
                 "Esta escola esta no CRM mas NAO tem dados analiticos ENEM. "
                 "Possiveis motivos: e do Catalogo INEP, nao participou do ENEM "
-                "2024, ou nao fez Medio. Ainda e pitchavel via dados do Censo."
+                f"{ENEM_VINTAGE}, ou nao fez Medio. Ainda e pitchavel via dados do Censo."
             ),
         }, ensure_ascii=False)
 
@@ -1000,7 +1008,7 @@ def _handle_priorizar_leads_enem(params: Dict) -> str:
             "prioridade": prio,
             "motivo": _motivo_prioridade(row, prio, municipio_clean=municipio_clean),
             "presentes": row.get("enem_presentes"),
-            "gap_vs_peer_2024": float(row.get("enem_gap_vs_peer_2025")) if row.get("enem_gap_vs_peer_2025") is not None else None,
+            "gap_vs_peer":float(row.get("enem_gap_vs_peer_2025")) if row.get("enem_gap_vs_peer_2025") is not None else None,
             "trajetoria_peer": row.get("peer_trajetoria_6y"),
             "esta_em_companies": info.get("company_id") is not None,
             "company_id": info.get("company_id"),
@@ -1102,7 +1110,7 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
             "media_sem_redacao": row.get("enem_media_geral_sem_redacao"),
             "area_fraca": row.get("enem_area_mais_fraca"),
             "potencial": row.get("enem_potencial_melhoria"),
-            "gap_vs_peer_2024": row.get("enem_gap_vs_peer_2025"),
+            "gap_vs_peer":row.get("enem_gap_vs_peer_2025"),
             "trajetoria_peer": row.get("peer_trajetoria_6y"),
             "esta_em_companies": info.get("company_id") is not None,
             "company_id": info.get("company_id"),
@@ -2376,9 +2384,9 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
     {
         "name": "analisar_performance_escola",
         "description": (
-            "Retorna snapshot de performance ENEM 2024 de UMA escola: media geral "
+            f"Retorna snapshot de performance ENEM {ENEM_VINTAGE} de UMA escola: media geral "
             "(com/sem redacao), ranking, gap vs peer group, area mais fraca, "
-            "trajetoria do peer group 2020-2024, contexto socioeconomico municipal, "
+            f"trajetoria do peer group 2020-{ENEM_VINTAGE}, contexto socioeconomico municipal, "
             "e prioridade sugerida (P1/P2/P3). Aplica automaticamente o gate "
             "enem_amostra_confiavel — se FALSE, omite rankings individuais. "
             "Use ANTES de gerar email para escolas com Medio."
@@ -2469,7 +2477,7 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
                 "metricas": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Lista de campos da whitelist. Ex: ['enem_media_geral','enem_media_mt','peer_media_geral_2024']. Campos invalidos retornam erro.",
+                    "description": "Lista de campos da whitelist. Ex: ['enem_media_geral','enem_media_mt','peer_media_geral_2025']. Campos invalidos retornam erro.",
                 },
                 "agregacao": {
                     "type": "string",
@@ -2489,7 +2497,7 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
                 "anos": {
                     "type": "array",
                     "items": {"type": "integer"},
-                    "description": "Anos para serie_temporal (2020..2024). Use nomes de metricas *_YYYY.",
+                    "description": "Anos para serie_temporal (2020..2025). Use nomes de metricas *_YYYY.",
                 },
                 "modo_redacao": {
                     "type": "string",
@@ -2508,8 +2516,8 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
             "Retorna a SERIE HISTORICA INDIVIDUAL de UMA escola: evolucao "
             "ano a ano de matriculas (por etapa), equipe docente, tecnologia "
             "e infraestrutura, a partir do Censo Escolar 2020-2025. Tambem "
-            "retorna a serie ENEM da escola quando disponivel (hoje so 2024, "
-            "cresce a cada ENEM novo). Aplica automaticamente o gate "
+            "retorna a serie ENEM da escola por ANO (2024 E 2025 — use para "
+            "COMPARAR anos da mesma escola, ex '2025 vs 2024'). Aplica o gate "
             "amostra_confiavel nas metricas ENEM individuais. "
             "Use quando Fernando perguntar sobre EVOLUCAO, HISTORICO, "
             "TENDENCIA, TRAJETORIA, CRESCIMENTO ou QUEDA de uma escola "
