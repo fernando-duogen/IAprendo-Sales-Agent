@@ -288,6 +288,44 @@ def _strip_blocked_fields(row: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in row.items() if k not in PNT_BLOCKED}
 
 
+# enem_dependencia tem 4 valores: Federal, Estadual, Municipal, Privada.
+# "PUBLICA" e um GRUPO (Federal+Estadual+Municipal), NAO um valor — por isso
+# "melhor escola publica" precisa incluir as Federais (ex: UFSM Politecnico),
+# senao o filtro vira so 'Estadual' e perde as Federais (bug reportado).
+_DEP_PUBLICAS = ["Federal", "Estadual", "Municipal"]
+_DEP_CANON = {
+    "federal": "Federal", "estadual": "Estadual", "municipal": "Municipal",
+    "privada": "Privada", "particular": "Privada",
+}
+
+
+def _norm_dep(raw: Any) -> str:
+    import unicodedata
+    return (unicodedata.normalize("NFKD", str(raw)).encode("ASCII", "ignore")
+            .decode("ASCII").lower().strip())
+
+
+def _apply_dependencia_filter(q: Any, raw: Any) -> Any:
+    """Aplica filtro de dependencia numa query, entendendo 'publica'/'privada'.
+
+    - 'publica'/'publico'/... -> `.in_(Federal, Estadual, Municipal)` (grupo).
+    - 'privada'/'particular'/... -> `.eq('Privada')`.
+    - valor exato (federal/estadual/municipal/privada, qualquer caixa/acento)
+      -> `.eq` canonicalizado.
+    Se `raw` for vazio, devolve a query inalterada.
+    """
+    if not raw:
+        return q
+    n = _norm_dep(raw)
+    if not n:  # so espacos
+        return q
+    if "public" in n:  # publica, publico, "rede/escola publica"...
+        return q.in_("enem_dependencia", _DEP_PUBLICAS)
+    if "privad" in n or "particular" in n:
+        return q.eq("enem_dependencia", "Privada")
+    return q.eq("enem_dependencia", _DEP_CANON.get(n, raw))
+
+
 def _formatar_performance_individual(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Retorna dados individuais da escola OU None se amostra nao confiavel."""
     if not row or row.get("enem_amostra_confiavel") is not True:
@@ -957,8 +995,7 @@ def _handle_priorizar_leads_enem(params: Dict) -> str:
         q = db.client.table("school_analytics").select(select_fields).eq(
             "enem_amostra_confiavel", True
         )
-        if dependencia:
-            q = q.eq("enem_dependencia", dependencia)
+        q = _apply_dependencia_filter(q, dependencia)
         if municipio:
             q = q.ilike("peer_mun_nome", f"%{municipio}%")
         if uf:
@@ -1103,8 +1140,7 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
             q = q.ilike("enem_area_mais_fraca", f"%{area_fraca}%")
         if gap_max is not None:
             q = q.lte("enem_gap_vs_peer_2025", float(gap_max))
-        if dependencia:
-            q = q.eq("enem_dependencia", dependencia)
+        q = _apply_dependencia_filter(q, dependencia)
         if uf:
             q = q.eq("peer_uf_sigla", uf.upper())
         if cidade:
@@ -1253,8 +1289,7 @@ def _fetch_filtered(
             q = q.eq("enem_amostra_confiavel", True)
         if filtros.get("amostra_confiavel") is True:
             q = q.eq("enem_amostra_confiavel", True)
-        if filtros.get("dependencia"):
-            q = q.eq("enem_dependencia", filtros["dependencia"])
+        q = _apply_dependencia_filter(q, filtros.get("dependencia"))
         if filtros.get("potencial"):
             q = q.eq("enem_potencial_melhoria", filtros["potencial"])
         if filtros.get("trajetoria_peer"):
@@ -2497,8 +2532,7 @@ def _handle_ranking_evolucao_enem(params: Dict) -> str:
         def _q():
             q = db.client.table("school_enem_yearly").select(sel).eq("vintage_enem", ano)
             q = q.eq("enem_amostra_confiavel", True).not_.is_(area_col, "null")
-            if dependencia:
-                q = q.eq("enem_dependencia", dependencia)
+            q = _apply_dependencia_filter(q, dependencia)
             if ibge and inep_filter is None:
                 q = q.like("inep_code", f"{ibge}%")
             return q

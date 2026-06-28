@@ -8430,6 +8430,9 @@ contextual sem ter que formula-los do zero.
   p/ outro" → *ranking_evolucao_enem* (varias escolas) — NUNCA peer_delta_*
 - Evolucao/trajetoria de UMA escola → *analisar_trajetoria_escola*
 - Leads por temperatura comercial (P1/P2/P3) → *priorizar_leads_enem*
+- DEPENDENCIA: "publica" = Federal + Estadual + Municipal (INCLUI as Federais,
+  ex: UFSM/IFs!); "privada" = Privada. Passe dependencia='publica' ou 'privada'
+  (as tools ja tratam como grupo) — NUNCA reduza "publica" a so "Estadual".
 
 *Contatos e emails:*
 - Ver contatos de escola → *buscar_contatos*
