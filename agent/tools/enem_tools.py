@@ -1067,8 +1067,12 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
 
     try:
         q = db.client.table("school_analytics").select(select_fields)
-        if only_confiavel:
-            q = q.eq("enem_amostra_confiavel", True)
+        # PISO DE DADO ENEM REAL (defense in depth — bug "escola infantil no topo"):
+        # esta e uma busca/ranking POR ENEM, entao so escolas com nota ENEM real
+        # E amostra confiavel podem aparecer. O gate da regra #1 NAO e desligavel
+        # aqui (only_confiavel=False nao afrouxa o gate — seria a porta do bug).
+        q = q.eq("enem_amostra_confiavel", True)
+        q = q.not_.is_("enem_media_geral", "null")
         if potencial:
             q = q.eq("enem_potencial_melhoria", potencial)
         if trajetoria:
@@ -1084,13 +1088,22 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
         if cidade:
             q = q.ilike("peer_mun_nome", f"%{cidade}%")
 
+        # nullsfirst=False: NULL no fim (PostgREST default p/ asc joga NULL no topo).
         r = q.order(
-            "enem_gap_vs_peer_2025", desc=False
+            "enem_gap_vs_peer_2025", desc=False, nullsfirst=False
         ).limit(limite).execute()
     except Exception as e:
         return json.dumps({"erro": f"Falha na busca: {str(e)[:200]}"})
 
-    rows = [_strip_gated_fields(_strip_blocked_fields(dict(row))) for row in (r.data or [])]
+    # Cinto Python (garantia final + ponto de teste): descarta qualquer linha sem
+    # nota ENEM utilizavel — pega NULL real E numero suprimido por amostra nao
+    # confiavel (_strip_gated_fields zera enem_media_geral quando amostra != True).
+    rows = [
+        r2 for r2 in (
+            _strip_gated_fields(_strip_blocked_fields(dict(row))) for row in (r.data or [])
+        )
+        if r2.get("enem_media_geral") is not None
+    ]
 
     # Resolver nomes via cascata companies -> school_censo_yearly
     inep_list = [str(row.get("inep_code")) for row in rows if row.get("inep_code")]
@@ -2428,6 +2441,8 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
             "Busca escolas por filtros analiticos ENEM: area fraca (ex: 'Matematica'), "
             "potencial de melhoria, trajetoria do peer group, gap maximo vs peer, "
             "dependencia, UF, cidade. Retorna ate 100 escolas ordenadas por gap. "
+            "SO retorna escolas com nota ENEM real e amostra confiavel (escolas sem "
+            "ENEM — infantil, EJA, sem participantes — nunca entram). "
             "Use para investigacoes direcionadas ('me da escolas privadas em Canoas "
             "com potencial alto e area fraca em matematica')."
         ),
@@ -2441,7 +2456,7 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
                 "uf": {"type": "string"},
                 "cidade": {"type": "string"},
                 "dependencia": {"type": "string"},
-                "only_confiavel": {"type": "boolean", "description": "So amostra confiavel (default TRUE)"},
+                "only_confiavel": {"type": "boolean", "description": "Compat: esta busca SEMPRE retorna apenas escolas com nota ENEM real e amostra confiavel (escolas sem ENEM — infantil, EJA, sem participantes — nunca aparecem)."},
                 "limite": {"type": "integer", "description": "Max resultados (default 20, max 100)"},
             },
         },

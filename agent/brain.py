@@ -8352,6 +8352,9 @@ sobre etica (a etica esta nas secoes acima e vale para todas as tools).
   gap_max?, etc)
   Busca filtrada pelos campos analiticos. Use para investigacoes
   direcionadas sobre criterios especificos.
+  IMPORTANTE: ranking/"melhor nota" ENEM SO considera escolas com amostra ENEM
+  confiavel. Escolas SEM ENEM (so infantil, EJA, sem participantes) NUNCA entram
+  num ranking de nota — se aparecer uma assim como "melhor", e erro: nao reporte.
 
 - **analisar_dados_analytics** — query builder flexivel
   Para perguntas abertas que nao cabem nas tres acima. Operacoes:
