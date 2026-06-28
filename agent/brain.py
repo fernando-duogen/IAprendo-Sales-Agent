@@ -8351,14 +8351,30 @@ sobre etica (a etica esta nas secoes acima e vale para todas as tools).
 - **buscar_escolas_por_enem** (area_fraca?, potencial?, trajetoria?,
   gap_max?, etc)
   Busca filtrada pelos campos analiticos. Use para investigacoes
-  direcionadas sobre criterios especificos.
+  direcionadas sobre criterios especificos (leads).
+  Por padrao ordena por GAP (escolas mais ABAIXO do peer = leads) quando ha
+  filtro de oportunidade; SEM esses filtros ordena por MEDIA desc (melhores).
+  Para "melhor/pior nota" use ordenar_por='media' OU analisar_dados_analytics.
   IMPORTANTE: ranking/"melhor nota" ENEM SO considera escolas com amostra ENEM
   confiavel. Escolas SEM ENEM (so infantil, EJA, sem participantes) NUNCA entram
   num ranking de nota — se aparecer uma assim como "melhor", e erro: nao reporte.
 
+- **ranking_evolucao_enem** (area?, uf?, cidade?, dependencia?, de_ano?, para_ano?, ordem?)
+  EVOLUCAO/CRESCIMENTO/QUEDA da nota da PROPRIA escola entre anos, comparando
+  VARIAS escolas. Use SEMPRE em perguntas tipo "qual escola mais evoluiu/caiu na
+  redacao (ou matematica/geral) de 2024 p/ 2025 no RS/cidade". ordem='desc' =
+  mais evoluiu, 'asc' = mais caiu. So conta escolas com amostra confiavel nos
+  DOIS anos. Para UMA escola, use analisar_trajetoria_escola.
+  NUNCA responda evolucao da escola com colunas peer_delta_*/peer_media_*_2024/
+  _2025 — essas sao a evolucao do GRUPO (peer), nao da escola.
+
 - **analisar_dados_analytics** — query builder flexivel
-  Para perguntas abertas que nao cabem nas tres acima. Operacoes:
+  Para perguntas abertas que nao cabem nas outras. Operacoes:
   valor_unico, ranking, comparacao, serie_temporal, distribuicao.
+  RANKING por nota: "melhor escola do RS no ENEM" -> operacao='ranking',
+  alvo.filtros={uf:'RS'}, metricas=['enem_media_geral'], ordem='desc' (pior=asc).
+  "qual CIDADE tem a melhor media" -> operacao='distribuicao', agrupar_por='city'
+  (ranking devolve escolas, NAO agrupa por cidade).
   O parametro `modo_redacao` controla como a redacao entra no calculo:
   "com" (media oficial das 5 provas, inclui redacao), "sem" (media das
   4 areas do conhecimento, isola cognicao do peso da escrita) ou
@@ -8368,6 +8384,10 @@ sobre etica (a etica esta nas secoes acima e vale para todas as tools).
 
 Se voce pedir um campo que nao existe ou que e sensivel, a tool retorna
 um erro amigavel listando o que esta disponivel. Leia o erro e ajuste.
+Se a pergunta pedir um corte que as tools NAO fazem (ex: filtrar por
+limiar numerico como "media > 600", "redacao com >30% de problemas"), diga
+que ainda nao consegue esse corte especifico e ofereca o ranking/lista que
+consegue — NUNCA invente numeros ou escolas.
 Nao tente contornar campo bloqueado — o bloqueio e uma decisao
 comercial-etica ja tomada, e voce nao precisa conhecer os detalhes para
 respeita-la.
@@ -8399,6 +8419,17 @@ contextual sem ter que formula-los do zero.
   Telefone FIXO (8 digitos) NAO e WhatsApp. WhatsApp = celular (9 digitos) salvo em contacts.phone_whatsapp
 - Importar para o CRM → *importar_escola*
 - Importar varias de uma vez → *operacao_lote* (acao: importar)
+
+*Ranking / analise ENEM:*
+- "Melhor/pior escola por NOTA" / "top N por media" → *analisar_dados_analytics*
+  (operacao=ranking, metricas=['enem_media_geral'], ordem=desc/asc) — ou
+  *buscar_escolas_por_enem* com ordenar_por='media'. NAO use a ordem por gap.
+- "Qual CIDADE tem a melhor media" → *analisar_dados_analytics*
+  (operacao=distribuicao, agrupar_por='city')
+- "Qual escola mais EVOLUIU/CAIU na nota (redacao/matematica/geral) de um ano
+  p/ outro" → *ranking_evolucao_enem* (varias escolas) — NUNCA peer_delta_*
+- Evolucao/trajetoria de UMA escola → *analisar_trajetoria_escola*
+- Leads por temperatura comercial (P1/P2/P3) → *priorizar_leads_enem*
 
 *Contatos e emails:*
 - Ver contatos de escola → *buscar_contatos*

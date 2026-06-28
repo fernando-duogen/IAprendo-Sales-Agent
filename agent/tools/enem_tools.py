@@ -1056,7 +1056,29 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
     cidade = params.get("cidade")
     dependencia = params.get("dependencia")
     only_confiavel = params.get("only_confiavel", True)
+    ordenar_por = (params.get("ordenar_por") or "").strip().lower()
     limite = min(int(params.get("limite", 20)), 100)
+
+    # --- Decisao de ordenacao (corrige "melhor nota" caindo em ordem por gap) ---
+    # gap asc = escolas MAIS ABAIXO do peer (= LEADS). media desc = MELHORES notas.
+    # Se ha filtro de OPORTUNIDADE (lead discovery), gap faz sentido como padrao;
+    # senao (ex: so uf/cidade — "melhor escola do RS"), o padrao e MEDIA desc.
+    _tem_filtro_oportunidade = bool(
+        area_fraca or potencial or trajetoria or gap_max is not None
+    )
+    _ORDER_MAP = {
+        "media": ("enem_media_geral", True),
+        "media_geral": ("enem_media_geral", True),
+        "media_sem_redacao": ("enem_media_geral_sem_redacao", True),
+        "gap": ("enem_gap_vs_peer_2025", False),
+    }
+    if ordenar_por in _ORDER_MAP:
+        _order_col, _order_desc = _ORDER_MAP[ordenar_por]
+    elif _tem_filtro_oportunidade:
+        _order_col, _order_desc = ("enem_gap_vs_peer_2025", False)
+    else:
+        _order_col, _order_desc = ("enem_media_geral", True)
+    _ordenado_por = "gap_asc" if _order_col == "enem_gap_vs_peer_2025" else f"{_order_col}_desc"
 
     select_fields = (
         "inep_code,company_id,enem_dependencia,enem_amostra_confiavel,"
@@ -1090,7 +1112,7 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
 
         # nullsfirst=False: NULL no fim (PostgREST default p/ asc joga NULL no topo).
         r = q.order(
-            "enem_gap_vs_peer_2025", desc=False, nullsfirst=False
+            _order_col, desc=_order_desc, nullsfirst=False
         ).limit(limite).execute()
     except Exception as e:
         return json.dumps({"erro": f"Falha na busca: {str(e)[:200]}"})
@@ -1147,6 +1169,7 @@ def _handle_buscar_escolas_por_enem(params: Dict) -> str:
             "cidade": cidade,
             "dependencia": dependencia,
             "only_confiavel": only_confiavel,
+            "ordenado_por": _ordenado_por,
         },
         "escolas": escolas,
     }, ensure_ascii=False, default=str)
@@ -2390,6 +2413,173 @@ def _handle_analisar_trajetoria_escola(params: Dict) -> str:
 
 
 # ===========================================================================
+# HANDLER 6: ranking_evolucao_enem (evolucao da nota entre anos, cross-escola)
+# ===========================================================================
+
+# UF (sigla) -> codigo IBGE = 2 primeiros digitos do INEP da escola (43=RS).
+_UF_TO_IBGE = {
+    "RO": "11", "AC": "12", "AM": "13", "RR": "14", "PA": "15", "AP": "16", "TO": "17",
+    "MA": "21", "PI": "22", "CE": "23", "RN": "24", "PB": "25", "PE": "26", "AL": "27",
+    "SE": "28", "BA": "29", "MG": "31", "ES": "32", "RJ": "33", "SP": "35",
+    "PR": "41", "SC": "42", "RS": "43", "MS": "50", "MT": "51", "GO": "52", "DF": "53",
+}
+
+# area -> coluna de media em school_enem_yearly (aceita sinonimos pt).
+_EVOL_AREA_COL = {
+    "geral": "enem_media_geral", "media_geral": "enem_media_geral",
+    "geral_sem_redacao": "enem_media_geral_sem_redacao",
+    "sem_redacao": "enem_media_geral_sem_redacao",
+    "redacao": "enem_media_redacao",
+    "mt": "enem_media_mt", "matematica": "enem_media_mt", "matemática": "enem_media_mt",
+    "lc": "enem_media_lc", "linguagens": "enem_media_lc",
+    "ch": "enem_media_ch", "humanas": "enem_media_ch",
+    "cn": "enem_media_cn", "naturais": "enem_media_cn",
+}
+
+
+def _handle_ranking_evolucao_enem(params: Dict) -> str:
+    """Ranking de EVOLUCAO da nota ENEM entre dois anos, cruzando escolas.
+
+    Responde "qual escola mais evoluiu/caiu em <area> de <ano> p/ <ano> em
+    <regiao>". Le `school_enem_yearly` (serie por escola por ano — unica fonte
+    com a nota PROPRIA da escola por ano). So conta escolas com amostra ENEM
+    confiavel nos DOIS anos (delta de amostra fraca = ruido). NAO usa peer_delta_*
+    (esses sao do grupo/peer, nao da escola).
+    """
+    area_raw = (params.get("area") or "geral").strip().lower()
+    area_col = _EVOL_AREA_COL.get(area_raw)
+    if not area_col:
+        return json.dumps({
+            "erro": f"area '{area_raw}' invalida.",
+            "areas_validas": ["geral", "redacao", "geral_sem_redacao", "mt", "lc", "ch", "cn"],
+        }, ensure_ascii=False)
+
+    try:
+        para_ano = int(params.get("para_ano") or ENEM_VINTAGE)
+        de_ano = int(params.get("de_ano") or (para_ano - 1))
+    except (ValueError, TypeError):
+        return json.dumps({"erro": "de_ano/para_ano devem ser inteiros (ex: 2024, 2025)."})
+    if de_ano == para_ano:
+        return json.dumps({"erro": "de_ano e para_ano devem ser anos diferentes."})
+
+    uf = ((params.get("uf") or "").strip().upper() or None)
+    cidade = ((params.get("cidade") or "").strip() or None)
+    dependencia = ((params.get("dependencia") or "").strip() or None)
+    ordem = (params.get("ordem") or "desc").strip().lower()
+    top_n = min(int(params.get("top_n", 10) or 10), 50)
+
+    ibge = _UF_TO_IBGE.get(uf) if uf else None
+    if uf and not ibge:
+        return json.dumps({"erro": f"UF '{uf}' invalida.",
+                           "ufs_validas": sorted(_UF_TO_IBGE)}, ensure_ascii=False)
+
+    # Regiao: school_enem_yearly NAO tem geo. UF via prefixo INEP; cidade via
+    # resolucao de INEPs no school_analytics (peer_mun_nome).
+    inep_filter = None
+    if cidade:
+        try:
+            saq = db.client.table("school_analytics").select("inep_code").ilike(
+                "peer_mun_nome", f"%{cidade}%")
+            if uf:
+                saq = saq.eq("peer_uf_sigla", uf)
+            sarows = saq.limit(MAX_ROWS_FETCH).execute().data or []
+            inep_filter = [str(r["inep_code"]) for r in sarows if r.get("inep_code")]
+            if not inep_filter:
+                return json.dumps({"erro": f"Nenhuma escola encontrada em '{cidade}'"
+                                   + (f"/{uf}" if uf else "") + "."}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"erro": f"Falha ao resolver cidade: {str(e)[:150]}"})
+
+    sel = ("inep_code,vintage_enem,enem_dependencia,enem_amostra_confiavel,"
+           "enem_presentes," + area_col)
+
+    def _fetch_year(ano: int) -> List[Dict[str, Any]]:
+        def _q():
+            q = db.client.table("school_enem_yearly").select(sel).eq("vintage_enem", ano)
+            q = q.eq("enem_amostra_confiavel", True).not_.is_(area_col, "null")
+            if dependencia:
+                q = q.eq("enem_dependencia", dependencia)
+            if ibge and inep_filter is None:
+                q = q.like("inep_code", f"{ibge}%")
+            return q
+        rows: List[Dict[str, Any]] = []
+        if inep_filter is not None:
+            for i in range(0, len(inep_filter), 150):
+                chunk = inep_filter[i:i + 150]
+                rows.extend(_q().in_("inep_code", chunk)
+                            .limit(_POSTGREST_PAGE_SIZE).execute().data or [])
+            return rows
+        offset = 0
+        while offset < MAX_ROWS_FETCH:
+            page = _q().range(offset, offset + _POSTGREST_PAGE_SIZE - 1).execute().data or []
+            rows.extend(page)
+            if len(page) < _POSTGREST_PAGE_SIZE:
+                break
+            offset += _POSTGREST_PAGE_SIZE
+        return rows
+
+    try:
+        by_inep: Dict[str, Dict[int, Dict[str, Any]]] = {}
+        for ano in (de_ano, para_ano):
+            for r in _fetch_year(ano):
+                by_inep.setdefault(str(r.get("inep_code")), {})[ano] = r
+    except Exception as e:
+        return json.dumps({"erro": f"Falha ao buscar serie ENEM: {str(e)[:200]}"})
+
+    ranked: List[Dict[str, Any]] = []
+    for inep, anos in by_inep.items():
+        ra, rp = anos.get(de_ano), anos.get(para_ano)
+        if not ra or not rp:
+            continue  # exige os DOIS anos confiaveis
+        va, vp = ra.get(area_col), rp.get(area_col)
+        if va is None or vp is None:
+            continue
+        ranked.append({
+            "inep": inep,
+            "de_valor": round(float(va), 1),
+            "para_valor": round(float(vp), 1),
+            "delta": round(float(vp) - float(va), 1),
+            "dependencia": rp.get("enem_dependencia") or ra.get("enem_dependencia"),
+            "presentes_de": ra.get("enem_presentes"),
+            "presentes_para": rp.get("enem_presentes"),
+        })
+
+    if not ranked:
+        return json.dumps({
+            "erro": f"Nenhuma escola com amostra ENEM confiavel em {de_ano} E "
+                    f"{para_ano} com esses filtros.",
+            "filtros": {"area": area_raw, "uf": uf, "cidade": cidade,
+                        "dependencia": dependencia, "de_ano": de_ano, "para_ano": para_ano},
+        }, ensure_ascii=False)
+
+    ranked.sort(key=lambda d: d["delta"], reverse=(ordem != "asc"))
+    top = ranked[:top_n]
+
+    nomes = _resolve_school_names([d["inep"] for d in top])
+    for d in top:
+        info = nomes.get(d["inep"], {})
+        d["nome"] = info.get("name") or f"Escola INEP {d['inep']}"
+        d["cidade"] = info.get("city")
+        d["uf"] = info.get("state")
+
+    logger.info("enem_tool_called", extra={
+        "tool": "ranking_evolucao_enem", "area": area_col,
+        "de_ano": de_ano, "para_ano": para_ano, "n_consideradas": len(ranked),
+    })
+
+    return json.dumps({
+        "area": area_raw, "metrica": area_col,
+        "de_ano": de_ano, "para_ano": para_ano,
+        "ordem": "maior_evolucao" if ordem != "asc" else "maior_queda",
+        "n_consideradas": len(ranked),
+        "filtros": {"uf": uf, "cidade": cidade, "dependencia": dependencia},
+        "nota": (f"delta = nota {para_ano} - nota {de_ano}. So entram escolas com "
+                 f"amostra ENEM confiavel nos DOIS anos."),
+        "resultado": top,
+    }, ensure_ascii=False, default=str)
+
+
+# ===========================================================================
 # TOOL SPECS (Anthropic format, converted to OpenAI by brain.py)
 # ===========================================================================
 
@@ -2440,15 +2630,20 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
         "description": (
             "Busca escolas por filtros analiticos ENEM: area fraca (ex: 'Matematica'), "
             "potencial de melhoria, trajetoria do peer group, gap maximo vs peer, "
-            "dependencia, UF, cidade. Retorna ate 100 escolas ordenadas por gap. "
-            "SO retorna escolas com nota ENEM real e amostra confiavel (escolas sem "
-            "ENEM — infantil, EJA, sem participantes — nunca entram). "
+            "dependencia, UF, cidade. SO retorna escolas com nota ENEM real e "
+            "amostra confiavel (escolas sem ENEM — infantil, EJA, sem participantes "
+            "— nunca entram). ORDENACAO: com filtro de oportunidade (area_fraca/"
+            "potencial/trajetoria/gap_max) ordena por GAP asc (leads mais abaixo do "
+            "peer); sem esses filtros ordena por MEDIA desc (melhores notas). Para "
+            "forcar, use ordenar_por='media' (melhores) / 'gap' (leads). Para "
+            "ranking por nota tambem serve analisar_dados_analytics (operacao=ranking). "
             "Use para investigacoes direcionadas ('me da escolas privadas em Canoas "
             "com potencial alto e area fraca em matematica')."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
+                "ordenar_por": {"type": "string", "enum": ["media", "media_sem_redacao", "gap"], "description": "Forca a ordenacao: 'media' (melhores notas primeiro), 'media_sem_redacao', ou 'gap' (leads mais abaixo do peer). Se omitido: media desc sem filtro de oportunidade, gap asc com filtro."},
                 "area_fraca": {"type": "string", "description": "Texto da area mais fraca (ex: 'Matematica', 'Ciencias')"},
                 "potencial": {"type": "string", "enum": ["Alto", "Medio", "Baixo"]},
                 "trajetoria": {"type": "array", "items": {"type": "string"}, "description": "Lista de trajetorias ['Subindo','Subindo forte','Estavel','Caindo','Caindo forte']"},
@@ -2552,6 +2747,31 @@ ENEM_TOOLS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "ranking_evolucao_enem",
+        "description": (
+            "Ranking de EVOLUCAO da nota ENEM entre dois anos, comparando a nota "
+            "PROPRIA de cada escola (NAO do grupo/peer). Responde 'qual escola mais "
+            "evoluiu/caiu em <area> de 2024 p/ 2025' por regiao (uf/cidade/"
+            "dependencia). So conta escolas com amostra ENEM confiavel nos DOIS "
+            "anos. USE SEMPRE que a pergunta for EVOLUCAO/CRESCIMENTO/QUEDA da nota "
+            "entre anos cruzando varias escolas — NUNCA use as colunas peer_delta_* "
+            "(essas sao a evolucao do GRUPO/peer, nao da escola)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "area": {"type": "string", "enum": ["geral", "redacao", "geral_sem_redacao", "mt", "lc", "ch", "cn"], "description": "Area da nota (default geral). mt=matematica, lc=linguagens, ch=humanas, cn=naturais."},
+                "uf": {"type": "string", "description": "UF (ex: RS)"},
+                "cidade": {"type": "string", "description": "Cidade (fuzzy)"},
+                "dependencia": {"type": "string", "description": "Privada / Estadual / Federal / Municipal"},
+                "de_ano": {"type": "integer", "description": "Ano inicial (default 2024)"},
+                "para_ano": {"type": "integer", "description": "Ano final (default 2025)"},
+                "ordem": {"type": "string", "enum": ["desc", "asc"], "description": "desc=maior evolucao (default), asc=maior queda"},
+                "top_n": {"type": "integer", "description": "Max escolas (default 10, max 50)"},
+            },
+        },
+    },
 ]
 
 ENEM_TOOL_HANDLERS: Dict[str, Any] = {
@@ -2560,4 +2780,5 @@ ENEM_TOOL_HANDLERS: Dict[str, Any] = {
     "buscar_escolas_por_enem": _handle_buscar_escolas_por_enem,
     "analisar_dados_analytics": _handle_analisar_dados_analytics,
     "analisar_trajetoria_escola": _handle_analisar_trajetoria_escola,
+    "ranking_evolucao_enem": _handle_ranking_evolucao_enem,
 }
