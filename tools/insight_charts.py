@@ -175,39 +175,70 @@ def _fetch_school_data(inep: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _fetch_benchmark(
+# Minimo de escolas no benchmark p/ a comparacao (radar/cards/gap) ser util.
+# Abaixo disso, fazemos fallback de escopo (municipio -> UF -> Brasil).
+_MIN_BENCH = 3
+
+
+def _bench_query(
     municipio: str, uf: str, dependencia: str, metrics: List[str]
 ) -> Tuple[Dict[str, Optional[float]], int]:
-    """Busca media do benchmark (municipio x dependencia) para as metricas.
+    """Uma consulta de benchmark (SEM fallback): media por metrica + contagem."""
+    db = _get_db()
+    fields = ",".join(metrics + ["inep_code"])
+    q = db.client.table("school_analytics").select(fields).eq(
+        "enem_amostra_confiavel", True
+    )
+    if municipio:
+        q = q.ilike("peer_mun_nome", f"%{municipio}%")
+    if uf:
+        q = q.eq("peer_uf_sigla", uf.upper())
+    if dependencia:
+        q = q.eq("enem_dependencia", dependencia)
+    rows = (q.limit(1000).execute().data) or []
+    if not rows:
+        return {}, 0
+    result: Dict[str, Optional[float]] = {}
+    for m in metrics:
+        vals = [float(row[m]) for row in rows if row.get(m) is not None]
+        result[m] = round(sum(vals) / len(vals), 2) if vals else None
+    return result, len(rows)
+
+
+def _fetch_benchmark(
+    municipio: str, uf: str, dependencia: str, metrics: List[str]
+) -> Tuple[Dict[str, Optional[float]], int, str]:
+    """Benchmark (medias por metrica) da MESMA dependencia, com FALLBACK de
+    escopo quando o nivel pedido tem poucas escolas (< _MIN_BENCH):
+    municipio -> UF -> Brasil.
+
+    Conserta OPRs/radares vazios em cidades pequenas: ex. Veranopolis tem so 2
+    privadas confiaveis (< 3) -> antes o radar e os cards do OPR sumiam; agora
+    cai pro RS (262 privadas) e a comparacao aparece. So aciona quando o nivel
+    pedido e escasso — cidades grandes (Teresina 51 privadas) seguem por cidade.
 
     Returns:
-        Tuple de (dict de medias por metrica, contagem de escolas no benchmark).
+        (medias, contagem, escopo) — escopo in {"municipio","estado","brasil"},
+        p/ a caption refletir o nivel REALMENTE usado.
     """
-    db = _get_db()
     try:
-        fields = ",".join(metrics + ["inep_code"])
-        q = db.client.table("school_analytics").select(fields).eq(
-            "enem_amostra_confiavel", True
-        )
+        levels: List[Tuple[str, str, str]] = []
         if municipio:
-            q = q.ilike("peer_mun_nome", f"%{municipio}%")
+            levels.append(("municipio", municipio, uf))
         if uf:
-            q = q.eq("peer_uf_sigla", uf.upper())
-        if dependencia:
-            q = q.eq("enem_dependencia", dependencia)
-        r = q.limit(1000).execute()
-        rows = r.data or []
-        if not rows:
-            return {}, 0
-        # Calcular media por metrica
-        result = {}
-        for m in metrics:
-            vals = [float(row[m]) for row in rows if row.get(m) is not None]
-            result[m] = round(sum(vals) / len(vals), 2) if vals else None
-        return result, len(rows)
+            levels.append(("estado", "", uf))
+        levels.append(("brasil", "", ""))
+        best: Tuple[Dict[str, Optional[float]], int, str] = ({}, 0, levels[0][0])
+        for scope, mun, uff in levels:
+            data, count = _bench_query(mun, uff, dependencia, metrics)
+            if count >= _MIN_BENCH:
+                return data, count, scope
+            if count > best[1]:
+                best = (data, count, scope)
+        return best
     except Exception as e:
         logger.warning(f"insight_charts: fetch benchmark failed: {e}")
-        return {}, 0
+        return {}, 0, "municipio"
 
 
 def _resolve_school_name(inep: str) -> str:
@@ -292,7 +323,7 @@ def generate_radar_chart(
 
     # Benchmark (permite forçar dependência diferente)
     bench_dep = benchmark_dep if benchmark_dep else dep
-    bench_data, bench_count = _fetch_benchmark(
+    bench_data, bench_count, bench_scope = _fetch_benchmark(
         municipio if benchmark == "municipio" else "",
         uf if benchmark in ("municipio", "estado") else "",
         bench_dep,
@@ -314,12 +345,13 @@ def generate_radar_chart(
     # Pluralizar: Federal→federais, Privada→privadas, etc.
     _dep_plural_map = {"Federal": "federais", "Estadual": "estaduais", "Municipal": "municipais", "Privada": "privadas"}
     bench_dep_plural = _dep_plural_map.get(bench_dep, bench_dep.lower() + "s" if bench_dep else "")
-    if benchmark == "municipio":
+    # Escopo REAL usado (pode ter caido de municipio p/ UF/Brasil no fallback)
+    if bench_scope == "municipio":
         bench_label = f"Média de {bench_count} escolas {bench_dep_plural} de {municipio}"
-    elif benchmark == "estado":
+    elif bench_scope == "estado":
         bench_label = f"Média de {bench_count} escolas {bench_dep_plural} do {uf}"
     else:
-        bench_label = f"Média de {bench_count} escolas {bench_dep_plural} Brasil"
+        bench_label = f"Média de {bench_count} escolas {bench_dep_plural} no Brasil"
 
     # Construir figura
     fig = go.Figure()
@@ -745,7 +777,7 @@ def generate_comparison_radar(
     v2 = [float(s2.get(m) or 0) for m in metrics]
 
     # Benchmark
-    bench_data, bench_count = _fetch_benchmark(
+    bench_data, bench_count, _bench_scope = _fetch_benchmark(
         mun if benchmark == "municipio" else "",
         uf if benchmark in ("municipio", "estado") else "",
         dep, metrics,

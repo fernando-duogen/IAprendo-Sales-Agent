@@ -774,17 +774,21 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
         """Constroi uma variante completa (visao_geral + radar + cards + insights + badge) para uma dependencia."""
         try:
             # 1. Benchmark data
-            v_bench_data, v_bench_count = _fetch_benchmark(
+            v_bench_data, v_bench_count, v_scope = _fetch_benchmark(
                 cidade if cidade != "?" else "",
                 uf if uf != "?" else "",
                 dep_name,
                 ["enem_media_geral"] + AREA_KEYS,
             )
         except Exception:
-            v_bench_data, v_bench_count = {}, 0
+            v_bench_data, v_bench_count, v_scope = {}, 0, "municipio"
 
         v_dep_plural = _pluralize_dep(dep_name)
         has_data = v_bench_count >= 3
+        # Local do benchmark realmente usado (fallback municipio -> UF -> Brasil
+        # p/ cidades pequenas, ex: Veranopolis -> RS). Caption reflete o nivel.
+        v_loc_prep = (f"de {cidade}" if v_scope == "municipio"
+                      else (f"do {uf}" if v_scope == "estado" else "do Brasil"))
 
         # Computar gap vs este benchmark (dinamico, diferente do enem_gap_vs_peer_2024)
         # Usa media_geral_raw (fetch direto da base ENEM) porque school_analytics
@@ -824,7 +828,7 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
                 v_radar_png = generate_radar_chart(str(inep), benchmark="municipio", benchmark_dep=dep_name, scale=1)
                 if v_radar_png:
                     v_radar_b64 = _img_to_base64(v_radar_png)
-                    v_caption = f"Média de {v_bench_count} escolas {v_dep_plural} de {cidade}"
+                    v_caption = f"Média de {v_bench_count} escolas {v_dep_plural} {v_loc_prep}"
                     v_radar_html = f'''
   <div class="section">
     <div class="section-title"><span class="icon">🎯</span> Performance por Área</div>
@@ -832,7 +836,7 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
       <img src="{v_radar_b64}" alt="Radar ENEM 5 áreas" />
       <div class="chart-caption">Azul: {nome[:30]} &bull; Cinza: {v_caption}</div>
     </div>
-    <div class="footnote">&#185; Fonte: Microdados ENEM {enem_ano_disp} (INEP). Comparação com {v_bench_count} escolas {v_dep_plural} de {cidade}.</div>
+    <div class="footnote">&#185; Fonte: Microdados ENEM {enem_ano_disp} (INEP). Comparação com {v_bench_count} escolas {v_dep_plural} {v_loc_prep}.</div>
   </div>'''
             except Exception as exc:
                 logger.debug(f"variant {dep_name} radar fail: {exc}")
@@ -845,11 +849,11 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
                 if cards_inner:
                     v_cards_html = f'''
   <div class="section">
-    <div class="section-title"><span class="icon">📊</span> Comparação com Escolas {v_dep_plural.title()} de {cidade}</div>
+    <div class="section-title"><span class="icon">📊</span> Comparação com Escolas {v_dep_plural.title()} {v_loc_prep}</div>
     <div class="comparison-grid">
       {cards_inner}
     </div>
-    <div class="footnote">&#178; Referência: {v_bench_count} escolas {v_dep_plural} de {cidade}.</div>
+    <div class="footnote">&#178; Referência: {v_bench_count} escolas {v_dep_plural} {v_loc_prep}.</div>
   </div>'''
             except Exception as exc:
                 logger.debug(f"variant {dep_name} cards fail: {exc}")
@@ -894,7 +898,7 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
     <div class="section-title"><span class="icon">✅</span> Destaque vs Escolas {v_dep_plural.title()}</div>
     <div class="insight-card highlight">
       <div class="card-title">✅ Destaque</div>
-      A escola está bem posicionada em relação às escolas {v_dep_plural} de {cidade} — com aprendizado adaptativo e exercícios personalizados, é possível manter essa vantagem e impulsionar ainda mais os resultados.
+      A escola está bem posicionada em relação às escolas {v_dep_plural} {v_loc_prep} — com aprendizado adaptativo e exercícios personalizados, é possível manter essa vantagem e impulsionar ainda mais os resultados.
     </div>
     <div class="footnote">&#8308; Análises baseadas na evolução dos indicadores do Censo e ENEM.</div>
   </div>'''
@@ -924,6 +928,8 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
             "dep_plural": v_dep_plural,
             "has_data": has_data,
             "bench_count": v_bench_count,
+            "loc_prep": v_loc_prep,
+            "scope": v_scope,
             "gap_num": v_gap_num,
             "bench_media_geral": v_bench_data.get("enem_media_geral") if v_bench_data else None,
             "visao_geral_html": v_visao_geral_html,
@@ -934,11 +940,15 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
             "badge_label": badge_label,
         }
 
-    # Gerar 4 variantes em paralelo (economiza ~30s vs sequencial)
+    # SERIALIZADO (max_workers=1): rodar as 4 variantes em paralelo fazia 4 threads
+    # compartilharem o MESMO cliente Supabase (1 conexao HTTP/2) -> ConnectionTerminated
+    # intermitente -> TODAS as variantes vazias -> OPR sem radar nem notas por area.
+    # (kaleido tambem nao e thread-safe.) Mantem o executor so pelo timeout=60 por
+    # variante; com 1 worker as tarefas rodam uma de cada vez (sem concorrencia de DB).
     from concurrent.futures import ThreadPoolExecutor
     dependencias = ["Estadual", "Municipal", "Federal", "Privada"]
     variants: Dict[str, Dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=4) as _ex:
+    with ThreadPoolExecutor(max_workers=1) as _ex:
         _futures = {d: _ex.submit(_build_variant, d) for d in dependencias}
         for d, f in _futures.items():
             try:
@@ -948,6 +958,7 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
                 variants[d] = {
                     "dep": d, "dep_plural": _pluralize_dep(d),
                     "has_data": False, "bench_count": 0,
+                    "loc_prep": f"de {cidade}", "scope": "municipio",
                     "radar_html": "", "cards_html": "", "insights_html": "",
                     "badge_icon": "", "badge_label": "",
                 }
@@ -1057,7 +1068,9 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
     # - Maior oportunidade: benchmark onde o gap e mais negativo (escola atras)
     # - Ponto forte: benchmark onde o gap e mais positivo (escola acima)
     _labels_pt = {"Estadual": "estaduais", "Municipal": "municipais", "Federal": "federais", "Privada": "privadas"}
-    _gaps = [(d, v.get("gap_num"), v.get("bench_count", 0)) for d, v in variants.items() if v.get("has_data") and v.get("gap_num") is not None]
+    # 4o item = loc_prep (escopo real do benchmark: "de {cidade}"/"do {uf}"/"do Brasil")
+    _gaps = [(d, v.get("gap_num"), v.get("bench_count", 0), v.get("loc_prep", f"de {cidade}"))
+             for d, v in variants.items() if v.get("has_data") and v.get("gap_num") is not None]
     highlights: Dict[str, Any] = {}
     if _gaps:
         # Maior oportunidade = gap mais negativo (ou menos positivo)
@@ -1072,10 +1085,10 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
                 "bench_count": pior[2],
                 "interpretacao": (
                     f"A escola esta {abs(round(pior[1]))} pontos ABAIXO da media das "
-                    f"{pior[2]} escolas {_labels_pt.get(pior[0], '').lower()} de {cidade}"
+                    f"{pior[2]} escolas {_labels_pt.get(pior[0], '').lower()} {pior[3]}"
                     if pior[1] < 0 else
                     f"A escola esta {round(pior[1])} pontos ACIMA da media das "
-                    f"{pior[2]} escolas {_labels_pt.get(pior[0], '').lower()} de {cidade}"
+                    f"{pior[2]} escolas {_labels_pt.get(pior[0], '').lower()} {pior[3]}"
                 ),
             },
             "ponto_forte": {
@@ -1085,17 +1098,17 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
                 "bench_count": melhor[2],
                 "interpretacao": (
                     f"A escola esta {round(melhor[1])} pontos ACIMA da media das "
-                    f"{melhor[2]} escolas {_labels_pt.get(melhor[0], '').lower()} de {cidade}"
+                    f"{melhor[2]} escolas {_labels_pt.get(melhor[0], '').lower()} {melhor[3]}"
                     if melhor[1] >= 0 else
                     f"A escola esta {abs(round(melhor[1]))} pontos abaixo da media das "
-                    f"{melhor[2]} escolas {_labels_pt.get(melhor[0], '').lower()} de {cidade} "
+                    f"{melhor[2]} escolas {_labels_pt.get(melhor[0], '').lower()} {melhor[3]} "
                     f"(essa e a comparacao mais favoravel)"
                 ),
             },
             "todos_gaps": [
                 {"benchmark": d, "benchmark_pt": _labels_pt.get(d, d.lower()),
-                 "gap": round(g, 1), "bench_count": c}
-                for d, g, c in _gaps_sorted
+                 "gap": round(g, 1), "bench_count": c, "escopo": lp}
+                for d, g, c, lp in _gaps_sorted
             ],
         }
 
