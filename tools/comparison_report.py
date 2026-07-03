@@ -37,7 +37,7 @@ _COMP_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comparativo ENEM 2024 — {nome1} vs {nome2}</title>
+<title>Comparativo ENEM {enem_ano} — {nome1} vs {nome2}</title>
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #333; background: #f5f7fa; line-height: 1.6; }}
@@ -102,7 +102,7 @@ _COMP_TEMPLATE = """<!DOCTYPE html>
   <!-- HEADER -->
   <div class="header">
     {logo_html}
-    <h1>Comparativo de Performance ENEM 2024</h1>
+    <h1>Comparativo de Performance ENEM {enem_ano}</h1>
     <div class="subtitle">{nome1} vs {nome2} &bull; {cidade}/{uf}</div>
   </div>
 
@@ -143,7 +143,7 @@ _COMP_TEMPLATE = """<!DOCTYPE html>
       <div style="flex:1;min-width:200px">
         <p style="font-size:16px;font-weight:700;margin-bottom:8px">Pronto para transformar o aprendizado?</p>
         <p style="font-size:13px;color:#666;margin-bottom:16px">Exercícios adaptativos, alinhados à BNCC, que ajudam cada aluno no seu ritmo.</p>
-        <a href="{meeting_link}" style="display:inline-block;padding:12px 28px;background:#2563EB;color:white;border-radius:8px;text-decoration:none;font-weight:700">Conhecer a IAprendo</a>
+        <a href="https://www.instagram.com/iaprendobr" target="_blank" rel="noopener" style="display:inline-block;padding:12px 28px;background:#2563EB;color:white;border-radius:8px;text-decoration:none;font-weight:700">Conhecer a IAprendo</a>
       </div>
       {qr_html}
     </div>
@@ -151,7 +151,7 @@ _COMP_TEMPLATE = """<!DOCTYPE html>
 
   <!-- FOOTER -->
   <div class="footer">
-    Fonte: Microdados ENEM 2024 e Censo Escolar 2020-2025 (INEP/MEC)<br>
+    Fonte: Microdados ENEM {enem_ano} e Censo Escolar 2020-2025 (INEP/MEC)<br>
     Comparativo gerado por IAprendo &bull; {data_geracao}<br>
     {robot_html}
   </div>
@@ -195,6 +195,10 @@ def generate_comparison_report(
         logger.warning(f"comparison_report: dados insuficientes para {inep1} ou {inep2}")
         return None
 
+    # Ano ENEM dinamico (mesmo padrao do OPR de 1 escola) — evita "ENEM 2024"
+    # hardcoded quando a base ja e de outro ano.
+    enem_ano_disp = int((s1 or {}).get("enem_ano") or (s2 or {}).get("enem_ano") or 2025)
+
     nome1 = _resolve_school_name(str(inep1))
     nome2 = _resolve_school_name(str(inep2))
     cidade = s1.get("peer_mun_nome") or s2.get("peer_mun_nome") or "?"
@@ -226,7 +230,7 @@ def generate_comparison_report(
       <img src="{radar_b64}" alt="Radar comparativo ENEM" />
       <div class="chart-caption">Azul: {nome1[:30]} &bull; Laranja: {nome2[:30]} &bull; Cinza: Media municipal</div>
     </div>
-    <div class="footnote">Fonte: Microdados ENEM 2024 (INEP).</div>
+    <div class="footnote">Fonte: Microdados ENEM {enem_ano_disp} (INEP).</div>
   </div>'''
 
     # --- AREAS LADO A LADO ---
@@ -364,6 +368,7 @@ def generate_comparison_report(
         insights_section=insights_section,
         meeting_link=meeting_link,
         qr_html=qr_html,
+        enem_ano=enem_ano_disp,
         data_geracao=date.today().strftime("%d/%m/%Y"),
         logo_html=logo_html,
         robot_html=robot_html,

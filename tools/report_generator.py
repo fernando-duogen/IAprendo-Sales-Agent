@@ -365,7 +365,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
       <div style="flex:1;min-width:200px">
         <h2 style="font-size:20px;margin-bottom:8px">Pronto para transformar o aprendizado?</h2>
         <p style="font-size:13px;opacity:0.9;margin-bottom:16px">Exercícios adaptativos, alinhados à BNCC, que ajudam cada aluno no seu ritmo.</p>
-        <a href="{meeting_link}" class="cta-button">Conhecer a IAprendo</a>
+        <a href="https://www.instagram.com/iaprendobr" target="_blank" rel="noopener" class="cta-button">Conhecer a IAprendo</a>
       </div>
       {qr_html}
     </div>
