@@ -72,6 +72,26 @@ sudo docker compose up -d
 sudo docker compose ps          # postgres/redis/evolution_api "Up (healthy)"
 ```
 
+## Fase 5.1 — Liberar o webhook Evolution→host no firewall do SO (gotcha Oracle)
+A imagem Ubuntu da Oracle tem um **REJECT** no fim da cadeia `INPUT` que **bloqueia o
+Evolution (container) de chamar o webhook do IAlex no host** (`host.docker.internal:5001`).
+Sem isso, o WhatsApp conecta mas o IAlex **nunca recebe as mensagens** (o sintoma é
+"conectado, mas não responde"). Libere a 5001 só para a rede interna do Docker,
+**antes** da REJECT:
+```
+# 1) Ache a linha da REJECT (reject-with icmp-host-prohibited):
+sudo iptables -L INPUT --line-numbers
+# 2) Insira na posicao da REJECT (ex.: se a REJECT esta na linha 7, use 7) —
+#    isso empurra a REJECT p/ baixo, deixando a regra nova ACIMA dela:
+sudo iptables -I INPUT 7 -s 172.16.0.0/12 -p tcp --dport 5001 -j ACCEPT
+sudo netfilter-persistent save
+```
+Teste (com o Evolution no ar) — deve imprimir **REACHABLE**:
+```
+timeout 20 python3 -m http.server 5001 --bind 0.0.0.0 >/tmp/ht.log 2>&1 &
+sudo docker exec evolution_api sh -c "wget -q -T6 -O /dev/null http://host.docker.internal:5001/ && echo REACHABLE || echo BLOCKED"
+```
+
 ## Fase 6 — Conectar o WhatsApp (escanear o QR 1x)
 ⚠️ **PARE o IAlex no seu PC primeiro** (Ctrl+C / feche o `start-ialex.bat`). O
 WhatsApp só aceita **uma** sessão Baileys por vez — escanear na VM desconecta a do PC.
@@ -155,7 +175,18 @@ Depois disso, o scheduler mantém tudo fresco sozinho (04:00 novas, dom 04:30 fu
 | Status geral | `sudo systemctl status ialex && sudo docker compose ps` |
 
 ## Gotchas
-- **1 sessão WhatsApp por vez**: nunca rode o IAlex no PC e na VM juntos (um derruba o outro).
+- **1 sessão WhatsApp por vez**: nunca rode o IAlex no PC e na VM juntos (um derruba o
+  outro). Na Fase 8, além de parar o Evolution do PC, tire o auto-restart dele:
+  `docker update --restart=no evolution_api evolution_postgres evolution_redis` (senão
+  ele volta sozinho quando o Docker Desktop reinicia e briga pela sessão).
+- **Webhook bloqueado pelo firewall do SO** (Fase 5.1): se o WhatsApp conecta mas o IAlex
+  "não responde", quase sempre é a REJECT do `INPUT` barrando o Evolution→host:5001.
+- **Dois backends WhatsApp**: o deploy usa o **Evolution (8080)** — QR pela imagem do
+  `/instance/connect` e envio de texto. O `whatsapp-bridge/` (Node, 8090) é **legado** e
+  só é necessário para **imagem embutida, áudio (voz) e localização** inline; sem ele,
+  gráficos/OPR chegam como **link** (comportamento idêntico ao do PC hoje). Para reviver:
+  Node + `npm install` em `whatsapp-bridge/` + serviço próprio + re-escanear (é uma 2ª
+  sessão) — só vale a pena se esses recursos forem usados.
 - **Capacidade ARM da Oracle**: o A1 free às vezes dá "out of capacity" — insista/retente.
 - **ARM (kaleido/playwright)**: se os gráficos de email ou a busca Perplexity derem
   erro na VM, são deps opcionais ARM — instale depois (`pip install kaleido` /
