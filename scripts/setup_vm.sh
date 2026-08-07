@@ -18,6 +18,10 @@ set -euo pipefail
 REPO="https://github.com/fernando-duogen/IAprendo-Sales-Agent.git"
 DIR="$HOME/IAprendo_Sales_Agent"
 
+# VM nova roda auto-update no 1o boot e "trava" o apt. Faz o apt ESPERAR o lock
+# (ate 10 min) em vez de falhar com "Could not get lock".
+echo 'DPkg::Lock::Timeout "600";' | sudo tee /etc/apt/apt.conf.d/99lock-timeout >/dev/null 2>&1 || true
+
 echo "== [1/7] Sistema + deps base + patches automaticos + libs de grafico =="
 sudo apt-get update -y
 sudo apt-get install -y git python3-venv python3-pip ca-certificates curl gnupg \
@@ -27,10 +31,12 @@ sudo apt-get install -y libgbm1 libnss3 libasound2 libxshmfence1 || true
 # Patches de seguranca automaticos (baixa manutencao):
 sudo dpkg-reconfigure -f noninteractive unattended-upgrades || true
 
-echo "== [2/7] Docker (engine + compose plugin) =="
-if ! command -v docker >/dev/null 2>&1; then
+echo "== [2/7] Docker (engine + compose plugin) — usado na Fase B (IAlex); nao-fatal =="
+install_docker() {
+  if command -v docker >/dev/null 2>&1; then echo "   Docker ja instalado."; return 0; fi
   sudo install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  # --batch --yes: gpg sem terminal (evita 'cannot open /dev/tty' quando roda detached)
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
   sudo chmod a+r /etc/apt/keyrings/docker.gpg
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
     | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
@@ -38,9 +44,9 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
   sudo usermod -aG docker "$USER"
   echo "   Docker instalado. (faca logout/login pra usar 'docker' sem sudo)"
-else
-  echo "   Docker ja instalado."
-fi
+}
+# Nao-fatal: Docker so e necessario na Fase B (IAlex). Se falhar, o PAINEL segue.
+install_docker || echo "   [aviso] Docker falhou — segue o painel normalmente (Docker e so p/ Fase B/IAlex)."
 
 echo "== [3/7] Clonar/atualizar repo =="
 if [ ! -d "$DIR/.git" ]; then
@@ -109,7 +115,7 @@ UNIT
 
 echo "== [7/7] Caddy (HTTPS automatico p/ o painel) =="
 if ! command -v caddy >/dev/null 2>&1; then
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
   sudo apt-get update -y
   sudo apt-get install -y caddy
