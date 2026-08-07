@@ -1,0 +1,28 @@
+# ===========================================================================
+# Caddyfile — painel IAprendo (reverse proxy p/ o Streamlit) na VM Oracle.
+# Instalado em /etc/caddy/Caddyfile pelo scripts/setup_vm.sh.
+#
+# O Caddy cuida do HTTPS AUTOMATICO (Let's Encrypt) e do upgrade de websocket
+# do Streamlit — nada mais a configurar. So exige:
+#   1) o dominio abaixo apontando (DNS A) para o IP publico da VM;
+#   2) portas 80 e 443 abertas na Security List da Oracle;
+#   3) o Streamlit rodando em 127.0.0.1:8501 (systemd: dashboard.service).
+#
+# Para trocar o dominio, edite a 1a linha (e o DNS). Recarregar sem downtime:
+#   sudo systemctl reload caddy
+# ===========================================================================
+
+vendasiaprendo.duogen.com.br {
+    encode zstd gzip
+
+    # Streamlit escuta so no loopback; quem expõe pra internet (com TLS) e o Caddy.
+    reverse_proxy 127.0.0.1:8501
+
+    # Cabecalhos de seguranca basicos (app publico gateado por login).
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+}
