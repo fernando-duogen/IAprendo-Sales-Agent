@@ -35,6 +35,12 @@ E acesso ao **Cloudflare** (DNS do `duogen.com.br`) para criar 1 registro.
 2. **Security List** (rede da VM): abra as portas de entrada **80** e **443**
    (TCP, origem 0.0.0.0/0), além da **22** que já vem aberta. (A 8080 do
    Evolution NÃO — fica interna.)
+   > ⚠️ **Edite a Security List da sub-rede que a VM REALMENTE usa.** Retentar por
+   > "out of capacity" deixa **VCNs sobrando** e é fácil abrir a porta na VCN errada
+   > (o SSH/22 funciona mas 80/443 continuam bloqueados). O caminho à prova de erro:
+   > **Compute → Instances → (sua VM) → bloco "Primary VNIC" → clique no link da
+   > Subnet → seção "Security Lists" → abra a lista listada → Add Ingress Rules**.
+   > (Marque as regras como **Stateless = No**.)
 
 ## Fase 2 — Conectar na VM (no seu PC, PowerShell)
 ```
@@ -53,11 +59,25 @@ unattended-upgrades, clona o repo em `~/IAprendo_Sales_Agent`, cria os serviços
 `Caddyfile` em `/etc/caddy/Caddyfile`.
 
 ## Fase 3.1 — Abrir 80/443 no firewall do SO (gotcha da imagem Ubuntu da Oracle)
-A imagem Ubuntu da Oracle **bloqueia** tudo além da 22 por iptables. Libere 80/443:
+A imagem Ubuntu da Oracle **bloqueia** tudo além da 22 por iptables, com uma regra
+**REJECT** no fim da cadeia `INPUT`. As regras 80/443 precisam entrar **ANTES** dessa
+REJECT — senão ficam depois dela e não valem (foi o que aconteceu: a posição exata
+varia por imagem, então **não** dá pra chutar um número fixo).
+
+1. Veja as regras numeradas e ache a linha da **REJECT** (`reject-with icmp-host-prohibited`):
 ```
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo iptables -L INPUT --line-numbers
+```
+2. Use o **número dessa linha REJECT** (ex.: se a REJECT está na linha **5**, use `5`)
+   para inserir 80 e 443 logo **acima** dela:
+```
+sudo iptables -I INPUT 5 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 5 -m state --state NEW -p tcp --dport 443 -j ACCEPT
 sudo netfilter-persistent save      # persiste no boot
+```
+3. Confira que 80 e 443 ficaram **ACIMA** da REJECT:
+```
+sudo iptables -L INPUT --line-numbers
 ```
 (Não mexe na 22 — o SSH continua.)
 
@@ -132,6 +152,18 @@ passa a renderizar os gráficos nativamente — fim da limitação do Streamlit 
 
 ## Gotchas
 - **80/443 em DOIS lugares**: Security List (Oracle) **e** iptables do SO (Fase 3.1).
+- **Security List na VCN CERTA**: se 22 (SSH) funciona mas 80/443 dão timeout mesmo
+  com as regras aparentemente certas, você provavelmente abriu a porta numa **VCN
+  sobrando** (das retentativas de "out of capacity"). Chegue na sub-rede real pela
+  **Instância → Primary VNIC → link da Subnet → Security Lists** (Fase 1, passo 2).
+- **iptables antes da REJECT**: insira 80/443 **acima** da regra REJECT da cadeia
+  INPUT (o número da linha varia — confira com `iptables -L INPUT --line-numbers`).
+- **Cert em staging?** Se o Caddy tentou emitir com as portas fechadas, pode ter
+  caído no Let's Encrypt **staging** (cert não confiável, guardado em cache). Depois
+  de abrir 80/443, force um cert de produção limpo:
+  `sudo systemctl stop caddy && sudo rm -rf /var/lib/caddy/.local/share/caddy/certificates && sudo systemctl start caddy`
+  e confira no log `issuer: acme-v02.api.letsencrypt.org-directory` (produção):
+  `journalctl -u caddy -n 40 --no-pager`.
 - **Cloudflare proxy + Let's Encrypt**: emita o cert com "DNS only"; só depois ligue
   o proxy (laranja) com Full (strict).
 - **Capacidade ARM**: "out of capacity" no A1 free → retente / outra AD.
