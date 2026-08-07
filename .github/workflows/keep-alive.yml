@@ -9,16 +9,14 @@ name: Keep Streamlit app awake
 # o app dormia mesmo com o "ping" dando sucesso. O robo agora carrega o app de
 # verdade e ainda clica em "Yes, get this app back up!" se estiver dormindo.
 #
-# NOTA: este keep-alive via GitHub Actions e um PALIATIVO. O agendador do GitHub
-# e best-effort (dropa/atrasa a maioria dos crons) — ruim pra keep-alive. O
-# keep-alive CONFIAVEL roda na VM Oracle via systemd timer (deploy/keep-awake.*).
-# Quando a Oracle estiver provada, este schedule sera removido (so resta o
-# workflow_dispatch pra teste manual).
+# STATUS (Fase C, Ago/2026): APOSENTADO. O painel migrou pra VM Oracle Always-Free
+# (https://vendasiaprendo.duogen.com.br) — roda 24/7 e NUNCA dorme, entao este
+# keep-alive nao e mais necessario. O `schedule` foi REMOVIDO; resta so o
+# `workflow_dispatch` (manual), caso o app legado do Streamlit Cloud
+# (iaprendo-sales-agent.streamlit.app) volte a ser usado como backup e precise acordar.
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"          # 24/7, a cada 15 min (best-effort)
-  workflow_dispatch: {}            # permite rodar manualmente pela aba Actions
+  workflow_dispatch: {}            # rodar manualmente pela aba Actions (opcional)
 
 permissions:
   contents: read                   # so pra checkout do script
