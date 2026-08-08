@@ -604,8 +604,49 @@ def webhook():
                 )
                 return jsonify({"status": "ok"}), 200
 
-            # Determinar tipo de mensagem
-            msg_type = msg.get("messageType", "text")
+            # Determinar tipo de mensagem — normaliza os DOIS formatos:
+            # bridge Node ("audio"/"location") e Evolution ("audioMessage"/"locationMessage").
+            msg_type_raw = msg.get("messageType", "")
+            _mobj = msg.get("message", {}) or {}
+            if msg_type_raw in ("location", "locationMessage") or _mobj.get("locationMessage"):
+                msg_type = "location"
+            elif msg_type_raw in ("audio", "audioMessage") or _mobj.get("audioMessage"):
+                msg_type = "audio"
+            else:
+                msg_type = "text"
+
+            # Evolution nao manda 'location' pronto -> montar a partir de locationMessage
+            if msg_type == "location" and not msg.get("location") and _mobj.get("locationMessage"):
+                _lm = _mobj["locationMessage"]
+                msg["location"] = {
+                    "latitude": _lm.get("degreesLatitude"),
+                    "longitude": _lm.get("degreesLongitude"),
+                    "name": _lm.get("name", ""),
+                    "address": _lm.get("address", ""),
+                }
+
+            # Evolution nao manda 'audio' pronto -> baixar o base64 sob demanda
+            if msg_type == "audio" and not msg.get("audio") and _mobj.get("audioMessage"):
+                try:
+                    _b64 = get_bridge().get_media_base64(msg.get("key", {}))
+                except Exception as _e:
+                    logger.warning(f"getBase64 audio falhou: {_e}")
+                    _b64 = ""
+                if _b64:
+                    msg["audio"] = {
+                        "buffer": _b64,
+                        "mimetype": _mobj["audioMessage"].get("mimetype", "audio/ogg"),
+                        "seconds": _mobj["audioMessage"].get("seconds"),
+                    }
+                else:
+                    try:
+                        get_bridge().send_message(
+                            sender_jid,
+                            "Nao consegui baixar o audio agora. Pode reenviar ou digitar?",
+                        )
+                    except Exception:
+                        pass
+                    return jsonify({"status": "ok"}), 200
 
             # === LOCATION MESSAGE ===
             if msg_type == "location" and msg.get("location"):

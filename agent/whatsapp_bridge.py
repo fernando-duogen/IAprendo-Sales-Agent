@@ -261,11 +261,11 @@ class WhatsAppBridge:
             return {}
 
     def send_image(self, number: str, image_url: str, caption: str = "") -> Dict[str, Any]:
-        """Envia imagem via WhatsApp (Baileys bridge).
+        """Envia imagem via WhatsApp.
 
-        Usa o endpoint /send-image do Baileys bridge (porta 8090) que aceita
-        URLs publicas de imagem. O Baileys baixa a imagem e envia via
-        WhatsApp Web.
+        Primario: Evolution API (/message/sendMedia) — mesma sessao do texto, nao
+        depende do bridge Node (8090). Fallback: bridge Baileys 8090, caso um dia
+        seja revivido.
 
         Args:
             number: Numero do destinatario (ex: '5551999999999') ou JID.
@@ -275,29 +275,66 @@ class WhatsAppBridge:
         Returns:
             Dict com {"success": True} ou {"success": False, "error": str}.
         """
-        url = f"{self.bridge_url}/send-image"
-        if "@" in number:
-            formatted = number
-        else:
-            formatted = self.format_number(number)
-        body = {
+        formatted = number if "@" in number else self.format_number(number)
+
+        # Primario: Evolution API sendMedia
+        evo_url = f"{self.base_url}/message/sendMedia/{self.instance_name}"
+        body_evo = {
             "number": formatted,
-            "url": image_url,
-            "caption": caption,
+            "mediatype": "image",
+            "media": image_url,
+            "caption": caption or "",
         }
         try:
-            resp = requests.post(url, json=body, timeout=20)
+            resp = requests.post(evo_url, json=body_evo, headers=self._headers, timeout=30)
+            resp.raise_for_status()
             data: Dict[str, Any] = resp.json()
+            logger.info(f"Imagem enviada via Evolution para {formatted}.")
+            return {"success": True, **data}
+        except requests.RequestException as exc_evo:
+            logger.warning(f"Evolution sendMedia falhou para {formatted}: {exc_evo}")
+
+        # Fallback: bridge Baileys (8090) — so se estiver rodando
+        url = f"{self.bridge_url}/send-image"
+        body = {"number": formatted, "url": image_url, "caption": caption}
+        try:
+            resp = requests.post(url, json=body, timeout=20)
+            data = resp.json()
             if data.get("success"):
-                logger.info(f"Imagem enviada para {formatted}.")
+                logger.info(f"Imagem enviada via bridge para {formatted}.")
                 return data
-            else:
-                error_msg = data.get("error", "desconhecido")
-                logger.error(f"Erro bridge send-image: {error_msg}")
-                return {"success": False, "error": error_msg}
+            error_msg = data.get("error", "desconhecido")
+            logger.error(f"Erro send-image (evolution+bridge): {error_msg}")
+            return {"success": False, "error": error_msg}
         except requests.RequestException as exc:
             logger.error(f"Erro ao enviar imagem para {formatted}: {exc}")
             return {"success": False, "error": str(exc)}
+
+    def get_media_base64(self, key: Dict[str, Any]) -> str:
+        """Baixa o base64 de uma midia recebida (audio/imagem), via Evolution API.
+
+        A Evolution NAO envia o binario no webhook — este endpoint devolve o base64
+        a partir da 'key' da mensagem recebida.
+
+        Args:
+            key: o objeto 'key' da mensagem (msg['key'] do webhook).
+
+        Returns:
+            String base64 (sem prefixo data:) ou "" em caso de falha.
+        """
+        url = f"{self.base_url}/chat/getBase64FromMediaMessage/{self.instance_name}"
+        body = {"message": {"key": key}, "convertToMp4": False}
+        try:
+            resp = requests.post(url, json=body, headers=self._headers, timeout=30)
+            resp.raise_for_status()
+            data: Dict[str, Any] = resp.json()
+            b64 = data.get("base64", "") or ""
+            if b64 and "," in b64 and b64.strip().startswith("data:"):
+                b64 = b64.split(",", 1)[1]
+            return b64
+        except requests.RequestException as exc:
+            logger.warning(f"getBase64FromMediaMessage falhou: {exc}")
+            return ""
 
     def send_buttons(self, number: str, text: str, buttons: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Envia mensagem com botoes de resposta rapida.
