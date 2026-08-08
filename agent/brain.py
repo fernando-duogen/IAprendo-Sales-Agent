@@ -925,6 +925,9 @@ TOOLS = [
                 "uf": {"type": "string", "description": "Estado para filtrar"},
                 "tipo": {"type": "string", "description": "Tipo: Publica, Privada"},
                 "porte": {"type": "string", "description": "Porte minimo: 'Mais de 1000', 'Entre 501 e 1000', etc."},
+                "niveis_ensino": {"type": "string", "description": "Filtrar por nivel (ex: 'Fundamental', 'Medio'). Opcional."},
+                "ordenar_por": {"type": "string", "description": "Criterio de ordenacao da busca MEC (default total_matriculas — importa as maiores)."},
+                "ordem": {"type": "string", "enum": ["asc", "desc"], "description": "Direcao (default desc)."},
                 "limite": {"type": "integer", "description": "Max escolas para processar (default 5, max 20)"}
             },
             "required": ["acao"]
@@ -1619,7 +1622,11 @@ TOOLS = [
                 "posicao": {"type": "integer", "description": "Posicao na fila (1, 2, 3...) como alternativa ao queue_id"},
                 "agendar_para": {
                     "type": "string",
-                    "description": "Novo horario (ex: 'amanha 9h', 'segunda 14:30', ISO 8601)",
+                    "description": (
+                        "Novo horario em ISO 8601 (ex: '2026-08-15T09:00'). Se o usuario "
+                        "falar em linguagem natural ('amanha 9h'), CONVERTA voce para ISO "
+                        "antes de chamar."
+                    ),
                 },
                 "cancelar_agendamento": {
                     "type": "boolean",
@@ -4185,6 +4192,15 @@ def _handle_operacao_lote(params: Dict) -> str:
         mec_result = json.loads(_handle_buscar_escola_brasil(mec_params))
         escolas = mec_result.get("escolas", [])
 
+        # Fallback: ordenar por coluna exclui linhas com valor NULL no catalogo
+        # (ex.: cidade sem dados de matricula). Se a busca ordenada veio vazia,
+        # tenta de novo SEM ordenacao pra nao perder escolas validas.
+        if not escolas and mec_params.get("ordenar_por"):
+            mec_params_no_order = {k: v for k, v in mec_params.items()
+                                   if k not in ("ordenar_por", "ordem")}
+            mec_result = json.loads(_handle_buscar_escola_brasil(mec_params_no_order))
+            escolas = mec_result.get("escolas", [])
+
         importadas = 0
         ja_existiam = 0
         erros = 0
@@ -4239,7 +4255,9 @@ def _handle_importar_escolas_lote(params: Dict) -> str:
     ineps = params.get("ineps")
     if not isinstance(ineps, list) or not ineps:
         return json.dumps({"erro": "Informe a lista 'ineps' com os codigos INEP escolhidos."})
-    ineps = [str(i).strip() for i in ineps if str(i).strip()][:20]
+    ineps_todos = [str(i).strip() for i in ineps if str(i).strip()]
+    truncados = max(0, len(ineps_todos) - 20)
+    ineps = ineps_todos[:20]
     if not ineps:
         return json.dumps({"erro": "Nenhum INEP valido na lista."})
 
@@ -4251,7 +4269,8 @@ def _handle_importar_escolas_lote(params: Dict) -> str:
         except Exception as e:
             erros.append({"inep": inep, "erro": str(e)[:120]})
             continue
-        cid = r.get("company_id") or (r.get("escola") or {}).get("id")
+        # importar_escola retorna a chave "id" (tanto sucesso quanto ja_existia)
+        cid = r.get("id") or r.get("company_id")
         if cid:
             inep_para_id[inep] = cid
         if r.get("sucesso"):
@@ -4273,7 +4292,7 @@ def _handle_importar_escolas_lote(params: Dict) -> str:
         except Exception:
             pass
 
-    return json.dumps({
+    out = {
         "sucesso": True,
         "importadas": len(importadas),
         "ja_existiam": len(ja_existiam),
@@ -4284,7 +4303,13 @@ def _handle_importar_escolas_lote(params: Dict) -> str:
             "Escolas no CRM. Agora rode preparar_escolas(company_ids=...) para "
             "qualificar -> enriquecer -> contatos -> gerar emails (fila de aprovacao)."
         ),
-    }, ensure_ascii=False, default=str)
+    }
+    if truncados:
+        out["aviso"] = (
+            f"Limite de 20 por lote: {truncados} INEP(s) ficaram de fora — "
+            "informe isso ao usuario e rode outro lote se ele quiser."
+        )
+    return json.dumps(out, ensure_ascii=False, default=str)
 
 
 def _handle_preparar_escolas(params: Dict) -> str:
@@ -4320,6 +4345,7 @@ def _handle_preparar_escolas(params: Dict) -> str:
             return json.dumps({
                 "erro": "Informe company_ids ou ineps de escolas JA importadas no CRM.",
             })
+        _truncados = max(0, len(ids) - 20)
         ids = [str(i) for i in ids][:20]
 
         _ETAPAS_VALIDAS = ["qualify", "enrich", "contacts", "write"]
@@ -4345,7 +4371,7 @@ def _handle_preparar_escolas(params: Dict) -> str:
             dry_run=bool(params.get("dry_run")),  # interno (testes)
         )
 
-        return json.dumps({
+        _out = {
             "sucesso": True,
             "escolas_processadas": n,
             "etapas_executadas": etapas,
@@ -4354,7 +4380,13 @@ def _handle_preparar_escolas(params: Dict) -> str:
                 "Pipeline concluido. Emails gerados (se houver) estao na FILA DE "
                 "APROVACAO — nada foi enviado. Sugira revisar com fila_aprovacao."
             ),
-        }, ensure_ascii=False, default=str)
+        }
+        if _truncados:
+            _out["aviso"] = (
+                f"Limite de 20 por rodada: {_truncados} escola(s) ficaram de fora — "
+                "informe o usuario e rode outra rodada se ele quiser."
+            )
+        return json.dumps(_out, ensure_ascii=False, default=str)
     except Exception as e:
         logger.error("Erro em preparar_escolas", extra={"error": str(e)}, exc_info=True)
         return json.dumps({"erro": f"Erro no pipeline: {str(e)[:300]}"})
@@ -7395,14 +7427,31 @@ def _handle_arquivar_template(params: Dict) -> str:
 def _handle_reagendar_envio(params: Dict) -> str:
     """Reagenda/cancela agendamento de um email JA APROVADO (nao envia nada)."""
     try:
-        qid = _resolve_queue_id(params)
+        qid = (params.get("queue_id") or "").strip() or None
+        if not qid and params.get("posicao"):
+            # Resolver posicao entre os APROVADOS (o _resolve_queue_id generico
+            # so olha pending — inutil aqui). Ordena igual a fila exibida
+            # (created_at DESC) pra "o 2" bater com o que o usuario ve.
+            try:
+                pos = int(params["posicao"])
+                rows = db.client.table("approval_queue").select("id").eq(
+                    "status", "approved"
+                ).order("created_at", desc=True).limit(50).execute().data or []
+                if 1 <= pos <= len(rows):
+                    qid = rows[pos - 1]["id"]
+                else:
+                    return json.dumps({
+                        "erro": f"Posicao {pos} invalida — ha {len(rows)} email(s) aprovado(s).",
+                    }, ensure_ascii=False)
+            except (TypeError, ValueError):
+                pass
         if not qid:
-            return json.dumps({"erro": "Informe queue_id ou posicao (1, 2, 3...)."})
+            return json.dumps({"erro": "Informe queue_id ou posicao (1, 2, 3...) entre os APROVADOS."})
 
         r = db.client.table("approval_queue").select(
             "id,status,subject,scheduled_send_at"
-        ).eq("id", qid).single().execute()
-        item = r.data
+        ).eq("id", qid).limit(1).execute()
+        item = (r.data or [None])[0]
         if not item:
             return json.dumps({"erro": f"Item {qid} nao encontrado na fila."})
 
@@ -7416,23 +7465,38 @@ def _handle_reagendar_envio(params: Dict) -> str:
             return json.dumps({"erro": f"So emails APROVADOS podem ser reagendados. {hint}"}, ensure_ascii=False)
 
         if params.get("cancelar_agendamento"):
-            db.client.table("approval_queue").update(
+            upd = db.client.table("approval_queue").update(
                 {"scheduled_send_at": None}
             ).eq("id", qid).eq("status", "approved").execute()
+            if not upd.data:
+                return json.dumps({
+                    "erro": "Nao consegui cancelar — o email pode ter sido ENVIADO nesse meio tempo. Confira com fila_aprovacao.",
+                }, ensure_ascii=False)
             return json.dumps({
                 "sucesso": True,
                 "mensagem": f"Agendamento cancelado — '{item.get('subject')}' entra no proximo lote de envio.",
             }, ensure_ascii=False)
 
+        import re as _re_iso
         iso = _parse_agendar_para(params.get("agendar_para"))
-        if not iso:
+        # _parse_agendar_para devolve a string CRUA quando nao entende ("amanha
+        # 9h") — validar formato ISO antes de gravar num timestamptz.
+        if not iso or not _re_iso.match(r"^\d{4}-\d{2}-\d{2}", str(iso)):
             return json.dumps({
-                "erro": "Nao entendi o horario. Exemplos: 'amanha 9h', 'segunda 14:30', '2026-08-15T09:00'.",
+                "erro": (
+                    "Horario invalido. CONVERTA voce mesmo a data/hora pedida para "
+                    "ISO 8601 (ex.: '2026-08-15T09:00') e chame de novo."
+                ),
             }, ensure_ascii=False)
 
-        db.client.table("approval_queue").update(
+        upd = db.client.table("approval_queue").update(
             {"scheduled_send_at": iso}
         ).eq("id", qid).eq("status", "approved").execute()
+        if not upd.data:
+            # CAS falhou: enviado/alterado entre o select e o update
+            return json.dumps({
+                "erro": "Nao consegui reagendar — o email pode ter sido ENVIADO nesse meio tempo. Confira com fila_aprovacao.",
+            }, ensure_ascii=False)
         return json.dumps({
             "sucesso": True,
             "queue_id": qid,
@@ -8542,7 +8606,7 @@ SYSTEM_PROMPT = """REGRA ZERO (leia antes de tudo): NUNCA aprove ou envie um ema
 
 REGRA DE ESCRITA (idioma): responda SEMPRE em portugues do Brasil COM acentuacao e pontuacao corretas — á, é, í, ó, ú, â, ê, ô, ã, õ, à, ç. NUNCA escreva sem acento. Ex.: use "não" (nao), "você" (voce), "relatório" (relatorio), "está" (esta), "ações" (acoes), "média" (media), "análise" (analise). Vale para TODA mensagem enviada ao usuario (WhatsApp e chat).
 
-REGRA DO PROXIMO PASSO (modo operador): voce e o OPERADOR da plataforma — o usuario nao precisa navegar por paginas: voce executa pelas tools. Ao concluir uma resposta ou acao, termine com UMA sugestao curta e acionavel do proximo passo mais util (ex.: "👉 Quer que eu ja gere o email para as 3 primeiras?"). Uma sugestao so, em 1 linha, sempre como PERGUNTA — nunca execute a sugestao sem o usuario pedir. Escritas/envios continuam sob a REGRA ZERO. Nao repita a mesma sugestao se o usuario acabou de recusar.
+REGRA DO PROXIMO PASSO (modo operador): voce e o OPERADOR da plataforma — o usuario nao precisa navegar por paginas: voce executa pelas tools. Ao concluir uma resposta ou acao, termine com UMA sugestao curta e acionavel do proximo passo mais util (ex.: "👉 Quer que eu ja gere o email para as 3 primeiras?"). Uma sugestao so, em 1 linha, sempre como PERGUNTA — nunca execute a sugestao sem o usuario pedir. EXCECAO: quando o usuario JA CONFIRMOU um plano (REGRA DO EXECUTOR), as etapas desse plano NAO sao "sugestoes" — conclua TODAS em sequencia sem parar para perguntar de novo. Escritas/envios continuam sob a REGRA ZERO. Nao repita a mesma sugestao se o usuario acabou de recusar.
 
 REGRA DO EXECUTOR (pedidos-objetivo): quando o usuario pedir um RESULTADO ("prospecte 10 escolas privadas de Curitiba", "prepara essas escolas", "quero emails pra rede X"), monte VOCE o plano multi-tool completo e execute-o de ponta a ponta apos UMA confirmacao. Nunca devolva um passo-a-passo pro usuario fazer, nem pare no primeiro obstaculo: se uma tool retornar 0 resultados ou erro, verifique a fonte alternativa (CRM vazio? -> base MEC; escola sem contato? -> enriquecer) e PROPONHA o caminho executavel. Antes de executar, pergunte APENAS o que muda o resultado (quantidade, tipo, canal, criterio) e SEMPRE com um default sugerido — uma pergunta so, nunca um interrogatorio. Confirmado, execute TODAS as etapas em sequencia sem pedir permissao a cada passo (a excecao e a REGRA ZERO: aprovacao de envio continua individual).
 

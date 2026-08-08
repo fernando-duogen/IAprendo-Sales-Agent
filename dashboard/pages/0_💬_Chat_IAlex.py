@@ -269,6 +269,7 @@ if _user_msg:
                         state="running",
                     )
 
+            _prev_len = len(st.session_state[_history_key])
             try:
                 _result = brain.process_message(
                     _user_msg,
@@ -284,15 +285,68 @@ if _user_msg:
                 _reply = f"❌ Erro ao processar: {str(_e_brain_call)[:300]}"
                 _blocks = []
                 _status.update(label="❌ Erro", state="error", expanded=True)
+            except BaseException:
+                # Rerun/Stop do Streamlit no MEIO do turno (usuario mandou outra
+                # msg / clicou em chip durante o processamento). Tools podem JA
+                # ter tido efeito (ex.: email na fila) — persistir ao menos a
+                # user msg pra nao sumir da conversa e nao induzir re-execucao.
+                try:
+                    _hist = st.session_state[_history_key]
+                    _hist.append({"role": "user", "content": _user_msg})
+                    _hist.append({"role": "assistant", "content": (
+                        "⚠️ Este turno foi interrompido antes de terminar (nova "
+                        "mensagem no meio do processamento). Acoes ja disparadas "
+                        "podem ter concluido — confira antes de repetir o pedido."
+                    )})
+                    if save_thread:
+                        save_thread(_username, st.session_state[_thread_key],
+                                    _hist, st.session_state[_blocks_key])
+                except Exception:
+                    pass
+                raise
+        # Reply vazio com blocks: placeholder pro turno nao "sumir" no rerun
+        # (o loop de historico pula assistant sem content).
+        if _blocks and not (_reply or "").strip():
+            _reply = "(resultado abaixo)"
+            try:
+                if brain.conversation_history and \
+                        brain.conversation_history[-1].get("role") == "assistant":
+                    brain.conversation_history[-1]["content"] = _reply
+            except Exception:
+                pass
         st.markdown(_reply)
         if _blocks and _render_blocks:
             _render_blocks(_blocks, key="live")
 
     # Salvar historico atualizado (Brain incluiu user + tool_calls + assistant)
-    st.session_state[_history_key] = list(brain.conversation_history)
+    _new_history = list(brain.conversation_history)
+    # Guard (auditoria A4): o recovery de erro 400 do Brain RESETA o historico
+    # pra 1 mensagem. Nao sobrescrever o thread persistido com essa perda —
+    # continua numa conversa NOVA e o thread antigo fica preservado no banco.
+    if len(_new_history) < min(_prev_len, 2) or (_prev_len >= 4 and len(_new_history) <= 2):
+        try:
+            import uuid as _uuid
+            st.session_state[_thread_key] = str(_uuid.uuid4())
+            st.session_state[_blocks_key] = {}
+        except Exception:
+            pass
+    st.session_state[_history_key] = _new_history
     # Blocks ricos ficam no mapa PARALELO, chaveados pelo hash do reply
     if _blocks:
         st.session_state[_blocks_key][_bkey(_reply)] = _blocks
+
+    # Poda (auditoria A6): blocks de replies que sairam da janela do historico
+    # nunca mais sao renderizados — nao pagar upload/download deles pra sempre.
+    try:
+        _valid_keys = {
+            _bkey(m.get("content") or "")
+            for m in _new_history if m.get("role") == "assistant"
+        }
+        _bmap = st.session_state[_blocks_key]
+        for _k in [k for k in _bmap if k not in _valid_keys]:
+            _bmap.pop(_k, None)
+    except Exception:
+        pass
 
     # Persistir a conversa no banco (F4) — best-effort, nunca quebra o chat
     if save_thread:

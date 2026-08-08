@@ -21,6 +21,13 @@ _brain = None
 _executor = None
 _bridge = None
 
+# Serializa o process_message no webhook: o Brain e um singleton com
+# conversation_history MUTAVEL e cada mensagem WhatsApp roda em thread propria.
+# Com tools longas (ex.: preparar_escolas, minutos), uma 2a mensagem simultanea
+# corrompia a sequencia assistant.tool_calls->tool (OpenAI 400 -> recovery
+# apagava o contexto). Com o lock, a 2a mensagem espera a 1a terminar.
+_brain_lock = threading.Lock()
+
 
 def get_brain():
     global _brain
@@ -474,7 +481,21 @@ def _process_message_async(sender: str, text: str, msg_id: str):
     # Set via thread-local para que get_active_sender() em writer.py / brain.py
     # respeite a identidade de quem mandou o comando.
     _profile = get_profile_by_whatsapp_number(sender)
-    _username = _profile.get("username") if _profile else "fernando"
+    if _profile:
+        _username = _profile.get("username") or "fernando"
+    else:
+        # Numero AUTORIZADO mas sem perfil no users.yaml: so assume 'fernando'
+        # se for de fato o dono (IALEX_OWNER_NUMBER); senao usa identidade SEM
+        # privilegio — evita que um numero novo herde is_admin do fallback.
+        _owner_tail = "".join(c for c in os.getenv("IALEX_OWNER_NUMBER", "") if c.isdigit())[-8:]
+        _sender_tail = "".join(c for c in sender if c.isdigit())[-8:]
+        _username = "fernando" if (_owner_tail and _sender_tail == _owner_tail) else "convidado"
+        if _username == "convidado":
+            logger.warning(
+                "Numero autorizado SEM perfil no users.yaml — usando identidade "
+                "sem privilegio ('convidado'). Cadastre o numero em config/users.yaml.",
+                extra={"sender": sender},
+            )
     set_active_sender_for_thread(_username)
 
     try:
@@ -486,8 +507,10 @@ def _process_message_async(sender: str, text: str, msg_id: str):
         brain = get_brain()
         bridge = get_bridge()
 
-        # Brain processa com tool use (consulta banco direto)
-        result = brain.process_message(text, sender=_username)
+        # Brain processa com tool use (consulta banco direto).
+        # Lock: serializa turnos concorrentes (ver _brain_lock no topo).
+        with _brain_lock:
+            result = brain.process_message(text, sender=_username)
         full_reply = result.get("reply", "Desculpe, nao entendi. Pode reformular?")
 
         # Converter Markdown para formatacao WhatsApp

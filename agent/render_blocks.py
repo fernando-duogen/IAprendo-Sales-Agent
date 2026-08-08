@@ -36,7 +36,7 @@ _SCHOOL_LIST_TOOLS = {
     "priorizar_leads_enem",
     "ranking_evolucao_enem",
 }
-_LIST_KEYS = ("escolas", "leads", "ranking", "resultados", "items")
+_LIST_KEYS = ("escolas", "leads", "ranking", "resultados", "resultado", "items")
 
 # Tools cujo resultado e um resumo numerico (renderer mostra metric cards).
 _METRIC_TOOLS = {
@@ -167,10 +167,13 @@ def _blocks_from_tool_inner(tool_name: str, args: Dict[str, Any], result: Any) -
     if tool_name in _SCHOOL_LIST_TOOLS:
         rows = _first_list(data)
         if rows:
+            # buscar_escola_brasil usa "total_encontradas" (total real do
+            # recorte); "total" e o tamanho da pagina em algumas tools.
+            total = data.get("total_encontradas") or data.get("total") or len(rows)
             return [{
                 "type": "school_list",
                 "escolas": rows[:_MAX_LIST_ITEMS],
-                "total": data.get("total", len(rows)),
+                "total": total,
                 "fonte": data.get("fonte"),
                 "tool": tool_name,
             }]

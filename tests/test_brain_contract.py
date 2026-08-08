@@ -234,6 +234,28 @@ def test_preparar_escolas_inep_fora_do_crm():
     assert "importar_escolas_lote" in out["erro"]  # ensina o caminho
 
 
+def test_importar_lote_usa_chave_id(monkeypatch):
+    """Auditoria: importar_escola retorna 'id' — o lote deve capturar sem depender
+    do fallback de resolucao no banco."""
+    def _fake_import(params):
+        return json.dumps({"sucesso": True, "id": f"cid-{params['inep']}"})
+    monkeypatch.setattr(brain_mod, "_handle_importar_escola", _fake_import)
+    out = json.loads(brain_mod._handle_importar_escolas_lote({"ineps": ["111", "222"]}))
+    assert out["importadas"] == 2
+    assert sorted(out["company_ids"]) == ["cid-111", "cid-222"]
+
+
+def test_importar_lote_avisa_truncamento(monkeypatch):
+    monkeypatch.setattr(
+        brain_mod, "_handle_importar_escola",
+        lambda p: json.dumps({"sucesso": True, "id": f"cid-{p['inep']}"}),
+    )
+    ineps = [str(i) for i in range(1, 26)]  # 25 > limite 20
+    out = json.loads(brain_mod._handle_importar_escolas_lote({"ineps": ineps}))
+    assert out["importadas"] == 20
+    assert "aviso" in out and "5" in out["aviso"]
+
+
 def test_preparar_escolas_etapas_invalidas():
     out = json.loads(brain_mod._handle_preparar_escolas({
         "company_ids": ["11111111-1111-1111-1111-111111111111"],

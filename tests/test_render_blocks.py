@@ -48,6 +48,31 @@ def test_nunca_levanta_com_args_lixo():
 
 
 # ---------------------------------------------------------------------------
+# school_list — chaves de lista e total (auditoria)
+# ---------------------------------------------------------------------------
+def test_ranking_evolucao_usa_chave_resultado():
+    """ranking_evolucao_enem retorna 'resultado' (singular) — deve gerar bloco."""
+    result = json.dumps({
+        "resultado": [{"nome": "Escola A", "delta": 42.0}],
+        "total_no_ranking": 1,
+    })
+    blocks = blocks_from_tool("ranking_evolucao_enem", {}, result)
+    assert len(blocks) == 1
+    assert blocks[0]["type"] == "school_list"
+
+
+def test_total_encontradas_prevalece_sobre_tamanho_da_pagina():
+    """buscar_escola_brasil: total do RECORTE (3000), nao o tamanho da pagina (2)."""
+    result = json.dumps({
+        "total_encontradas": 3000,
+        "escolas": [{"nome": "A"}, {"nome": "B"}],
+    })
+    blocks = blocks_from_tool("buscar_escola_brasil", {}, result)
+    assert len(blocks) == 1
+    assert blocks[0]["total"] == 3000
+
+
+# ---------------------------------------------------------------------------
 # download (exportar_escolas_xlsx)
 # ---------------------------------------------------------------------------
 def test_exportar_ok_vira_download():

@@ -224,6 +224,37 @@ def _get_queue_manager():
     return ApprovalQueueManager()
 
 
+def _fetch_queue_status(qid: str) -> str:
+    """Status ATUAL do item na fila (nao o congelado no bloco persistido).
+
+    Blocos ressuscitam de threads salvas com o status do momento da geracao;
+    outro usuario (ou o scheduler) pode ja ter agido. 1 select leve por preview
+    renderizado evita botoes/labels mentirosos (auditoria A1/A2/A5/A10).
+    """
+    try:
+        from database.supabase_client import db
+        rows = db.client.table("approval_queue").select(
+            "status,sent_at"
+        ).eq("id", qid).limit(1).execute().data or []
+        if not rows:
+            return "missing"
+        if rows[0].get("sent_at"):
+            return "sent"
+        return rows[0].get("status") or ""
+    except Exception:
+        # Sem rede/erro: cai no status do bloco (comportamento antigo)
+        return ""
+
+
+def _clear_suggestions_cache() -> None:
+    """Invalida o cache dos chips apos uma acao (contagens mudaram)."""
+    try:
+        from dashboard.helpers.chat_suggestions import _fetch_suggestions
+        _fetch_suggestions.clear()
+    except Exception:
+        pass
+
+
 def _render_email_actions(block: Dict[str, Any], key: str) -> None:
     qid = block.get("queue_id")
     if not qid:
@@ -237,24 +268,39 @@ def _render_email_actions(block: Dict[str, Any], key: str) -> None:
             "rejected": "🚫 Rejeitado.",
             "sent": "📤 Enviado!",
             "send_failed": "⚠️ Aprovado, mas o envio falhou — tente pelo painel Mensagens.",
+            "approve_failed": "⚠️ Nao estava mais pendente (outro usuario agiu?) — confira no painel Mensagens.",
+            "reject_failed": "⚠️ Nao consegui rejeitar: o item ja tinha sido tratado — confira no painel Mensagens.",
         }
         st.caption(_DONE_LABELS.get(done, done))
         return
 
-    status = block.get("status") or ""
-    confirm_key = f"chat_send_confirm_{qid}"
+    # Status REAL do banco > status congelado no bloco (threads recarregadas)
+    status = _fetch_queue_status(qid) or (block.get("status") or "")
+    confirm_key = f"chat_send_confirm_{key}_{qid}"
+
+    if status == "sent":
+        st.caption("📤 Este email ja foi ENVIADO.")
+        return
+    if status == "rejected":
+        st.caption("🚫 Este email foi rejeitado.")
+        return
+    if status == "missing":
+        st.caption("⚠️ Este email nao esta mais na fila.")
+        return
 
     if status == "pending":
         c1, c2, c3 = st.columns(3)
         with c1:
             if st.button("✅ Aprovar", key=f"{key}_ap_{qid}", use_container_width=True):
                 ok = _get_queue_manager().approve(qid)
-                actions[qid] = "approved" if ok else "send_failed"
+                actions[qid] = "approved" if ok else "approve_failed"
+                _clear_suggestions_cache()
                 st.rerun()
         with c2:
             if st.button("🚫 Rejeitar", key=f"{key}_rj_{qid}", use_container_width=True):
-                _get_queue_manager().reject(qid, "Rejeitado via chat IAlex")
-                actions[qid] = "rejected"
+                ok = _get_queue_manager().reject(qid, "Rejeitado via chat IAlex")
+                actions[qid] = "rejected" if ok else "reject_failed"
+                _clear_suggestions_cache()
                 st.rerun()
         with c3:
             if st.button("📤 Aprovar e enviar agora", key=f"{key}_sd_{qid}", use_container_width=True):
@@ -276,14 +322,23 @@ def _render_email_actions(block: Dict[str, Any], key: str) -> None:
                          use_container_width=True):
                 try:
                     qm = _get_queue_manager()
-                    if status == "pending":
-                        qm.approve(qid)
-                    from workflows.send_approved import send_approved_messages
-                    res = send_approved_messages(limit=1, only_queue_id=qid)
-                    sent_ok = bool((res or {}).get("sent"))
-                    actions[qid] = "sent" if sent_ok else "send_failed"
+                    # Re-checar o status na hora do clique (pode ter mudado)
+                    _now = _fetch_queue_status(qid)
+                    if _now == "pending":
+                        if not qm.approve(qid):
+                            _now = _fetch_queue_status(qid)
+                    if _now in ("pending", "approved"):
+                        from workflows.send_approved import send_approved_messages
+                        res = send_approved_messages(limit=1, only_queue_id=qid)
+                        sent_ok = bool((res or {}).get("sent"))
+                        actions[qid] = "sent" if sent_ok else "send_failed"
+                    elif _now == "sent":
+                        actions[qid] = "sent"
+                    else:
+                        actions[qid] = "approve_failed"
                 except Exception:
                     actions[qid] = "send_failed"
+                _clear_suggestions_cache()
                 st.session_state.pop(confirm_key, None)
                 st.rerun()
         with cc2:
