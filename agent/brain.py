@@ -1603,6 +1603,103 @@ TOOLS = [
             "required": ["escola_nome", "canal"],
         },
     },
+    {
+        "name": "reagendar_envio",
+        "description": (
+            "Reagenda (ou cancela o agendamento de) um email JA APROVADO na fila. "
+            "Use quando o usuario disser 'muda o envio do email X para amanha 9h', "
+            "'adia o envio', 'cancela o agendamento e manda no proximo lote'. "
+            "Para agendar um email AINDA PENDENTE, use aprovar_mensagem com "
+            "agendar_para (aprovacao + agendamento juntos, apos confirmacao)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "queue_id": {"type": "string", "description": "ID do item na fila"},
+                "posicao": {"type": "integer", "description": "Posicao na fila (1, 2, 3...) como alternativa ao queue_id"},
+                "agendar_para": {
+                    "type": "string",
+                    "description": "Novo horario (ex: 'amanha 9h', 'segunda 14:30', ISO 8601)",
+                },
+                "cancelar_agendamento": {
+                    "type": "boolean",
+                    "description": "Se true, REMOVE o agendamento (entra no proximo lote de envio).",
+                },
+            },
+        },
+    },
+    {
+        "name": "editar_template",
+        "description": (
+            "Edita um template de email existente (nome, assunto, corpo, ativo, "
+            "audience_type, data_profile). So os campos informados sao alterados. "
+            "Use quando o usuario disser 'muda o assunto do template X', "
+            "'atualiza o corpo do modelo Y'. Mostre o texto novo e confirme antes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "template_id": {"type": "string", "description": "ID do template"},
+                "nome": {"type": "string", "description": "Nome atual (busca parcial) como alternativa ao ID"},
+                "novo_nome": {"type": "string", "description": "Novo nome (opcional)"},
+                "assunto": {"type": "string", "description": "Novo assunto (opcional)"},
+                "corpo": {"type": "string", "description": "Novo corpo (opcional)"},
+                "ativo": {"type": "boolean", "description": "Ativar/desativar (opcional)"},
+                "audience_type": {
+                    "type": "string",
+                    "enum": ["nominal", "generico"],
+                    "description": "Matriz de selecao automatica: alvo nominal ou generico (opcional)",
+                },
+                "data_profile": {
+                    "type": "string",
+                    "enum": ["matriculas", "enem"],
+                    "description": "Matriz de selecao automatica: perfil de dados (opcional)",
+                },
+            },
+        },
+    },
+    {
+        "name": "arquivar_template",
+        "description": (
+            "Arquiva (desativa) um template de email — ele some da selecao "
+            "automatica e das listas, mas NAO e apagado (reversivel via "
+            "editar_template ativo=true). Use quando o usuario disser 'exclui o "
+            "template X', 'nao quero mais esse modelo'. Confirme antes de arquivar."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "template_id": {"type": "string", "description": "ID do template"},
+                "nome": {"type": "string", "description": "Nome (busca parcial) como alternativa ao ID"},
+            },
+        },
+    },
+    {
+        "name": "ver_config_vendas",
+        "description": (
+            "Mostra a configuracao comercial da plataforma (ticket por aluno, teto "
+            "de leads 'em conversa', limites diarios de envio por email/whatsapp, "
+            "ausencias do time). Somente ADMIN."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "atualizar_config_vendas",
+        "description": (
+            "Atualiza a configuracao comercial (ticket_por_aluno, teto_em_conversa, "
+            "limite_email_dia, limite_whatsapp_dia). Somente ADMIN. Confirme o valor "
+            "novo com o usuario antes de aplicar."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ticket_por_aluno": {"type": "number", "description": "R$/aluno/mes (0.1 a 500)"},
+                "teto_em_conversa": {"type": "integer", "description": "Leads ativos por vendedor (1 a 100)"},
+                "limite_email_dia": {"type": "integer", "description": "Emails/dia por vendedor (1 a 500)"},
+                "limite_whatsapp_dia": {"type": "integer", "description": "WhatsApps/dia por vendedor (1 a 200)"},
+            },
+        },
+    },
 ]
 
 
@@ -7004,6 +7101,174 @@ def _handle_criar_template(params: Dict) -> str:
         return json.dumps({"erro": f"Erro: {str(e)[:200]}"})
 
 
+def _resolve_template(params: Dict):
+    """Resolve template por id ou nome (parcial). Retorna (row, erro_json)."""
+    tid = (params.get("template_id") or "").strip()
+    nome = (params.get("nome") or "").strip()
+    try:
+        if tid:
+            r = db.client.table("message_templates").select("*").eq("id", tid).limit(1).execute()
+            rows = r.data or []
+        elif nome:
+            r = db.client.table("message_templates").select("*").ilike("name", f"%{nome}%").execute()
+            rows = r.data or []
+        else:
+            return None, json.dumps({"erro": "Informe template_id ou nome."})
+    except Exception as e:
+        return None, json.dumps({"erro": f"Erro ao buscar template: {str(e)[:200]}"})
+
+    if not rows:
+        return None, json.dumps({"erro": f"Template '{tid or nome}' nao encontrado."})
+    if len(rows) > 1:
+        return None, json.dumps({
+            "erro": "Mais de um template encontrado — especifique melhor.",
+            "opcoes": [{"id": t["id"], "nome": t.get("name")} for t in rows[:10]],
+        }, ensure_ascii=False)
+    return rows[0], None
+
+
+def _handle_editar_template(params: Dict) -> str:
+    """Edita campos de um template existente (so os informados)."""
+    try:
+        tpl, err = _resolve_template(params)
+        if err:
+            return err
+
+        _FIELD_MAP = {
+            "novo_nome": "name",
+            "assunto": "subject_template",
+            "corpo": "body_template",
+            "ativo": "is_active",
+            "audience_type": "audience_type",
+            "data_profile": "data_profile",
+        }
+        updates = {col: params[p] for p, col in _FIELD_MAP.items() if p in params and params[p] is not None}
+        if not updates:
+            return json.dumps({"erro": "Nada para alterar — informe ao menos um campo (assunto, corpo, novo_nome, ativo, audience_type, data_profile)."})
+
+        db.client.table("message_templates").update(updates).eq("id", tpl["id"]).execute()
+        return json.dumps({
+            "sucesso": True,
+            "template_id": tpl["id"],
+            "nome": updates.get("name", tpl.get("name")),
+            "campos_alterados": sorted(updates.keys()),
+            "mensagem": f"Template '{updates.get('name', tpl.get('name'))}' atualizado ({', '.join(sorted(updates.keys()))}).",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao editar template: {str(e)[:200]}"})
+
+
+def _handle_arquivar_template(params: Dict) -> str:
+    """Arquiva (is_active=false) um template — reversivel, nunca apaga."""
+    try:
+        tpl, err = _resolve_template(params)
+        if err:
+            return err
+        db.client.table("message_templates").update({"is_active": False}).eq("id", tpl["id"]).execute()
+        return json.dumps({
+            "sucesso": True,
+            "template_id": tpl["id"],
+            "mensagem": (
+                f"Template '{tpl.get('name')}' arquivado (sai da selecao automatica). "
+                "Reversivel: editar_template com ativo=true reativa."
+            ),
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao arquivar template: {str(e)[:200]}"})
+
+
+def _handle_reagendar_envio(params: Dict) -> str:
+    """Reagenda/cancela agendamento de um email JA APROVADO (nao envia nada)."""
+    try:
+        qid = _resolve_queue_id(params)
+        if not qid:
+            return json.dumps({"erro": "Informe queue_id ou posicao (1, 2, 3...)."})
+
+        r = db.client.table("approval_queue").select(
+            "id,status,subject,scheduled_send_at"
+        ).eq("id", qid).single().execute()
+        item = r.data
+        if not item:
+            return json.dumps({"erro": f"Item {qid} nao encontrado na fila."})
+
+        status = item.get("status")
+        if status != "approved":
+            hint = {
+                "pending": "Ainda esta PENDENTE — use aprovar_mensagem com agendar_para (mostre o email e confirme antes).",
+                "sent": "Ja foi ENVIADO — nao da para reagendar.",
+                "rejected": "Foi REJEITADO — gere/aprove de novo se quiser enviar.",
+            }.get(status, f"Status atual: {status}.")
+            return json.dumps({"erro": f"So emails APROVADOS podem ser reagendados. {hint}"}, ensure_ascii=False)
+
+        if params.get("cancelar_agendamento"):
+            db.client.table("approval_queue").update(
+                {"scheduled_send_at": None}
+            ).eq("id", qid).eq("status", "approved").execute()
+            return json.dumps({
+                "sucesso": True,
+                "mensagem": f"Agendamento cancelado — '{item.get('subject')}' entra no proximo lote de envio.",
+            }, ensure_ascii=False)
+
+        iso = _parse_agendar_para(params.get("agendar_para"))
+        if not iso:
+            return json.dumps({
+                "erro": "Nao entendi o horario. Exemplos: 'amanha 9h', 'segunda 14:30', '2026-08-15T09:00'.",
+            }, ensure_ascii=False)
+
+        db.client.table("approval_queue").update(
+            {"scheduled_send_at": iso}
+        ).eq("id", qid).eq("status", "approved").execute()
+        return json.dumps({
+            "sucesso": True,
+            "queue_id": qid,
+            "novo_horario": iso,
+            "mensagem": f"Envio de '{item.get('subject')}' reagendado para {iso}.",
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao reagendar: {str(e)[:200]}"})
+
+
+def _handle_ver_config_vendas(params: Dict) -> str:
+    """Mostra config comercial (agenda_config). Somente admin."""
+    try:
+        from utils.sender_profile import is_admin
+        if not is_admin():
+            return json.dumps({"erro": "Somente ADMIN pode ver a configuracao comercial."})
+        from integrations.agenda_config import agenda_config
+        cfg = agenda_config.get_config()
+        return json.dumps({"config": cfg}, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao ler config: {str(e)[:200]}"})
+
+
+def _handle_atualizar_config_vendas(params: Dict) -> str:
+    """Atualiza config comercial (campos informados). Somente admin."""
+    try:
+        from utils.sender_profile import is_admin
+        if not is_admin():
+            return json.dumps({"erro": "Somente ADMIN pode alterar a configuracao comercial."})
+        from integrations.agenda_config import agenda_config
+
+        _ALLOWED = ("ticket_por_aluno", "teto_em_conversa", "limite_email_dia", "limite_whatsapp_dia")
+        updates = {k: params[k] for k in _ALLOWED if k in params and params[k] is not None}
+        if not updates:
+            return json.dumps({"erro": f"Nada para alterar — campos aceitos: {', '.join(_ALLOWED)}."})
+
+        cfg = agenda_config.get_config()
+        cfg.update(updates)
+        ok = agenda_config.save_config(cfg)  # valida limites internamente
+        if not ok:
+            return json.dumps({"erro": "Falha ao salvar a configuracao."})
+        return json.dumps({
+            "sucesso": True,
+            "campos_alterados": sorted(updates.keys()),
+            "config_atual": agenda_config.get_config(),
+            "mensagem": "Configuracao comercial atualizada.",
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao atualizar config: {str(e)[:200]}"})
+
+
 def _handle_enviar_whatsapp_escola(params: Dict) -> str:
     """Coloca mensagem WhatsApp na fila de aprovacao.
 
@@ -8029,6 +8294,12 @@ TOOL_HANDLERS = {
     "padronizar_resposta": _handle_padronizar_resposta,
     "listar_skills": _handle_listar_skills,
     "arquivar_skill": _handle_arquivar_skill,
+    # Operador v1 (F2) — cobertura total de acoes via chat
+    "reagendar_envio": _handle_reagendar_envio,
+    "editar_template": _handle_editar_template,
+    "arquivar_template": _handle_arquivar_template,
+    "ver_config_vendas": _handle_ver_config_vendas,
+    "atualizar_config_vendas": _handle_atualizar_config_vendas,
 }
 
 # =====================================================================

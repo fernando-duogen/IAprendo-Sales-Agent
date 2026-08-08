@@ -175,6 +175,37 @@ def test_on_event_recebe_tool_start_end(brain, monkeypatch):
     assert events[0]["tool"] == "estatisticas_gerais"
 
 
+# ---------------------------------------------------------------------------
+# F2 — cobertura total: novas tools registradas e defensivas
+# ---------------------------------------------------------------------------
+_NOVAS_TOOLS_F2 = [
+    "reagendar_envio", "editar_template", "arquivar_template",
+    "ver_config_vendas", "atualizar_config_vendas",
+]
+
+
+def test_novas_tools_f2_registradas():
+    tool_names = {t["name"] for t in brain_mod.TOOLS}
+    for name in _NOVAS_TOOLS_F2:
+        assert name in tool_names, f"schema de {name} ausente em TOOLS"
+        assert name in brain_mod.TOOL_HANDLERS, f"handler de {name} ausente"
+
+
+def test_reagendar_envio_id_invalido_erro_amigavel():
+    out = json.loads(brain_mod._handle_reagendar_envio({"queue_id": "00000000-0000-0000-0000-000000000000"}))
+    assert "erro" in out  # nao levanta, nao escreve
+
+
+def test_editar_template_sem_identificacao():
+    out = json.loads(brain_mod._handle_editar_template({}))
+    assert "erro" in out and "template_id" in out["erro"]
+
+
+def test_arquivar_template_inexistente():
+    out = json.loads(brain_mod._handle_arquivar_template({"nome": "zzz-inexistente-[BRAIN-CONTRACT]"}))
+    assert "erro" in out
+
+
 def test_on_event_que_levanta_nao_quebra(brain, monkeypatch):
     monkeypatch.setitem(
         brain_mod.TOOL_HANDLERS, "estatisticas_gerais", lambda args: json.dumps({"x": 1})

@@ -95,7 +95,18 @@ def _render_school_list(block: Dict[str, Any], key: str) -> None:
     if fonte:
         cap += f" — fonte: {fonte}"
     st.caption(cap)
-    st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+    # Deep-link "Abrir ficha" (F2): escolas do CRM tem id -> /escolas?escola=<id>
+    col_cfg = {}
+    if "id" in df.columns:
+        df_show = df_show.copy()
+        df_show.insert(0, "Abrir", "/escolas?escola=" + df["id"].astype(str))
+        col_cfg["Abrir"] = st.column_config.LinkColumn(
+            "Abrir", display_text="↗ Ficha", width="small",
+            help="Abre a ficha completa da escola",
+        )
+    st.dataframe(df_show, use_container_width=True, hide_index=True,
+                 column_config=col_cfg or None)
 
     # Mapa opcional (st.map nativo — sem widget keys, seguro em historico)
     lat_col = next((c for c in ("latitude", "lat") if c in df.columns), None)
@@ -196,10 +207,89 @@ def _render_email_preview(block: Dict[str, Any], key: str) -> None:
         # Corpo COMPLETO (gate de aprovacao: mostrar TUDO antes de confirmar).
         corpo = block.get("corpo") or ""
         st.markdown(corpo.replace("\n", "  \n"))
-    st.caption(
-        "💡 Para agir, diga: *\"aprova\"*, *\"rejeita\"* ou *\"reescreve mais curto\"* "
-        "— o envio so acontece com a sua confirmacao explicita."
-    )
+        _render_email_actions(block, key)
+
+
+# ---------------------------------------------------------------------------
+# Acoes inline do email (F2) — REGRA ZERO preservada:
+# o corpo COMPLETO esta visivel logo acima; o clique do usuario E a confirmacao
+# explicita. Envio imediato exige 2 cliques (confirmar). Reusa as MESMAS
+# funcoes dos botoes do dashboard (queue_manager / send_approved).
+# ---------------------------------------------------------------------------
+_ACTIONS_KEY = "chat_email_actions"  # {queue_id: "approved"|"rejected"|"sent"|...}
+
+
+def _get_queue_manager():
+    from approval_queue.queue_manager import ApprovalQueueManager
+    return ApprovalQueueManager()
+
+
+def _render_email_actions(block: Dict[str, Any], key: str) -> None:
+    qid = block.get("queue_id")
+    if not qid:
+        return
+
+    actions = st.session_state.setdefault(_ACTIONS_KEY, {})
+    done = actions.get(qid)
+    if done:
+        _DONE_LABELS = {
+            "approved": "✅ Aprovado — entra no proximo lote de envio.",
+            "rejected": "🚫 Rejeitado.",
+            "sent": "📤 Enviado!",
+            "send_failed": "⚠️ Aprovado, mas o envio falhou — tente pelo painel Mensagens.",
+        }
+        st.caption(_DONE_LABELS.get(done, done))
+        return
+
+    status = block.get("status") or ""
+    confirm_key = f"chat_send_confirm_{qid}"
+
+    if status == "pending":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("✅ Aprovar", key=f"{key}_ap_{qid}", use_container_width=True):
+                ok = _get_queue_manager().approve(qid)
+                actions[qid] = "approved" if ok else "send_failed"
+                st.rerun()
+        with c2:
+            if st.button("🚫 Rejeitar", key=f"{key}_rj_{qid}", use_container_width=True):
+                _get_queue_manager().reject(qid, "Rejeitado via chat IAlex")
+                actions[qid] = "rejected"
+                st.rerun()
+        with c3:
+            if st.button("📤 Aprovar e enviar agora", key=f"{key}_sd_{qid}", use_container_width=True):
+                st.session_state[confirm_key] = True
+                st.rerun()
+    elif status == "approved":
+        if st.button("📤 Enviar agora", key=f"{key}_sd_{qid}", use_container_width=True):
+            st.session_state[confirm_key] = True
+            st.rerun()
+    else:
+        return
+
+    # 2o passo do envio imediato (irreversivel -> confirmacao dupla)
+    if st.session_state.get(confirm_key):
+        st.warning("O email sera enviado AGORA para o destinatario. Confirmar?")
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            if st.button("✅ Confirmar envio", key=f"{key}_cf_{qid}", type="primary",
+                         use_container_width=True):
+                try:
+                    qm = _get_queue_manager()
+                    if status == "pending":
+                        qm.approve(qid)
+                    from workflows.send_approved import send_approved_messages
+                    res = send_approved_messages(limit=1, only_queue_id=qid)
+                    sent_ok = bool((res or {}).get("sent"))
+                    actions[qid] = "sent" if sent_ok else "send_failed"
+                except Exception:
+                    actions[qid] = "send_failed"
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
+        with cc2:
+            if st.button("Cancelar", key=f"{key}_cx_{qid}", use_container_width=True):
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
