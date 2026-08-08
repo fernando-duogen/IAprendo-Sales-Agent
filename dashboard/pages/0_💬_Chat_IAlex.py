@@ -185,6 +185,16 @@ for _idx, _msg in enumerate(_hist):
 
 
 # ========================================================================
+# SUGESTOES PROATIVAS (F3) — chips deterministicos; clique vira turno
+# ========================================================================
+try:
+    from dashboard.helpers.chat_suggestions import render_suggestions
+    render_suggestions(_username)
+except Exception:
+    pass
+
+
+# ========================================================================
 # CHAT INPUT
 # ========================================================================
 _placeholder = (
@@ -193,6 +203,11 @@ _placeholder = (
     "'enriqueça as escolas selecionadas' / 'gera email pra Colegio Anchieta')"
 )
 _user_msg = st.chat_input(_placeholder)
+
+# Chip clicado no run anterior vira o turno do usuario deste run
+_injected = st.session_state.pop("chat_injected_msg", None)
+if _injected and not _user_msg:
+    _user_msg = _injected
 
 if _user_msg:
     # Renderizar a user msg IMEDIATAMENTE (antes do processamento)
