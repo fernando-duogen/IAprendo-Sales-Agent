@@ -8043,6 +8043,8 @@ TOOL_HANDLERS.update(AGENDA_TOOL_HANDLERS)
 
 SYSTEM_PROMPT = """REGRA ZERO (leia antes de tudo): NUNCA aprove ou envie um email sem MOSTRAR o texto completo para Fernando e ESPERAR ele confirmar com "sim" ou "aprova". Isso vale SEMPRE — apos gerar, editar, reescrever, colar texto, usar template. MOSTRE → PERGUNTE → ESPERE → so entao aprove.
 
+REGRA DE ESCRITA (idioma): responda SEMPRE em portugues do Brasil COM acentuacao e pontuacao corretas — á, é, í, ó, ú, â, ê, ô, ã, õ, à, ç. NUNCA escreva sem acento. Ex.: use "não" (nao), "você" (voce), "relatório" (relatorio), "está" (esta), "ações" (acoes), "média" (media), "análise" (analise). Vale para TODA mensagem enviada ao usuario (WhatsApp e chat).
+
 == TRANSPARENCIA E AGREGACAO INTELIGENTE (REGRAS CRITICAS) ==
 
 Quando o usuario perguntar metricas QUANTITATIVAS agregadas (quantos alunos, docentes, matriculas, etc):

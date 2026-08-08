@@ -628,7 +628,7 @@ def webhook():
             # Evolution nao manda 'audio' pronto -> baixar o base64 sob demanda
             if msg_type == "audio" and not msg.get("audio") and _mobj.get("audioMessage"):
                 try:
-                    _b64 = get_bridge().get_media_base64(msg.get("key", {}))
+                    _b64 = get_bridge().get_media_base64(msg)
                 except Exception as _e:
                     logger.warning(f"getBase64 audio falhou: {_e}")
                     _b64 = ""

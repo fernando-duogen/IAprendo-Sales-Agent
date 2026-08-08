@@ -310,26 +310,37 @@ class WhatsAppBridge:
             logger.error(f"Erro ao enviar imagem para {formatted}: {exc}")
             return {"success": False, "error": str(exc)}
 
-    def get_media_base64(self, key: Dict[str, Any]) -> str:
+    def get_media_base64(self, message: Dict[str, Any]) -> str:
         """Baixa o base64 de uma midia recebida (audio/imagem), via Evolution API.
 
-        A Evolution NAO envia o binario no webhook — este endpoint devolve o base64
-        a partir da 'key' da mensagem recebida.
+        Passa o REGISTRO COMPLETO da mensagem (key + message) para a Evolution
+        baixar a midia SEM depender do banco — o compose roda com
+        DATABASE_SAVE_DATA_NEW_MESSAGE=false, entao buscar so-pela-key retorna 400.
 
         Args:
-            key: o objeto 'key' da mensagem (msg['key'] do webhook).
+            message: o objeto da mensagem recebida no webhook (com 'key' e 'message').
 
         Returns:
             String base64 (sem prefixo data:) ou "" em caso de falha.
         """
         url = f"{self.base_url}/chat/getBase64FromMediaMessage/{self.instance_name}"
-        body = {"message": {"key": key}, "convertToMp4": False}
+        payload_msg: Dict[str, Any] = {}
+        if isinstance(message, dict):
+            if message.get("key"):
+                payload_msg["key"] = message["key"]
+            if message.get("message"):
+                payload_msg["message"] = message["message"]
+        body = {"message": payload_msg or message, "convertToMp4": False}
         try:
             resp = requests.post(url, json=body, headers=self._headers, timeout=30)
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                logger.warning(
+                    f"getBase64 HTTP {resp.status_code}: {(resp.text or '')[:300]}"
+                )
+                return ""
             data: Dict[str, Any] = resp.json()
             b64 = data.get("base64", "") or ""
-            if b64 and "," in b64 and b64.strip().startswith("data:"):
+            if b64 and b64.strip().startswith("data:") and "," in b64:
                 b64 = b64.split(",", 1)[1]
             return b64
         except requests.RequestException as exc:
