@@ -28,6 +28,14 @@ from database.supabase_client import db
 from utils.logger import logger
 from utils.date_pt import format_pt
 
+# Canal lateral de blocos ricos (operador v1) — defensivo: se o modulo
+# falhar, o Brain segue funcionando 100% (so nao emite blocks pro chat web).
+try:
+    from agent.render_blocks import blocks_from_tool
+except Exception as _rb_err:
+    logger.warning(f"render_blocks indisponivel: {_rb_err}")
+    blocks_from_tool = None
+
 # Carregamento defensivo do modulo ENEM analytics (regra R1 do plano).
 # Se enem_tools.py tiver qualquer erro, IAlex continua rodando com as 68
 # tools originais — apenas nao ganha as 4 tools analiticas novas.
@@ -9354,6 +9362,9 @@ class Brain:
         self.client: OpenAI = OpenAI(api_key=api_key, timeout=30.0, max_retries=2)
         self.model: str = os.getenv("IALEX_MODEL", "gpt-4.1-mini")
         self.conversation_history: List[Dict[str, Any]] = []
+        # Blocos ricos do ULTIMO turno (canal lateral do chat web; resetado a
+        # cada process_message; nunca vai pro conversation_history/API).
+        self._turn_blocks: List[Dict[str, Any]] = []
         logger.info("Brain inicializado", extra={"model": self.model})
 
     def get_morning_briefing(self) -> str:
@@ -9729,11 +9740,42 @@ class Brain:
             logger.debug(f"Erro ao construir system prompt com memoria: {e}")
             return SYSTEM_PROMPT
 
-    def process_message(self, message: str, sender: str = "fernando") -> Dict[str, Any]:
+    def process_message(
+        self,
+        message: str,
+        sender: str = "fernando",
+        *,
+        max_iterations: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+        on_event=None,
+    ) -> Dict[str, Any]:
         """
         Processa mensagem usando tool use. O modelo pode chamar
         ferramentas para consultar o banco e gerar respostas ricas.
+
+        Retorna {"reply": str, "blocks": list}. `blocks` sao blocos de render
+        ricos derivados dos resultados das tools (agent/render_blocks.py) —
+        o chat web renderiza; o WhatsApp le so `reply` e ignora o resto.
+
+        Kwargs opcionais (defaults = comportamento historico, WhatsApp intacto):
+          max_iterations: teto do loop de tools (default 5).
+          max_tokens: teto de tokens da resposta (default 2048).
+          on_event: callback best-effort de progresso — recebe dicts
+            {"type": "tool_start"|"tool_end", "tool": nome}. Nunca propaga erro.
         """
+        _iters = int(max_iterations) if max_iterations else 5
+        _max_tokens = int(max_tokens) if max_tokens else 2048
+
+        def _emit(event: Dict[str, Any]) -> None:
+            if on_event:
+                try:
+                    on_event(event)
+                except Exception:
+                    pass
+
+        # Blocos ricos do turno (canal lateral; NUNCA entra no history da API)
+        self._turn_blocks: List[Dict[str, Any]] = []
+
         try:
             self.conversation_history.append({
                 "role": "user",
@@ -9746,11 +9788,10 @@ class Brain:
             messages = [{"role": "system", "content": contextual_prompt}] + self.conversation_history
 
             # Loop de tool use
-            max_iterations = 5
-            for _ in range(max_iterations):
+            for _ in range(_iters):
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    max_tokens=2048,
+                    max_tokens=_max_tokens,
                     messages=messages,
                     tools=OPENAI_TOOLS,
                     tool_choice="auto",
@@ -9803,6 +9844,7 @@ class Brain:
                         except json.JSONDecodeError:
                             args = {}
 
+                        _emit({"type": "tool_start", "tool": tc.function.name})
                         if handler:
                             try:
                                 result = handler(args)
@@ -9811,6 +9853,17 @@ class Brain:
                                 logger.error("Erro na tool", extra={"tool": tc.function.name, "error": str(e)})
                         else:
                             result = json.dumps({"erro": f"Ferramenta '{tc.function.name}' nao encontrada."})
+                        _emit({"type": "tool_end", "tool": tc.function.name})
+
+                        # Canal lateral: blocos ricos derivados do resultado da
+                        # tool (defensivo — jamais pode quebrar o turno).
+                        if blocks_from_tool is not None:
+                            try:
+                                self._turn_blocks.extend(
+                                    blocks_from_tool(tc.function.name, args, result)
+                                )
+                            except Exception:
+                                pass
 
                         self.conversation_history.append({
                             "role": "tool",
@@ -9818,8 +9871,10 @@ class Brain:
                             "content": result
                         })
 
-                    # Atualiza messages para proxima iteracao
-                    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + self.conversation_history
+                    # Atualiza messages para proxima iteracao (mantem o prompt
+                    # contextual — antes voltava pro SYSTEM_PROMPT estatico e
+                    # perdia memorias/contexto nas iteracoes seguintes).
+                    messages = [{"role": "system", "content": contextual_prompt}] + self.conversation_history
 
                 else:
                     # Modelo terminou — extrair texto final
@@ -9835,11 +9890,15 @@ class Brain:
                         "sender": sender,
                         "reply_length": len(reply),
                         "model": self.model,
+                        "blocks": len(self._turn_blocks),
                     })
 
-                    return {"reply": reply}
+                    return {"reply": reply, "blocks": self._turn_blocks}
 
-            return {"reply": "Desculpa, a consulta ficou complexa demais. Tenta reformular?"}
+            return {
+                "reply": "Desculpa, a consulta ficou complexa demais. Tenta reformular?",
+                "blocks": self._turn_blocks,
+            }
 
         except Exception as e:
             logger.error("Erro ao processar mensagem", extra={"error": str(e)})
@@ -9855,10 +9914,10 @@ class Brain:
                     )
                     reply = response.choices[0].message.content or ""
                     self.conversation_history.append({"role": "assistant", "content": reply})
-                    return {"reply": reply}
+                    return {"reply": reply, "blocks": []}
                 except Exception as e2:
-                    return {"reply": f"Desculpe, tive um problema. Tente novamente. ({str(e2)[:80]})"}
-            return {"reply": "Ops, deu um erro. Tenta de novo?"}
+                    return {"reply": f"Desculpe, tive um problema. Tente novamente. ({str(e2)[:80]})", "blocks": []}
+            return {"reply": "Ops, deu um erro. Tenta de novo?", "blocks": []}
 
     def _trim_history(self) -> None:
         if len(self.conversation_history) > MAX_HISTORY:
