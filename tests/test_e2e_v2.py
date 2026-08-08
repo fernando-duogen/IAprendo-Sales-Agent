@@ -71,6 +71,69 @@ def test_render_pagina_sem_excecao(page):
 
 
 # ---------------------------------------------------------------------------
+# Camada 1.5 — Chat IAlex com BLOCKS ricos (operador v1, F1)
+# Injeta um Brain FAKE na sessao (zero API paga) que devolve reply + blocks;
+# o turno completo do chat deve renderizar tabela (school_list) e nao quebrar.
+# ---------------------------------------------------------------------------
+class _FakeChatBrain:
+    """Simula o contrato do Brain: process_message + conversation_history."""
+
+    def __init__(self):
+        self.conversation_history = []
+
+    def process_message(self, message, sender="fernando", **kwargs):
+        self.conversation_history.append({"role": "user", "content": message})
+        reply = "Encontrei 2 escolas [E2E-TEST]."
+        self.conversation_history.append({"role": "assistant", "content": reply})
+        return {
+            "reply": reply,
+            "blocks": [
+                {
+                    "type": "school_list",
+                    "escolas": [
+                        {"name": "Escola A [E2E-TEST]", "city": "POA", "status": "raw"},
+                        {"name": "Escola B [E2E-TEST]", "city": "POA", "status": "qualified"},
+                    ],
+                    "total": 2,
+                    "fonte": "banco_crm",
+                },
+                {
+                    "type": "download",
+                    "url": "https://example.com/f.xlsx",
+                    "filename": "f.xlsx",
+                    "label": "Baixar XLSX",
+                    "detalhe": "2 escola(s)",
+                },
+            ],
+        }
+
+
+def test_chat_ialex_renderiza_blocks():
+    page = PAGES_DIR / "0_💬_Chat_IAlex.py"
+    at = _new_apptest(page)
+    at.session_state["_brain_instance"] = _FakeChatBrain()
+    at.run()
+    assert not [e for e in at.exception]
+
+    # Envia um turno de chat
+    at.chat_input[0].set_value("liste escolas [E2E-TEST]").run()
+    excs = [e for e in at.exception]
+    assert not excs, f"chat lancou excecao: {[str(e.value)[:300] for e in excs]}"
+
+    # O reply apareceu e a tabela (school_list -> st.dataframe) foi renderizada
+    all_md = " ".join(str(m.value) for m in at.markdown)
+    assert "Encontrei 2 escolas" in all_md
+    assert len(at.dataframe) >= 1, "school_list deveria virar st.dataframe"
+
+    # Blocks foram guardados no mapa paralelo, NUNCA no history da API
+    hist = at.session_state["chat_history_fernando"]
+    for msg in hist:
+        assert "blocks" not in msg
+    blocks_map = at.session_state["chat_blocks_fernando"]
+    assert blocks_map, "mapa de blocks nao pode estar vazio apos turno com blocks"
+
+
+# ---------------------------------------------------------------------------
 # Camada 2 — fluxos de escrita (dados [E2E-TEST], cleanup garantido)
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")

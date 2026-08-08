@@ -7,7 +7,13 @@ Cuidado importante: Brain eh singleton com state mutavel
 (conversation_history). Pra multi-user simultaneo no Cloud, snapshot/
 restore: carregamos historico do user ANTES de cada chamada e salvamos
 DEPOIS. Brain controla a estrutura (intercala user/assistant/tool).
+
+Operador v1 (F1): alem do texto, o Brain devolve `blocks` (tabelas, graficos,
+downloads, previews de email) que renderizamos inline via chat_blocks_view.
+Os blocks ficam num mapa PARALELO por hash do conteudo da resposta — NUNCA
+dentro do conversation_history (que e enviado a API OpenAI).
 """
+import hashlib
 import streamlit as st
 import sys
 from pathlib import Path
@@ -19,6 +25,17 @@ if str(ROOT) not in sys.path:
 from dashboard.theme import apply_theme_no_config, breadcrumb, COLORS
 
 apply_theme_no_config()
+
+# Renderer dos blocos ricos — defensivo: sem ele o chat segue 100% em texto.
+try:
+    from dashboard.helpers.chat_blocks_view import render_blocks as _render_blocks
+except Exception:
+    _render_blocks = None
+
+
+def _bkey(content: str) -> str:
+    """Chave estavel de blocks por conteudo da resposta (sobrevive a trim)."""
+    return hashlib.md5((content or "").encode("utf-8", "ignore")).hexdigest()[:16]
 
 from dashboard._auth_gate import require_auth
 require_auth()
@@ -57,6 +74,11 @@ except Exception as _e_sender:
 _history_key = f"chat_history_{_username}"
 if _history_key not in st.session_state:
     st.session_state[_history_key] = []
+
+# Mapa PARALELO de blocks ricos: {hash(reply) -> [blocks]}. Fora do history!
+_blocks_key = f"chat_blocks_{_username}"
+if _blocks_key not in st.session_state:
+    st.session_state[_blocks_key] = {}
 
 
 # ========================================================================
@@ -106,6 +128,7 @@ with ctop2:
 with ctop3:
     if st.button("🗑️ Limpar historico", use_container_width=True, key="chat_clear"):
         st.session_state[_history_key] = []
+        st.session_state[_blocks_key] = {}
         # Limpar tambem o conversation_history do brain cacheado
         try:
             brain.conversation_history = []
@@ -121,7 +144,8 @@ st.divider()
 # RENDER DO HISTORICO
 # ========================================================================
 _hist = st.session_state[_history_key]
-for _msg in _hist:
+_blocks_map = st.session_state[_blocks_key]
+for _idx, _msg in enumerate(_hist):
     _role = _msg.get("role")
     if _role == "user":
         with st.chat_message("user", avatar="🙋"):
@@ -134,16 +158,23 @@ for _msg in _hist:
             with st.chat_message("assistant", avatar="🤖"):
                 if _content:
                     st.markdown(_content)
-                    # Detecta URLs .xlsx no reply pra renderizar botao de download
-                    import re as _re_xlsx
-                    _urls_xlsx = _re_xlsx.findall(r'https?://[^\s)\]<>"\']+\.xlsx[^\s)\]<>"\']*', _content)
-                    for _url_x in _urls_xlsx:
-                        st.link_button(
-                            "📥 Baixar XLSX",
-                            _url_x,
-                            type="primary",
-                            help="Arquivo gerado pelo IAlex. Validade: 24h.",
-                        )
+                    # Blocks ricos deste turno (mapa paralelo por hash do reply)
+                    _msg_blocks = _blocks_map.get(_bkey(_content)) or []
+                    if _msg_blocks and _render_blocks:
+                        _render_blocks(_msg_blocks, key=f"h{_idx}")
+                    # Fallback legado: URLs .xlsx no texto viram botao — mas SO
+                    # se este turno nao trouxe um bloco download (evita duplicar)
+                    _has_dl = any(b.get("type") == "download" for b in _msg_blocks)
+                    if not _has_dl:
+                        import re as _re_xlsx
+                        _urls_xlsx = _re_xlsx.findall(r'https?://[^\s)\]<>"\']+\.xlsx[^\s)\]<>"\']*', _content)
+                        for _url_x in _urls_xlsx:
+                            st.link_button(
+                                "📥 Baixar XLSX",
+                                _url_x,
+                                type="primary",
+                                help="Arquivo gerado pelo IAlex. Validade: 24h.",
+                            )
                 if _tool_calls and _show_tools:
                     with st.expander(f"🔧 {len(_tool_calls)} tool(s) chamada(s)", expanded=False):
                         for _tc in _tool_calls:
@@ -178,20 +209,50 @@ if _user_msg:
     # Brain vai adicionar a user msg sozinho dentro de process_message.
     brain.conversation_history = list(st.session_state[_history_key])
 
-    # Processar com feedback visual
+    # Processar com feedback visual (status vivo via on_event do Brain)
     with st.chat_message("assistant", avatar="🤖"):
         with st.status("🧠 Pensando...", expanded=False) as _status:
+            _TOOL_LABELS = {
+                "consultar_escolas": "🔎 Consultando escolas...",
+                "fila_aprovacao": "✉️ Lendo fila de aprovacao...",
+                "gerar_graficos_escola": "📊 Gerando graficos...",
+                "gerar_relatorio_escola": "📄 Gerando One Page Report...",
+                "exportar_escolas_xlsx": "📥 Exportando XLSX...",
+                "gerar_email": "✍️ Escrevendo email...",
+            }
+
+            def _on_event(evt):
+                if evt.get("type") == "tool_start":
+                    _tool = evt.get("tool", "")
+                    _status.update(
+                        label=_TOOL_LABELS.get(_tool, f"⚙️ {_tool}..."),
+                        state="running",
+                    )
+
             try:
-                _result = brain.process_message(_user_msg, sender=_username)
+                _result = brain.process_message(
+                    _user_msg,
+                    sender=_username,
+                    max_iterations=8,
+                    max_tokens=4096,
+                    on_event=_on_event,
+                )
                 _reply = (_result or {}).get("reply", "(sem resposta)")
+                _blocks = (_result or {}).get("blocks", []) or []
                 _status.update(label="✅ Concluido", state="complete", expanded=False)
             except Exception as _e_brain_call:
                 _reply = f"❌ Erro ao processar: {str(_e_brain_call)[:300]}"
+                _blocks = []
                 _status.update(label="❌ Erro", state="error", expanded=True)
         st.markdown(_reply)
+        if _blocks and _render_blocks:
+            _render_blocks(_blocks, key="live")
 
     # Salvar historico atualizado (Brain incluiu user + tool_calls + assistant)
     st.session_state[_history_key] = list(brain.conversation_history)
+    # Blocks ricos ficam no mapa PARALELO, chaveados pelo hash do reply
+    if _blocks:
+        st.session_state[_blocks_key][_bkey(_reply)] = _blocks
 
     # Rerun pra re-renderizar o historico de forma limpa (sem duplicacao
     # entre o inline render acima e o loop de historico no proximo run)
