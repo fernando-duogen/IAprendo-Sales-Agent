@@ -508,8 +508,8 @@ def render_inteligencia() -> None:
                     "enem_media_geral",
                     "enem_media_mt (matematica)",
                     "enem_redacao_comp*_media (competencias redacao)",
-                    "peer_media_geral_2020..2024 (serie temporal)",
-                    "socio_renda_idx_media_2024",
+                    "peer_media_geral_2020..2025 (serie temporal)",
+                    "socio_renda_idx_media_2025",
                     "pnt_pct_pais_superior",
                 ],
             )
@@ -530,16 +530,16 @@ def render_inteligencia() -> None:
             "enem_redacao_comp*_media (competencias redacao)": [
                 f"enem_redacao_comp{i}_media" for i in range(1, 6)
             ],
-            "peer_media_geral_2020..2024 (serie temporal)": [
+            "peer_media_geral_2020..2025 (serie temporal)": [
                 f"peer_media_geral_{y}" for y in range(2020, 2026)
             ],
-            "socio_renda_idx_media_2024": ["socio_renda_idx_media_2024"],
+            "socio_renda_idx_media_2025": ["socio_renda_idx_media_2025"],
             "pnt_pct_pais_superior": ["pnt_pct_pais_superior"],
         }
 
         metricas_custom = st.text_area(
             "Metricas custom (uma por linha, OU deixe vazio para usar o preset)",
-            placeholder="enem_media_geral\npeer_media_geral_2024\nenem_gap_vs_peer_2024",
+            placeholder="enem_media_geral\npeer_media_geral_2025\nenem_gap_vs_peer_2025",
             height=100,
         )
         metricas_final = [m.strip() for m in metricas_custom.split("\n") if m.strip()] if metricas_custom.strip() else metricas_preset.get(preset, [])
@@ -591,6 +591,7 @@ def render_inteligencia() -> None:
             "enem_media_lc": "Linguagens e Codigos",
             "enem_redacao_media": "Redacao",
             "enem_gap_vs_peer_2024": "Gap vs Peer 2024",
+            "enem_gap_vs_peer_2025": "Gap vs Peer 2025",
             "enem_percentil_uf_dep": "Percentil UF×Dep",
             "enem_presentes": "Presentes ENEM",
             "enem_redacao_comp1_media": "Redacao Comp.1",
@@ -599,6 +600,7 @@ def render_inteligencia() -> None:
             "enem_redacao_comp4_media": "Redacao Comp.4",
             "enem_redacao_comp5_media": "Redacao Comp.5",
             "socio_renda_idx_media_2024": "Indice Renda (mun) 2024",
+            "socio_renda_idx_media_2025": "Indice Renda (mun) 2025",
             "pnt_pct_pais_superior": "% Pais c/ Superior",
         }
 

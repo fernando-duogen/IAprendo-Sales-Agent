@@ -56,6 +56,13 @@ except Exception as e:
     st.error(f"Erro ao conectar ao banco: {e}")
     st.stop()
 
+# Ano do ENEM vigente nos analytics — fonte unica (evita rotulo defasado
+# quando os dados virarem 2026+). Fallback defensivo se o import falhar.
+try:
+    from agent.tools.enem_tools import ENEM_VINTAGE
+except Exception:
+    ENEM_VINTAGE = 2025
+
 # ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
@@ -183,8 +190,8 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
     row = _fetch_analytics_single(str(inep))
     if not row:
         alert_banner(
-            "Escola sem dados ENEM no school_analytics (provavelmente Catalogo INEP, "
-            "escola sem Ensino Medio, ou nao participou do ENEM 2024).",
+            f"Escola sem dados ENEM no school_analytics (provavelmente Catalogo INEP, "
+            f"escola sem Ensino Medio, ou nao participou do ENEM {ENEM_VINTAGE}).",
             "info",
         )
         return
@@ -234,7 +241,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
 
     # --- Metricas principais (so se amostra confiavel) ---
     if amostra_ok and row.get("enem_media_geral") is not None:
-        section_header("Performance ENEM 2024", "trending_up")
+        section_header(f"Performance ENEM {ENEM_VINTAGE}", "trending_up")
         media_com = float(row.get("enem_media_geral") or 0)
         media_sem = row.get("enem_media_geral_sem_redacao")
         gap = row.get("enem_gap_vs_peer_2025")
@@ -261,7 +268,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
             if gap is not None:
                 gap_f = float(gap)
                 metric_card(
-                    "Gap vs peer 2024",
+                    f"Gap vs peer {ENEM_VINTAGE}",
                     f"{gap_f:+.1f}",
                     COLORS["success"] if gap_f > 0 else COLORS["error"],
                     icon="compare_arrows",
@@ -294,7 +301,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
                 _COMP_NAMES = {1: "Norma Culta", 2: "Compreensao", 3: "Argumentacao", 4: "Coesao", 5: "Intervencao"}; comps[_COMP_NAMES.get(i, f"Comp {i}")] = float(v)
         if comps:
             st.markdown("")
-            section_header("Competencias da redacao (ENEM 2024)", "radar")
+            section_header(f"Competencias da redacao (ENEM {ENEM_VINTAGE})", "radar")
             fig = go.Figure()
             fig.add_trace(go.Scatterpolar(
                 r=list(comps.values()) + [list(comps.values())[0]],
@@ -362,7 +369,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
             if delta is not None:
                 delta_f = float(delta)
                 metric_card(
-                    "Delta 2022-2024",
+                    f"Delta 2022-{ENEM_VINTAGE}",
                     f"{delta_f:+.1f}",
                     COLORS["success"] if delta_f > 0 else COLORS["error"],
                     icon="trending_flat",
@@ -370,7 +377,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
         with pc3:
             media_2024 = row.get("peer_media_geral_2025")
             if media_2024 is not None:
-                metric_card("Media peer 2024", f"{float(media_2024):.1f}",
+                metric_card(f"Media peer {ENEM_VINTAGE}", f"{float(media_2024):.1f}",
                             COLORS["info"], icon="analytics")
         with pc4:
             presentes_2024 = row.get("peer_presentes_2025")
@@ -395,7 +402,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
                 textposition="top center",
             ))
             fig3.update_layout(
-                title=f"Media ENEM do peer group em {mun} ({dep}) 2020-2024",
+                title=f"Media ENEM do peer group em {mun} ({dep}) 2020-{ENEM_VINTAGE}",
                 yaxis=dict(title="Media"),
                 height=280, margin=dict(l=0, r=0, t=40, b=0),
                 plot_bgcolor="white",
@@ -414,7 +421,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
         )
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
-            metric_card("Indice de renda 2024", f"{float(renda_2024):.2f}",
+            metric_card(f"Indice de renda {ENEM_VINTAGE}", f"{float(renda_2024):.2f}",
                         COLORS["primary"], icon="paid")
         with sc2:
             pais_sup = row.get("socio_pct_pais_superior_2025")
@@ -426,7 +433,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
             delta_renda = row.get("socio_delta_renda_2020_2025")
             if delta_renda is not None:
                 metric_card(
-                    "Delta renda 2020-2024",
+                    f"Delta renda 2020-{ENEM_VINTAGE}",
                     f"{float(delta_renda):+.2f}",
                     COLORS["success"] if float(delta_renda) > 0 else COLORS["error"],
                     icon="trending_up",
@@ -2283,11 +2290,11 @@ else:
                 ),
                 "Potencial": st.column_config.TextColumn(
                     "Potencial ENEM", width="small", disabled=True,
-                    help="Potencial de melhoria ENEM 2024 (Alto=🔥 / Medio=🟡 / Baixo=🟢 / —=sem amostra confiavel)",
+                    help=f"Potencial de melhoria ENEM {ENEM_VINTAGE} (Alto=🔥 / Medio=🟡 / Baixo=🟢 / —=sem amostra confiavel)",
                 ),
                 "Gap ENEM": st.column_config.NumberColumn(
                     "Gap peer", width="small", disabled=True, format="%+.1f",
-                    help="Gap (pts) vs peer group em 2024. Negativo=abaixo dos pares (oportunidade).",
+                    help=f"Gap (pts) vs peer group em {ENEM_VINTAGE}. Negativo=abaixo dos pares (oportunidade).",
                 ),
                 "Trajet. Peer": st.column_config.TextColumn(
                     "Trajet. peer", width="small", disabled=True,

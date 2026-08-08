@@ -231,7 +231,7 @@ with tab_fluxo:
     </div>
     <div style="background:#E8F5E9; border:2px solid #2E7D32; border-radius:12px; padding:14px 20px; text-align:center; min-width:140px;">
       <div style="font-size:24px;">📊</div>
-      <div style="font-weight:600; color:#2E7D32; font-size:13px;">ENEM 2024</div>
+      <div style="font-weight:600; color:#2E7D32; font-size:13px;">ENEM 2025</div>
       <div style="font-size:11px; color:#757575;">185k escolas</div>
     </div>
     <div style="background:#FFF3E0; border:2px solid #E65100; border-radius:12px; padding:14px 20px; text-align:center; min-width:140px;">
@@ -972,7 +972,7 @@ with tab_intel:
     section_header("Inteligencia ENEM", "school")
 
     st.markdown("""
-A pagina **Inteligencia** usa dados do ENEM 2024 para identificar as melhores
+A pagina **Inteligencia** usa dados do ENEM 2025 para identificar as melhores
 oportunidades de venda. Ela combina desempenho academico, contexto socioeconomico
 e comparacao com peer groups.
 """)

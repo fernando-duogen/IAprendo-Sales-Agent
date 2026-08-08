@@ -4433,13 +4433,13 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
                         f"REGRA ETICA (peer != escola individual): a trajetoria abaixo "
                         f"e do GRUPO DE PARES. Formule obrigatoriamente como 'suas "
                         f"concorrentes diretas em {mun} ({dep_peer}) vem subindo "
-                        f"{delta_abs:.1f} pts em 2 anos (2022-2024)'. NUNCA atribua "
+                        f"{delta_abs:.1f} pts em 3 anos (2022-2025)'. NUNCA atribua "
                         f"este movimento a escola individual. O pitch e: 'o mercado "
                         f"no seu municipio esta se movendo — como voce planeja "
                         f"acompanhar?'. Tom estrategico."
                     ),
                     "dados_destaque": [
-                        f"Escolas similares em {mun}: {peer_traj} ({delta_abs:.1f} pts 22-24)"
+                        f"Escolas similares em {mun}: {peer_traj} ({delta_abs:.1f} pts 22-25)"
                     ],
                     "tom_sugerido": "estrategico",
                     "foco": "apresentacao",
@@ -4457,14 +4457,14 @@ def _handle_sugerir_angulos_email(params: Dict) -> str:
                     "descricao": (
                         f"REGRA ETICA (socio = municipio, NAO aluno): o municipio "
                         f"{mun} vem tendo aumento no indice de renda medio "
-                        f"(+{float(delta_renda):.2f} em 4 anos). Formule como "
+                        f"(+{float(delta_renda):.2f} em 5 anos). Formule como "
                         f"'o perfil do municipio esta evoluindo' — NUNCA 'os alunos "
                         f"dessa escola sao de classe X'. Pitch: 'este e um momento "
                         f"de janela para se posicionar em qualidade pedagogica como "
                         f"diferencial percebido pelas familias'. Tom estrategico."
                     ),
                     "dados_destaque": [
-                        f"Delta renda municipal 2020-2024: +{float(delta_renda):.2f}"
+                        f"Delta renda municipal 2020-2025: +{float(delta_renda):.2f}"
                     ],
                     "tom_sugerido": "estrategico",
                     "foco": "apresentacao",
@@ -8259,7 +8259,7 @@ de exemplos conseguiria.
   sabe custa caro.
 
 - **Escopo restrito e mais defensavel que escopo amplo.** "As privadas
-  de Porto Alegre subiram X pts entre 2022 e 2024" e mais preciso e
+  de Porto Alegre subiram X pts entre 2022 e 2025" e mais preciso e
   mais verificavel do que "o ensino privado vem subindo". Quanto mais
   especifico o recorte geografico e temporal, mais o leitor consegue
   calibrar e mais a afirmacao soa pensada.
@@ -8300,7 +8300,7 @@ sobre etica (a etica esta nas secoes acima e vale para todas as tools).
   Serie historica INDIVIDUAL de UMA escola. Retorna a evolucao ano a
   ano de matriculas (por etapa), equipe docente, tecnologia e
   infraestrutura a partir do Censo Escolar 2020-2025. Tambem retorna
-  a serie ENEM da escola (hoje so 2024, cresce a cada ENEM novo).
+  a serie ENEM da escola (hoje 2024 E 2025, cresce a cada ENEM novo).
 
   **METRICAS DERIVADAS** (calculadas em Python, citaveis com confianca):
   Cada ano da serie censo inclui campos derivados prefixados com _:
@@ -8381,7 +8381,7 @@ sobre etica (a etica esta nas secoes acima e vale para todas as tools).
   "com" (media oficial das 5 provas, inclui redacao), "sem" (media das
   4 areas do conhecimento, isola cognicao do peso da escrita) ou
   "ambos" (mostra lado a lado). Em series temporais, prefira o
-  intervalo 2022-2024 ao 2020-2024 sempre que puder — o de 5 anos
+  intervalo 2022-2025 ao 2020-2025 sempre que puder — o de 6 anos
   carrega distorcao da pandemia.
 
 Se voce pedir um campo que nao existe ou que e sensivel, a tool retorna

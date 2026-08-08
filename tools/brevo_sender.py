@@ -13,6 +13,12 @@ from typing import Dict, Any, Optional
 from config.settings import settings
 from utils.logger import logger
 
+# Ano do ENEM vigente (rodape dos graficos no email) — fonte unica em enem_tools.
+try:
+    from agent.tools.enem_tools import ENEM_VINTAGE as _ENEM_VINTAGE
+except Exception:
+    _ENEM_VINTAGE = 2025
+
 
 class BrevoSender:
     """Envia emails via Brevo API (300/dia no plano gratuito)."""
@@ -334,7 +340,7 @@ class BrevoSender:
                     'style="width:100%;max-width:560px;display:block;margin:0 auto;'
                     'border-radius:4px" />'
                     '<p style="color:#999;font-size:11px;margin-top:8px;margin-bottom:0">'
-                    'Fonte: Microdados ENEM 2024 / Censo Escolar (INEP)</p>'
+                    f'Fonte: Microdados ENEM {_ENEM_VINTAGE} / Censo Escolar (INEP)</p>'
                     '</div>'
                 )
 
