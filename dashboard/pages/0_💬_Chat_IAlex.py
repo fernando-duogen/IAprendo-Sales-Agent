@@ -71,14 +71,37 @@ except Exception as _e_sender:
 # ========================================================================
 # HISTORICO POR USUARIO (multi-tenant via session_state)
 # ========================================================================
+# Persistencia (F4): carrega a conversa mais recente do banco na 1a visita da
+# sessao. Se a migration APLICAR-022 nao foi aplicada, segue so em memoria.
+try:
+    from dashboard.helpers.chat_store import load_latest_thread, save_thread, new_thread_id
+except Exception:
+    load_latest_thread = save_thread = None
+
+    def new_thread_id():
+        import uuid as _uuid
+        return str(_uuid.uuid4())
+
 _history_key = f"chat_history_{_username}"
+_blocks_key = f"chat_blocks_{_username}"
+_thread_key = f"chat_thread_{_username}"
+
 if _history_key not in st.session_state:
     st.session_state[_history_key] = []
+    st.session_state[_blocks_key] = {}
+    st.session_state[_thread_key] = new_thread_id()
+    if load_latest_thread:
+        _loaded = load_latest_thread(_username)
+        if _loaded:
+            st.session_state[_thread_key] = _loaded[0]
+            st.session_state[_history_key] = _loaded[1]
+            st.session_state[_blocks_key] = _loaded[2]
 
-# Mapa PARALELO de blocks ricos: {hash(reply) -> [blocks]}. Fora do history!
-_blocks_key = f"chat_blocks_{_username}"
+# Guardas (sessoes antigas sem as chaves novas)
 if _blocks_key not in st.session_state:
     st.session_state[_blocks_key] = {}
+if _thread_key not in st.session_state:
+    st.session_state[_thread_key] = new_thread_id()
 
 
 # ========================================================================
@@ -126,15 +149,17 @@ with ctop2:
         help="Mostra expander com JSON das tools executadas pelo IAlex. Util pra debug.",
     )
 with ctop3:
-    if st.button("🗑️ Limpar historico", use_container_width=True, key="chat_clear"):
+    if st.button("🆕 Nova conversa", use_container_width=True, key="chat_clear",
+                 help="Comeca uma conversa do zero. A atual fica salva no banco."):
         st.session_state[_history_key] = []
         st.session_state[_blocks_key] = {}
+        st.session_state[_thread_key] = new_thread_id()
         # Limpar tambem o conversation_history do brain cacheado
         try:
             brain.conversation_history = []
         except Exception:
             pass
-        st.toast("Historico limpo")
+        st.toast("Nova conversa iniciada")
         st.rerun()
 
 st.divider()
@@ -268,6 +293,15 @@ if _user_msg:
     # Blocks ricos ficam no mapa PARALELO, chaveados pelo hash do reply
     if _blocks:
         st.session_state[_blocks_key][_bkey(_reply)] = _blocks
+
+    # Persistir a conversa no banco (F4) — best-effort, nunca quebra o chat
+    if save_thread:
+        save_thread(
+            _username,
+            st.session_state[_thread_key],
+            st.session_state[_history_key],
+            st.session_state[_blocks_key],
+        )
 
     # Rerun pra re-renderizar o historico de forma limpa (sem duplicacao
     # entre o inline render acima e o loop de historico no proximo run)
