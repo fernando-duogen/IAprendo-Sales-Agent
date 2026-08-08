@@ -206,6 +206,71 @@ def test_arquivar_template_inexistente():
     assert "erro" in out
 
 
+# ---------------------------------------------------------------------------
+# R2 — modo executor: prospeccao do zero
+# ---------------------------------------------------------------------------
+def test_tools_r2_registradas():
+    tool_names = {t["name"] for t in brain_mod.TOOLS}
+    for name in ("importar_escolas_lote", "preparar_escolas"):
+        assert name in tool_names
+        assert name in brain_mod.TOOL_HANDLERS
+
+
+def test_importar_lote_sem_ineps_erro():
+    out = json.loads(brain_mod._handle_importar_escolas_lote({}))
+    assert "erro" in out
+    out2 = json.loads(brain_mod._handle_importar_escolas_lote({"ineps": []}))
+    assert "erro" in out2
+
+
+def test_preparar_escolas_sem_ids_erro():
+    out = json.loads(brain_mod._handle_preparar_escolas({}))
+    assert "erro" in out
+
+
+def test_preparar_escolas_inep_fora_do_crm():
+    out = json.loads(brain_mod._handle_preparar_escolas({"ineps": ["00000000"]}))
+    assert "erro" in out
+    assert "importar_escolas_lote" in out["erro"]  # ensina o caminho
+
+
+def test_preparar_escolas_etapas_invalidas():
+    out = json.loads(brain_mod._handle_preparar_escolas({
+        "company_ids": ["11111111-1111-1111-1111-111111111111"],
+        "etapas": ["banana"],
+    }))
+    assert "erro" in out
+
+
+def test_preparar_escolas_dry_run_nao_escreve():
+    """Smoke do wrapper com o motor REAL em dry_run (zero API paga/escrita)."""
+    from database.supabase_client import db
+    rows = db.client.table("companies").select("id").limit(1).execute().data or []
+    if not rows:
+        import pytest as _pt
+        _pt.skip("CRM vazio")
+    out = json.loads(brain_mod._handle_preparar_escolas({
+        "company_ids": [rows[0]["id"]],
+        "dry_run": True,
+    }))
+    assert out.get("sucesso") is True
+    assert set(out["etapas_executadas"]) == {"qualify", "enrich", "contacts", "write"}
+    # dry_run: cada etapa reporta skipped/0 output
+    for etapa, r in out["resultado_por_etapa"].items():
+        assert r.get("output", 0) == 0
+
+
+def test_iniciar_prospeccao_vazio_ensina_o_caminho():
+    """0 resultados NAO pode ser beco: precisa apontar o playbook executavel."""
+    out = json.loads(brain_mod._handle_iniciar_prospeccao({
+        "cidade": "Cidade-Inexistente-XYZ-[BRAIN-CONTRACT]",
+    }))
+    assert out.get("total") == 0
+    assert "proximo_passo" in out
+    assert "importar_escolas_lote" in out["proximo_passo"]
+    assert "preparar_escolas" in out["proximo_passo"]
+
+
 def test_on_event_que_levanta_nao_quebra(brain, monkeypatch):
     monkeypatch.setitem(
         brain_mod.TOOL_HANDLERS, "estatisticas_gerais", lambda args: json.dumps({"x": 1})

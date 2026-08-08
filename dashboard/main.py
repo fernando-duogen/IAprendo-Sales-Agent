@@ -39,10 +39,10 @@ st.set_page_config(
 # =========================================================================
 pages = {
     "": [
-        # Operador v1 (F4): IAlex e a tela inicial — o usuario opera a
-        # plataforma conversando; as demais paginas viram consulta/drill-down.
-        st.Page("pages/0_💬_Chat_IAlex.py", title="IAlex", icon="🤖", url_path="ialex", default=True),
-        st.Page("app.py", title="Hoje", icon="🏠", url_path="hoje"),
+        # Decisao do dono (validacao operador v1): Home "Hoje" segue como tela
+        # inicial; o IAlex fica no menu (deep-link /ialex preservado).
+        st.Page("app.py", title="Hoje", icon="🏠", url_path="hoje", default=True),
+        st.Page("pages/0_💬_Chat_IAlex.py", title="IAlex", icon="🤖", url_path="ialex"),
     ],
     "Vender": [
         st.Page("pages/5_📊_Pipeline.py", title="Prospectar", icon="🔍", url_path="prospectar"),

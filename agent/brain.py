@@ -1700,6 +1700,74 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "importar_escolas_lote",
+        "description": (
+            "Importa uma LISTA ESPECIFICA de escolas da base MEC para o CRM pelos "
+            "codigos INEP (max 20). Use no playbook PROSPECCAO DO ZERO: depois que "
+            "o usuario confirmar as candidatas escolhidas (ex.: top 10 por fit), "
+            "passe os INEPs delas aqui — preserva a SELECAO feita na conversa "
+            "(diferente de operacao_lote acao=importar, que re-busca e importa o que "
+            "vier). Retorna company_ids para usar em seguida no preparar_escolas."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ineps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Codigos INEP das escolas escolhidas (max 20).",
+                },
+            },
+            "required": ["ineps"],
+        },
+    },
+    {
+        "name": "preparar_escolas",
+        "description": (
+            "Roda o PIPELINE COMPLETO de preparacao nas escolas indicadas — o mesmo "
+            "motor do botao 'Preparar escolas' do painel: qualificar -> enriquecer "
+            "(dados/site) -> buscar contatos -> gerar emails (que caem na FILA DE "
+            "APROVACAO; NADA e enviado — regra zero intacta). "
+            "ATENCAO: DEMORADO (~30-60s por escola no enriquecimento) e consome "
+            "APIs pagas — SO chame depois de mostrar o plano ao usuario e receber "
+            "confirmacao explicita ('sim', 'pode rodar'). Informe ineps OU "
+            "company_ids das escolas (ja importadas no CRM). Ao final, reporte o "
+            "resultado por etapa e sugira revisar a fila de aprovacao."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ineps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "INEPs das escolas (resolvidos para o CRM). Alternativa a company_ids.",
+                },
+                "company_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "IDs das escolas no CRM. Alternativa a ineps.",
+                },
+                "etapas": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["qualify", "enrich", "contacts", "write"],
+                    },
+                    "description": "Etapas a rodar (default: todas as 4, na ordem).",
+                },
+                "write_mode": {
+                    "type": "string",
+                    "enum": ["ai", "template", "template_auto"],
+                    "description": "Como gerar os emails (default: ai).",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Reprocessa mesmo escolas ja processadas (default false).",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -3402,10 +3470,23 @@ def _handle_iniciar_prospeccao(params: Dict) -> str:
         schools = q.execute().data or []
 
         if not schools:
+            # NAO e um beco sem saida: ensina o modelo a seguir o playbook de
+            # prospeccao do zero (buscar MEC -> propor -> confirmar -> executar).
             return json.dumps({
                 "total": 0,
-                "mensagem": "Nenhuma escola enriquecida encontrada com esses filtros. Rode o pipeline primeiro para qualificar e enriquecer escolas.",
-            })
+                "motivo": "Nenhuma escola ENRIQUECIDA no CRM com esses filtros (cidade/tipo podem nem estar importados ainda).",
+                "proximo_passo": (
+                    "NAO pare aqui nem diga apenas 'nao encontrei'. Siga o playbook "
+                    "PROSPECCAO DO ZERO: (1) busque candidatas na base MEC — "
+                    "priorizar_leads_enem(municipio, uf, dependencia) para fit ENEM "
+                    "e/ou buscar_escola_brasil(cidade, tipo, ordenar_por=total_matriculas, "
+                    "ordem=desc) — (2) proponha ao usuario as top N com os criterios "
+                    "usados + o plano (importar -> qualificar -> enriquecer/contatos -> "
+                    "gerar emails para a fila) + UMA pergunta de confirmacao, "
+                    "(3) apos o 'sim': importar_escolas_lote(ineps) e depois "
+                    "preparar_escolas(ineps=...)."
+                ),
+            }, ensure_ascii=False)
 
         # Filtrar as que ja tem email pendente/aprovado/enviado
         result_schools = []
@@ -4081,8 +4162,13 @@ def _handle_operacao_lote(params: Dict) -> str:
         if not params.get("cidade") and not params.get("uf"):
             return json.dumps({"erro": "Informe pelo menos cidade ou estado para importar em lote."})
 
-        # Buscar escolas na base MEC
-        mec_params = {"limite": limite}
+        # Buscar escolas na base MEC — ordenada por matriculas por default,
+        # pra importar as TOP-N (nao ordem arbitraria do banco).
+        mec_params = {
+            "limite": limite,
+            "ordenar_por": params.get("ordenar_por") or "total_matriculas",
+            "ordem": params.get("ordem") or "desc",
+        }
         if params.get("cidade"):
             mec_params["cidade"] = params["cidade"]
         if params.get("uf"):
@@ -4090,8 +4176,11 @@ def _handle_operacao_lote(params: Dict) -> str:
         if params.get("tipo"):
             mec_params["tipo"] = params["tipo"]
         if params.get("porte"):
-            mec_params["niveis_ensino"] = "Fundamental"  # default ICP
             mec_params["porte"] = params["porte"]
+        if params.get("niveis_ensino"):
+            # So filtra nivel se PEDIDO explicitamente (antes 'porte' forcava
+            # niveis_ensino='Fundamental' silenciosamente — filtro escondido).
+            mec_params["niveis_ensino"] = params["niveis_ensino"]
 
         mec_result = json.loads(_handle_buscar_escola_brasil(mec_params))
         escolas = mec_result.get("escolas", [])
@@ -4143,6 +4232,132 @@ def _handle_operacao_lote(params: Dict) -> str:
 
     else:
         return json.dumps({"erro": f"Acao '{acao}' nao reconhecida. Use: importar, qualificar, gerar_emails"})
+
+
+def _handle_importar_escolas_lote(params: Dict) -> str:
+    """Importa uma LISTA explicita de INEPs (selecao feita na conversa)."""
+    ineps = params.get("ineps")
+    if not isinstance(ineps, list) or not ineps:
+        return json.dumps({"erro": "Informe a lista 'ineps' com os codigos INEP escolhidos."})
+    ineps = [str(i).strip() for i in ineps if str(i).strip()][:20]
+    if not ineps:
+        return json.dumps({"erro": "Nenhum INEP valido na lista."})
+
+    importadas, ja_existiam, erros = [], [], []
+    inep_para_id: Dict[str, str] = {}
+    for inep in ineps:
+        try:
+            r = json.loads(_handle_importar_escola({"inep": inep}))
+        except Exception as e:
+            erros.append({"inep": inep, "erro": str(e)[:120]})
+            continue
+        cid = r.get("company_id") or (r.get("escola") or {}).get("id")
+        if cid:
+            inep_para_id[inep] = cid
+        if r.get("sucesso"):
+            importadas.append(inep)
+        elif r.get("ja_existia"):
+            ja_existiam.append(inep)
+        else:
+            erros.append({"inep": inep, "erro": (r.get("erro") or "?")[:120]})
+
+    # Resolver company_ids que faltaram (ja_existia pode nao devolver id)
+    faltando = [i for i in ineps if i not in inep_para_id]
+    if faltando:
+        try:
+            rows = db.client.table("companies").select("id,inep_code").in_(
+                "inep_code", faltando
+            ).execute().data or []
+            for row in rows:
+                inep_para_id[str(row["inep_code"]).strip()] = row["id"]
+        except Exception:
+            pass
+
+    return json.dumps({
+        "sucesso": True,
+        "importadas": len(importadas),
+        "ja_existiam": len(ja_existiam),
+        "erros": erros,
+        "company_ids": list(inep_para_id.values()),
+        "inep_para_id": inep_para_id,
+        "proximo_passo": (
+            "Escolas no CRM. Agora rode preparar_escolas(company_ids=...) para "
+            "qualificar -> enriquecer -> contatos -> gerar emails (fila de aprovacao)."
+        ),
+    }, ensure_ascii=False, default=str)
+
+
+def _handle_preparar_escolas(params: Dict) -> str:
+    """Pipeline completo nas escolas indicadas — motor do botao 'Preparar escolas'.
+
+    Reusa workflows.daily_pipeline.run_pipeline com company_ids (qualify ->
+    enrich -> contacts -> write). NUNCA envia: send_approved=False (regra zero);
+    os emails gerados caem na fila de aprovacao.
+    """
+    try:
+        ids = params.get("company_ids") or []
+        ineps = params.get("ineps") or []
+        if not isinstance(ids, list):
+            ids = []
+        if ineps and not ids:
+            ineps_clean = [str(i).strip() for i in ineps if str(i).strip()]
+            if ineps_clean:
+                rows = db.client.table("companies").select("id,inep_code,name").in_(
+                    "inep_code", ineps_clean
+                ).execute().data or []
+                ids = [r["id"] for r in rows]
+                nao_no_crm = sorted(set(ineps_clean) - {str(r["inep_code"]).strip() for r in rows})
+                if nao_no_crm:
+                    return json.dumps({
+                        "erro": (
+                            f"{len(nao_no_crm)} INEP(s) ainda NAO estao no CRM: "
+                            f"{', '.join(nao_no_crm[:10])}. Importe primeiro com "
+                            "importar_escolas_lote(ineps=[...])."
+                        ),
+                    }, ensure_ascii=False)
+
+        if not ids:
+            return json.dumps({
+                "erro": "Informe company_ids ou ineps de escolas JA importadas no CRM.",
+            })
+        ids = [str(i) for i in ids][:20]
+
+        _ETAPAS_VALIDAS = ["qualify", "enrich", "contacts", "write"]
+        etapas = params.get("etapas") or _ETAPAS_VALIDAS
+        etapas = [e for e in etapas if e in _ETAPAS_VALIDAS]
+        if not etapas:
+            return json.dumps({"erro": f"Etapas invalidas. Validas: {', '.join(_ETAPAS_VALIDAS)}."})
+
+        write_mode = params.get("write_mode") or "ai"
+        force = bool(params.get("force"))
+        n = len(ids)
+
+        from workflows.daily_pipeline import run_pipeline
+        result = run_pipeline(
+            steps=etapas,
+            company_ids=ids,
+            qualify_limit=n,
+            enrich_limit=n,
+            write_limit=n,
+            write_mode=write_mode,
+            force=force,
+            send_approved=False,   # REGRA ZERO: nada e enviado sem aprovacao
+            dry_run=bool(params.get("dry_run")),  # interno (testes)
+        )
+
+        return json.dumps({
+            "sucesso": True,
+            "escolas_processadas": n,
+            "etapas_executadas": etapas,
+            "resultado_por_etapa": result.get("steps", {}),
+            "mensagem": (
+                "Pipeline concluido. Emails gerados (se houver) estao na FILA DE "
+                "APROVACAO — nada foi enviado. Sugira revisar com fila_aprovacao."
+            ),
+        }, ensure_ascii=False, default=str)
+    except Exception as e:
+        logger.error("Erro em preparar_escolas", extra={"error": str(e)}, exc_info=True)
+        return json.dumps({"erro": f"Erro no pipeline: {str(e)[:300]}"})
 
 
 def _handle_melhor_horario(params: Dict) -> str:
@@ -8300,6 +8515,9 @@ TOOL_HANDLERS = {
     "arquivar_template": _handle_arquivar_template,
     "ver_config_vendas": _handle_ver_config_vendas,
     "atualizar_config_vendas": _handle_atualizar_config_vendas,
+    # Operador v1 (R2) — modo executor: prospeccao do zero
+    "importar_escolas_lote": _handle_importar_escolas_lote,
+    "preparar_escolas": _handle_preparar_escolas,
 }
 
 # =====================================================================
@@ -8325,6 +8543,8 @@ SYSTEM_PROMPT = """REGRA ZERO (leia antes de tudo): NUNCA aprove ou envie um ema
 REGRA DE ESCRITA (idioma): responda SEMPRE em portugues do Brasil COM acentuacao e pontuacao corretas — á, é, í, ó, ú, â, ê, ô, ã, õ, à, ç. NUNCA escreva sem acento. Ex.: use "não" (nao), "você" (voce), "relatório" (relatorio), "está" (esta), "ações" (acoes), "média" (media), "análise" (analise). Vale para TODA mensagem enviada ao usuario (WhatsApp e chat).
 
 REGRA DO PROXIMO PASSO (modo operador): voce e o OPERADOR da plataforma — o usuario nao precisa navegar por paginas: voce executa pelas tools. Ao concluir uma resposta ou acao, termine com UMA sugestao curta e acionavel do proximo passo mais util (ex.: "👉 Quer que eu ja gere o email para as 3 primeiras?"). Uma sugestao so, em 1 linha, sempre como PERGUNTA — nunca execute a sugestao sem o usuario pedir. Escritas/envios continuam sob a REGRA ZERO. Nao repita a mesma sugestao se o usuario acabou de recusar.
+
+REGRA DO EXECUTOR (pedidos-objetivo): quando o usuario pedir um RESULTADO ("prospecte 10 escolas privadas de Curitiba", "prepara essas escolas", "quero emails pra rede X"), monte VOCE o plano multi-tool completo e execute-o de ponta a ponta apos UMA confirmacao. Nunca devolva um passo-a-passo pro usuario fazer, nem pare no primeiro obstaculo: se uma tool retornar 0 resultados ou erro, verifique a fonte alternativa (CRM vazio? -> base MEC; escola sem contato? -> enriquecer) e PROPONHA o caminho executavel. Antes de executar, pergunte APENAS o que muda o resultado (quantidade, tipo, canal, criterio) e SEMPRE com um default sugerido — uma pergunta so, nunca um interrogatorio. Confirmado, execute TODAS as etapas em sequencia sem pedir permissao a cada passo (a excecao e a REGRA ZERO: aprovacao de envio continua individual).
 
 == TRANSPARENCIA E AGREGACAO INTELIGENTE (REGRAS CRITICAS) ==
 
@@ -8701,7 +8921,9 @@ contextual sem ter que formula-los do zero.
   Se Fernando pedir "com email" / "que tenha email" → use com_email=true
   Telefone FIXO (8 digitos) NAO e WhatsApp. WhatsApp = celular (9 digitos) salvo em contacts.phone_whatsapp
 - Importar para o CRM → *importar_escola*
-- Importar varias de uma vez → *operacao_lote* (acao: importar)
+- Importar varias de uma vez (busca automatica top-N) → *operacao_lote* (acao: importar)
+- Importar uma LISTA ESCOLHIDA de INEPs (apos propor candidatas) → *importar_escolas_lote*
+- Rodar o pipeline completo numas escolas especificas (qualificar→enriquecer→contatos→emails) → *preparar_escolas*
 
 *Ranking / analise ENEM:*
 - "Melhor/pior escola por NOTA" / "top N por media" → *analisar_dados_analytics*
@@ -9113,7 +9335,9 @@ Antes de gerar qualquer email, VERIFIQUE se tem memorias globais com preferencia
 Quando Fernando disser "vamos prospectar", "gera emails para as escolas", "quero enviar emails",
 "começa a prospeccao", "me sugere escolas" ou qualquer variacao:
 
-1. CHAME iniciar_prospeccao — retorna escolas enriquecidas prontas + contatos + templates
+1. CHAME iniciar_prospeccao — retorna escolas enriquecidas prontas + contatos + templates.
+   SE RETORNAR 0 (ou menos que o pedido) → NAO pare: siga o playbook
+   PROSPECCAO DO ZERO (abaixo). Nunca responda so "nao encontrei, rode o pipeline".
 2. APRESENTE A PRIMEIRA ESCOLA com formato rico:
 
 🏫 *1/5 — COLEGIO MARISTA CHAMPAGNAT*
@@ -9154,6 +9378,41 @@ Quando Fernando disser "vamos prospectar", "gera emails para as escolas", "quero
 - Se Fernando disser algo fora do fluxo (ex: "qual meu score?"), responda e RETOME a sessao
 - Numere as escolas (1/5, 2/5, etc) para Fernando saber o progresso
 - Se Fernando disser "gera pra todas" → gere email para cada escola com o contato de maior prioridade, sem pedir confirmacao individual (batch mode)
+
+== PLAYBOOK: PROSPECCAO DO ZERO (cidade/tipo sem escolas prontas no CRM) ==
+Cenario: o usuario pede "prospecte N escolas TIPO em CIDADE" e o CRM nao tem
+escolas prontas (iniciar_prospeccao = 0 ou insuficiente). VOCE monta e executa
+o fluxo completo — o usuario so confirma UMA vez.
+
+PASSO 1 — BUSCAR CANDIDATAS (mesmo turno, sem perguntar ainda):
+  a) Prefira *priorizar_leads_enem*(municipio=CIDADE, uf=UF, dependencia=TIPO,
+     limite=N+5) — ranking por FIT ENEM (P1/P2/P3; ja diz esta_em_companies).
+  b) Complemente ou caia para *buscar_escola_brasil*(cidade, uf, tipo,
+     ordenar_por="total_matriculas", ordem="desc", limite=N+10) — as maiores
+     escolas do recorte. Criterios de fit default do ICP: matriculas em
+     Fundamental AF/Medio altas, porte 200+, potencial ENEM quando houver.
+
+PASSO 2 — PROPOR (uma UNICA mensagem):
+  - Liste as top N candidatas (nome, matriculas, porte, prioridade ENEM se tiver)
+  - Explique os CRITERIOS usados em 1 linha ("ordenei por matriculas no Fund
+    AF/Medio + potencial ENEM")
+  - Descreva o plano em 1 linha: "importo as N -> qualifico -> enriqueco dados e
+    contatos -> gero os emails (ficam na fila pra sua aprovacao)"
+  - Avise: leva alguns minutos e consome creditos de enriquecimento
+  - Se algo relevante estiver indefinido, pergunte JUNTO com default sugerido
+    (ex.: "email ou whatsapp? sugiro email"). NAO faca interrogatorio.
+  - Feche com UMA pergunta: "Confirma que eu rode tudo?"
+
+PASSO 3 — EXECUTAR (apos "sim"/"confirma", TUDO em sequencia sem novas pausas):
+  1. *importar_escolas_lote*(ineps=[os N escolhidos])
+  2. *preparar_escolas*(company_ids=retornados)  ← qualifica, enriquece, busca
+     contatos e gera os emails na fila (NADA e enviado)
+  3. Reporte por etapa (importadas/qualificadas/enriquecidas/emails gerados)
+  4. Sugira: "👉 Quer revisar a fila de aprovacao agora?"
+
+NUNCA: parar em "nao encontrei"; mandar o usuario "rodar o pipeline"; pedir
+confirmacao a cada etapa depois do OK unico. A aprovacao INDIVIDUAL continua
+valendo so para ENVIO de mensagens (REGRA ZERO).
 
 == AGENDAMENTO DE ENVIO (NOVO) ==
 Fernando pode AGENDAR o horario de envio de emails e follow-ups. Se ele nao disser nada sobre horario, envia imediatamente (comportamento padrao). Se ele especificar data/hora, o email fica na fila ate o momento certo.
