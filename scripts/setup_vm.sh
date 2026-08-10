@@ -23,6 +23,10 @@ DIR="$HOME/IAprendo_Sales_Agent"
 echo 'DPkg::Lock::Timeout "600";' | sudo tee /etc/apt/apt.conf.d/99lock-timeout >/dev/null 2>&1 || true
 
 echo "== [1/7] Sistema + deps base + patches automaticos + libs de grafico =="
+# Fuso horario do NEGOCIO (Porto Alegre). A imagem Oracle vem em UTC e o
+# scheduler do IAlex usa horario LOCAL — em UTC os briefings/digests
+# disparariam 3h mais cedo (bom dia as 05:00).
+sudo timedatectl set-timezone America/Sao_Paulo || true
 sudo apt-get update -y
 sudo apt-get install -y git python3-venv python3-pip ca-certificates curl gnupg \
   unattended-upgrades apt-transport-https debian-keyring debian-archive-keyring

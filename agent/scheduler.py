@@ -48,7 +48,11 @@ class IALexScheduler:
         # Briefing matinal UNICO as 08:00 (inclui urgency digest integrado)
         # Nao separar em 08:00 + 08:15 para evitar mensagens duplicadas
         schedule.every().day.at("08:00").do(self._morning_briefing)
-        schedule.every().day.at("12:00").do(self._midday_check)
+        # 13:00 a pedido do dono (Ago/2026): lembrete do dia apos o almoco.
+        # ATENCAO: a lib `schedule` usa o horario LOCAL da maquina — a VM
+        # precisa estar em America/Sao_Paulo (setup_vm.sh faz isso; em UTC
+        # tudo dispararia 3h mais cedo no fuso de Porto Alegre).
+        schedule.every().day.at("13:00").do(self._midday_check)
         schedule.every().day.at("17:00").do(self._end_of_day)
         schedule.every().friday.at("17:30").do(self._weekly_report)
         schedule.every(15).minutes.do(self._check_replies)

@@ -175,6 +175,10 @@ Depois disso, o scheduler mantém tudo fresco sozinho (04:00 novas, dom 04:30 fu
 | Status geral | `sudo systemctl status ialex && sudo docker compose ps` |
 
 ## Gotchas
+- **Fuso horário da VM**: a imagem Oracle vem em **UTC** e o scheduler usa horário
+  LOCAL — em UTC o briefing das 08:00 chega às **05:00** de Porto Alegre. O
+  `setup_vm.sh` já seta `America/Sao_Paulo`; em VM antiga rode
+  `sudo timedatectl set-timezone America/Sao_Paulo && sudo systemctl restart dashboard ialex`.
 - **1 sessão WhatsApp por vez**: nunca rode o IAlex no PC e na VM juntos (um derruba o
   outro). Na Fase 8, além de parar o Evolution do PC, tire o auto-restart dele:
   `docker update --restart=no evolution_api evolution_postgres evolution_redis` (senão
