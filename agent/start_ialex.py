@@ -179,7 +179,7 @@ def main():
         print("\n[4/6] Iniciando scheduler de mensagens proativas...")
         from agent.scheduler import ialex_scheduler
         ialex_scheduler.start()
-        print("   Scheduler ativo (briefing 8h, check 12h, resumo 17h)")
+        print("   Scheduler ativo (briefing 8h, check 13h, resumo 17h)")
 
     # 5. Enviar mensagem de teste
     owner = os.getenv("IALEX_OWNER_NUMBER", "")
