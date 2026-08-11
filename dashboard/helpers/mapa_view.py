@@ -178,8 +178,8 @@ def render_mapa_escolas(df_f: pd.DataFrame) -> None:
             )
         with gc2:
             gc_use_ppx = st.checkbox(
-                "Usar Perplexity como fallback", value=True, key="escolas_geo_ppx",
-                help="Nominatim (gratis) + Perplexity quando nao achar. 1 req/seg.",
+                "Usar busca web (IA) como fallback", value=True, key="escolas_geo_ppx",
+                help="Nominatim (gratis) + busca web por IA quando nao achar. 1 req/seg.",
             )
         if st.button("Geocodificar agora", type="primary",
                      key="escolas_geo_btn", disabled=(sem_coords == 0)):
@@ -200,7 +200,7 @@ def render_mapa_escolas(df_f: pd.DataFrame) -> None:
                     )
                 msg = f"Concluido: {result['found']} geocodificadas"
                 if result.get("fallback_used"):
-                    msg += f" ({result['fallback_used']} via Perplexity)"
+                    msg += f" ({result['fallback_used']} via busca web)"
                 alert_banner(msg, "success")
                 _fails = result.get("failed_details", [])
                 if _fails:

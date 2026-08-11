@@ -192,11 +192,12 @@ Depois disso, o scheduler mantém tudo fresco sozinho (04:00 novas, dom 04:30 fu
   Node + `npm install` em `whatsapp-bridge/` + serviço próprio + re-escanear (é uma 2ª
   sessão) — só vale a pena se esses recursos forem usados.
 - **Capacidade ARM da Oracle**: o A1 free às vezes dá "out of capacity" — insista/retente.
-- **ARM (kaleido/playwright)**: se os gráficos de email ou a busca Perplexity derem
-  erro na VM, são deps opcionais ARM — instale depois (`pip install kaleido` /
-  `playwright install chromium`). O núcleo do IAlex funciona sem. Para a
-  pré-geração de gráficos/OPR que mantém o Cloud fresco, **veja a Fase 9** (kaleido
-  é recomendado lá).
+- **ARM (kaleido)**: se os gráficos de email derem erro na VM, é dep opcional ARM —
+  instale depois (`pip install kaleido`). O núcleo do IAlex funciona sem. Para a
+  pré-geração de gráficos/OPR, **veja a Fase 9** (kaleido é recomendado lá).
+- **Busca web**: usa `tools/web_search.py` (OpenAI Responses API). É API pura —
+  não precisa de navegador/Playwright na VM. O antigo Perplexity-browser foi
+  aposentado em Ago/2026 (exigia Chrome visível; impossível aqui).
 - **Segurança**: mantenha só a 22 aberta; o QR via túnel SSH; a chave da Evolution
   (`AUTHENTICATION_API_KEY`) protege a 8080 mesmo internamente.
 - **Sessão WhatsApp = volume `evolution_instances`**: não apague esse volume Docker

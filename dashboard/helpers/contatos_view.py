@@ -24,7 +24,8 @@ HIERARCHY = [
 HIERARCHY_BY_KEY = {h["key"]: h for h in HIERARCHY}
 
 SRC_LABELS = {
-    "perplexity": "Perplexity",
+    "web_search": "Busca web (IA)",
+    "perplexity": "Perplexity (legado)",  # contatos historicos
     "hunter": "Hunter",
     "apollo": "Apollo",
     "web_scraping": "Scraping",
@@ -215,7 +216,8 @@ def render_contatos() -> None:
         # Grafico de fonte dos contatos
         if stats["por_fonte"]:
             SRC_LABELS_FULL = {
-                "perplexity": "Perplexity",
+                "web_search": "Busca web (IA)",
+                "perplexity": "Perplexity (legado)",
                 "hunter": "Hunter.io",
                 "apollo": "Apollo.io",
                 "web_scraping": "Scraping",

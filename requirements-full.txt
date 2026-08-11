@@ -41,7 +41,10 @@ beautifulsoup4>=4.12.0              # HTML parsing
 lxml>=5.1.0                         # XML/HTML parser (faster)
 selenium>=4.18.0                    # Browser automation (fallback)
 webdriver-manager>=4.0.1            # ChromeDriver management
-playwright>=1.40.0                  # Perplexity browser (busca contatos). Apos instalar: venv\Scripts\python.exe -m playwright install chromium
+# playwright — NAO e mais necessario (Ago/2026). Era usado pelo Perplexity-browser,
+# aposentado em favor de tools/web_search.py (OpenAI web_search, API pura).
+# Mantido comentado caso volte a existir automacao de navegador.
+# playwright>=1.40.0
 
 # Geocoding & Maps
 googlemaps>=4.10.0                  # Google Maps API

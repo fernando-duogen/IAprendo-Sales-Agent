@@ -219,9 +219,11 @@ class Settings:
     HUNTER_API_KEY: str = os.getenv("HUNTER_API_KEY", "")
     HUNTER_MONTHLY_LIMIT: int = int(os.getenv("HUNTER_MONTHLY_LIMIT", "25"))
 
-    # Perplexity (via navegador - gratis com assinatura Pro)
-    ENABLE_PERPLEXITY: bool = os.getenv("ENABLE_PERPLEXITY", "true").lower() == "true"
-    PERPLEXITY_MONTHLY_LIMIT: int = int(os.getenv("PERPLEXITY_MONTHLY_LIMIT", "200"))
+    # Busca web por IA (OpenAI Responses + web_search) — tools/web_search.py.
+    # Substituiu o Perplexity-browser em Ago/2026 (assinatura Pro cancelada).
+    # Usa a OPENAI_API_KEY ja existente; ~US$0.004 por escola.
+    WEBSEARCH_MODEL: str = os.getenv("WEBSEARCH_MODEL", "gpt-4.1-mini")
+    WEBSEARCH_MONTHLY_LIMIT: int = int(os.getenv("WEBSEARCH_MONTHLY_LIMIT", "2000"))
 
     # ========================================================================
     # WHATSAPP (1 variável)
@@ -351,7 +353,6 @@ class Settings:
             'apollo': cls.APOLLO_MONTHLY_LIMIT,
             'snov': cls.SNOV_MONTHLY_LIMIT,
             'hunter': cls.HUNTER_MONTHLY_LIMIT,
-            'perplexity': cls.PERPLEXITY_MONTHLY_LIMIT,
         }
 
     @classmethod

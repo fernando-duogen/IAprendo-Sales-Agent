@@ -25,7 +25,7 @@ from utils.role_classifier import classify_role, classify_email_prefix
 from tools.apollo_client import apollo_client
 from tools.hunter_client import hunter_client
 from tools.snov_client import snov_client
-from tools.perplexity_browser import perplexity_browser
+from tools import web_search
 
 TARGET_ROLES = [
     "Diretor", "Diretora", "Diretor(a)",
@@ -162,20 +162,20 @@ class ContactFinderAgent(BaseAgent):
                     except Exception:
                         pass
 
-        # Estrategia 5: Perplexity via navegador (gratis - usa assinatura Pro)
+        # Estrategia 5: busca web via IA (OpenAI web_search).
+        # Substituiu (Ago/2026) o Perplexity-browser, que exigia Chrome visivel
+        # + assinatura Pro e nao rodava na VM. Ganho tipico aqui e o contato
+        # INSTITUCIONAL (secretaria@/telefone) — nomes de diretores raramente
+        # estao publicados; p/ isso valem Apollo/Hunter/Snov e a raspagem acima.
         all_known = (existing or []) + contacts_found
         if not self._has_director_with_real_email(all_known):
-            if perplexity_browser.is_available():
+            if web_search.is_available():
                 city = company.get("city", "")
                 state = company.get("state", "")
-                api_contacts = perplexity_browser.search_school_contacts(school_name, city, state)
+                api_contacts = web_search.search_school_contacts(school_name, city, state)
                 if api_contacts:
                     saved = self._save_api_contacts(api_contacts, company_id)
                     contacts_found.extend(saved)
-                    try:
-                        db.insert_api_usage({"api_name": "perplexity", "endpoint": "browser-search", "credits_used": 1})
-                    except Exception:
-                        pass
 
         # Estrategia 6: Email patterns por dominio (gratis, nao verificado)
         # So gera se nao encontrou NENHUM email real

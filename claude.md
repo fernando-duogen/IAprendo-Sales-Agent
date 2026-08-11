@@ -179,7 +179,8 @@ else:
 
 ### Core
 - ✅ Qualificação automática com IA (GPT-4.1-mini para score e escrita)
-- ✅ Enriquecimento multi-fonte com fallbacks (Apollo→Snov→Hunter→Perplexity→Scraping)
+- ✅ Enriquecimento multi-fonte com fallbacks (Scraping→Apollo→Hunter→Snov→Busca web IA)
+- ✅ **Busca web por IA** (`tools/web_search.py`) — OpenAI Responses API + ferramenta `web_search` (modelo `gpt-4.1-mini`). Usada em sinais de compra, contatos e fallback de geocodificação. Substituiu o Perplexity-browser em Ago/2026 (assinatura cancelada; exigia Chrome visível e não rodava na VM). ~US$0,004/escola, ~4s, roda em qualquer ambiente. `tools/perplexity_browser.py` virou shim que redireciona pra cá.
 - ✅ Geração de mensagens hiperpersonalizadas (nunca templates genéricos)
 - ✅ Dashboard Streamlit (11 páginas) para aprovação humana
 - ✅ **Chat IAlex no navegador** (`dashboard/pages/0_💬_Chat_IAlex.py`) — 1ª página do menu; conversa com a IA no dashboard, reusa 100% do Brain (mesmas tools do WhatsApp), histórico por usuário, botões de download XLSX inline

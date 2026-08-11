@@ -85,16 +85,19 @@ class Geocoder:
                     "method": "nominatim_direct",
                 }
 
-        # Tentativa 2: Fallback Perplexity -> pedir endereco mais completo
+        # Tentativa 2: fallback busca web (IA) -> pedir endereco mais completo.
+        # Ago/2026: era Perplexity-browser (aposentado); agora e API pura, entao
+        # tambem funciona na VM. As chaves de retorno mantem o nome historico
+        # (perplexity_address / perplexity_fallback) p/ nao quebrar quem le.
         if use_perplexity_fallback and school_name:
             try:
-                from tools.perplexity_browser import perplexity_browser
-                if not perplexity_browser.is_available():
-                    return {"found": False, "error": "sem endereco e perplexity indisponivel"}
-                logger.info(f"Geocoder: fallback Perplexity para {school_name}")
-                ppx_address = perplexity_browser.search_school_address(school_name, city, state)
+                from tools import web_search
+                if not web_search.is_available():
+                    return {"found": False, "error": "sem endereco e busca web indisponivel"}
+                logger.info(f"Geocoder: fallback busca web para {school_name}")
+                ppx_address = web_search.search_school_address(school_name, city, state)
                 if not ppx_address:
-                    return {"found": False, "error": "perplexity nao encontrou endereco"}
+                    return {"found": False, "error": "busca web nao encontrou endereco"}
                 # Retry Nominatim com o novo endereco
                 coords2 = self.geocode(ppx_address, city, state)
                 time.sleep(1)
@@ -103,17 +106,17 @@ class Geocoder:
                         "found": True,
                         "latitude": coords2[0],
                         "longitude": coords2[1],
-                        "method": "perplexity_fallback",
+                        "method": "web_search_fallback",
                         "perplexity_address": ppx_address,
                     }
                 return {
                     "found": False,
-                    "error": "nominatim falhou mesmo com endereco do perplexity",
+                    "error": "nominatim falhou mesmo com endereco da busca web",
                     "perplexity_address": ppx_address,
                 }
             except Exception as e:
-                logger.error(f"Erro no fallback Perplexity: {e}")
-                return {"found": False, "error": f"perplexity falhou: {str(e)[:100]}"}
+                logger.error(f"Erro no fallback de busca web: {e}")
+                return {"found": False, "error": f"busca web falhou: {str(e)[:100]}"}
 
         # Sem endereco e sem fallback
         if not address:

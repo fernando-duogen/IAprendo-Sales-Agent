@@ -1577,67 +1577,39 @@ if st.session_state.escola_detail_id:
                         except Exception as e:
                             st.error(f"Erro: {e}")
 
-        # Botao Perplexity
+        # Busca de contatos na web (IA). Ago/2026: era Perplexity via Chrome +
+        # subprocess (so Windows, 30-60s); agora e API (roda em qualquer lugar,
+        # ~4s, ~R$0,02). Sem gate de ambiente — funciona tambem na VM.
         st.divider()
-        from dashboard._runtime import is_streamlit_cloud as _is_cloud_pp1
-        if _is_cloud_pp1():
-            st.caption(":material/cloud_off: Busca no Perplexity desabilitada no Streamlit Cloud (precisa de Chrome local). Use a versao local do dashboard ou o IAlex via WhatsApp.")
-        elif st.button("Buscar contatos no Perplexity", icon=":material/search:", help="Abre o Perplexity no navegador e busca a equipe de gestao desta escola"):
-            import subprocess, json as json_mod, importlib.util as _ilu_pp
-            if _ilu_pp.find_spec("playwright") is None:
-                st.error(
-                    "Playwright nao instalado neste ambiente. No servidor local rode:\n"
-                    "`venv\\Scripts\\python.exe -m pip install playwright`\n"
-                    "`venv\\Scripts\\python.exe -m playwright install chromium`"
-                )
+        if st.button(
+            "Buscar contatos na web (IA)",
+            icon=":material/search:",
+            help=(
+                "Pesquisa na web a equipe de gestao e os contatos institucionais "
+                "desta escola. Costuma achar email/telefone da secretaria; nomes "
+                "de diretores raramente estao publicados."
+            ),
+        ):
+            from tools import web_search as _ws
+            if not _ws.is_available():
+                st.error("Busca web indisponivel (OPENAI_API_KEY ausente).")
                 st.stop()
-            school_name = company.get("name", "")
-            city = company.get("city", "")
-            state = company.get("state", "")
-            python_exe = str(ROOT / "venv" / "Scripts" / "python.exe")
-            script = (
-                "import json, sys, os, logging; "
-                "sys.stdout.reconfigure(encoding='utf-8'); "
-                "sys.path.insert(0, '.'); "
-                "logging.disable(logging.CRITICAL); "
-                "os.environ['IAPRENDO_QUIET']='1'; "
-                "from tools.perplexity_browser import perplexity_browser; "
-                f"r = perplexity_browser.search_school_contacts({school_name!r}, {city!r}, {state!r}); "
-                "perplexity_browser._close(); "
-                "print('PERPLEXITY_JSON_START'); "
-                "print(json.dumps(r, ensure_ascii=True)); "
-                "print('PERPLEXITY_JSON_END')"
-            )
-            with st.spinner("Buscando no Perplexity (pode levar 30-60 segundos)..."):
+            with st.spinner("Buscando na web (alguns segundos)..."):
                 try:
-                    import os as _os
-                    env = _os.environ.copy()
-                    env["PYTHONIOENCODING"] = "utf-8"
-                    proc = subprocess.run(
-                        [python_exe, "-c", script],
-                        capture_output=True, text=True, timeout=120,
-                        cwd=str(ROOT), encoding="utf-8", errors="replace",
-                        env=env,
+                    found = _ws.search_school_contacts(
+                        company.get("name", ""),
+                        company.get("city", ""),
+                        company.get("state", ""),
                     )
-                    if proc.returncode == 0 and "PERPLEXITY_JSON_START" in proc.stdout:
-                        json_text = proc.stdout.split("PERPLEXITY_JSON_START")[1].split("PERPLEXITY_JSON_END")[0].strip()
-                        found = json_mod.loads(json_text)
-                    else:
-                        found = []
-                        if proc.stderr:
-                            st.caption(f"Log: {proc.stderr[-300:]}")
-                except subprocess.TimeoutExpired:
-                    found = []
-                    st.warning("Timeout: a busca excedeu 2 minutos.")
                 except Exception as e:
                     found = []
-                    st.error(f"Erro ao executar: {e}")
+                    st.error(f"Erro na busca: {e}")
             if found:
                 st.session_state["perplexity_results"] = found
                 st.session_state["perplexity_company_id"] = company_id
                 st.rerun()
             else:
-                st.warning("Nenhum contato encontrado. Tente pesquisar manualmente.")
+                st.warning("Nenhum contato encontrado na web. Tente Apollo/Hunter ou pesquise manualmente.")
 
         # --- Exibir resultados do Perplexity para confirmacao ---
         if st.session_state.get("perplexity_company_id") == company_id and st.session_state.get("perplexity_results"):

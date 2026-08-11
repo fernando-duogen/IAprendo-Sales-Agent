@@ -192,50 +192,24 @@ class DiscoveryEngine:
             logger.error(f"DuckDuckGo search error: {e}")
             return ""
 
-    def _ask_perplexity(self, prompt: str, timeout: int = 60) -> str:
-        """Chama Perplexity Browser e retorna resposta em texto livre.
-        Fallback — so usado se DuckDuckGo + GPT nao funcionarem."""
-        try:
-            from tools.perplexity_browser import perplexity_browser
-            if not perplexity_browser.is_available():
-                logger.warning("Perplexity Browser nao disponivel")
-                return ""
-            return perplexity_browser._query_perplexity_text(prompt, timeout_seconds=timeout)
-        except Exception as e:
-            logger.error(f"Perplexity error: {e}")
-            return ""
-
     def _search_via_openai_websearch(
         self, name: str, city: str, state: str, timeout: int = 60
     ) -> str:
-        """Busca web SERVER-SIDE via OpenAI (modelo *-search-preview).
+        """Busca web SERVER-SIDE via OpenAI (Responses API + ferramenta web_search).
 
-        Funciona no Streamlit Cloud, que NAO tem navegador headless (onde o
-        Perplexity-browser nao roda). Retorna texto livre com o que encontrou
-        (mesmo contrato do _ask_perplexity). Degrada pra "" em qualquer erro."""
-        import os
-        from dotenv import load_dotenv
-        load_dotenv()
-        api_key = os.getenv("OPENAI_API_KEY", "")
-        if not api_key:
-            logger.warning("OPENAI_API_KEY ausente — busca web IA pulada")
-            return ""
+        Substituiu (Ago/2026) tanto o Perplexity-browser quanto o modelo antigo
+        `*-search-preview` (deprecado pela OpenAI). E API pura -> funciona na VM
+        Oracle e no Cloud. Retorna texto livre; degrada pra "" em qualquer erro.
+        """
         try:
-            from openai import OpenAI
-            client = OpenAI(api_key=api_key)
-            model = os.getenv("WEBSEARCH_MODEL", "gpt-4o-mini-search-preview")
+            from tools.web_search import search_text
             prompt = (
                 f"Pesquise na web sobre a escola '{name}' em {city}/{state} (Brasil). "
                 f"Liste rankings educacionais, premios recebidos, noticias importantes, "
                 f"expansoes ou reconhecimentos recentes (2023-2026), com ano e fonte "
                 f"(URL) quando houver. Se nao encontrar nada relevante, diga isso."
             )
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                web_search_options={},  # ativa a busca web nativa do modelo
-            )
-            txt = resp.choices[0].message.content or ""
+            txt = search_text(prompt, timeout_seconds=timeout)
             logger.info("Busca web IA (OpenAI) respondeu",
                         extra={"school": name, "len": len(txt)})
             return txt
@@ -616,7 +590,7 @@ class DiscoveryEngine:
 
         logger.info("Enrich signals", extra={"company_id": company_id, "school_name": name})
 
-        # Schema usado nas 2 tentativas de extracao (DuckDuckGo + Perplexity)
+        # Schema usado nas 2 tentativas de extracao (busca web IA + DuckDuckGo)
         schema = (
             'Array JSON. Cada item: {"tipo": "ranking|premio|noticia|expansao|reconhecimento", '
             '"titulo": "string descrevendo o sinal", '
@@ -625,78 +599,51 @@ class DiscoveryEngine:
             'Se o texto nao contem sinais relevantes, retorne [].'
         )
 
-        # === Tentativa 1: DuckDuckGo snippets + GPT ===
-        # 5 queries diversificadas pra maximizar cobertura sem custo (DDG gratis).
-        queries = [
-            f'"{name}" {city} premio ranking educacao',
-            f'"{name}" {city} noticias destaque',
-            # Imprensa local RS — onde maioria dos premios/noticias de escolas saem
-            f'"{name}" {city} site:gauchazh.clicrbs.com.br OR site:g1.globo.com',
-            # ENEM eh forte sinal de qualidade no RS (escola que destaca em ENEM aparece)
-            f'"{name}" {city} ENEM resultado destaque',
-            # Estado (nao so cidade) — captura redes/franquias maiores
-            f'"{name}" {state} reconhecimento educacao',
-        ]
-        all_snippets = []
-        for q in queries:
-            s = self._search_web(q, max_results=8)
-            if s:
-                all_snippets.append(s)
-        ddg_context = "\n\n".join(all_snippets)
-
         signals = []
         fonte_usada = None
-        if ddg_context and len(ddg_context.strip()) >= 20:
-            signals = self._text_to_json_via_llm(ddg_context, schema) or []
-            fonte_usada = "duckduckgo"
-            logger.info("enrich_signals DuckDuckGo extraiu N sinais",
+        ddg_context = ""  # definido aqui: a Tentativa 2 pode nem rodar
+
+        # === Tentativa 1: busca web via IA (OpenAI Responses + web_search) ===
+        # Promovida a PRIMEIRA em Ago/2026: e a fonte mais confiavel (traz o
+        # sinal ja resumido COM url da fonte), roda em qualquer ambiente (API
+        # pura) e custa ~US$0.004/escola. Antes era a 3a, atras de raspagem de
+        # DuckDuckGo (fragil) e do Perplexity-browser (aposentado).
+        ws_context = self._search_via_openai_websearch(name, city, state)
+        if ws_context and len(ws_context.strip()) >= 20:
+            signals = self._text_to_json_via_llm(ws_context, schema) or []
+            fonte_usada = "busca_web_ia"
+            logger.info("enrich_signals busca web IA extraiu N sinais",
                         extra={"company_id": company_id, "count": len(signals)})
 
-        # === Tentativa 2: Perplexity (fallback se DuckDuckGo falhou OU nao
-        # extraiu sinais). Isso garante que leads sem informacao publica
-        # recebam um esforco adicional via busca generativa. ===
+        # === Tentativa 2: DuckDuckGo snippets + GPT (reserva GRATIS) ===
+        # 5 queries diversificadas pra maximizar cobertura sem custo.
         if not signals:
-            try:
-                from tools.perplexity_browser import perplexity_browser
-                if perplexity_browser.is_available():
-                    logger.info("enrich_signals fallback pra Perplexity",
-                                extra={"company_id": company_id, "school": name})
-                    prompt = (
-                        f"Pesquise sobre a escola '{name}' em {city}/{state}. "
-                        f"Quero saber: rankings educacionais, premios recebidos, noticias "
-                        f"importantes, expansoes ou reconhecimentos (2023-2026). "
-                        f"Liste ate 5 sinais concretos com ano e fonte se possivel."
-                    )
-                    plex_context = self._ask_perplexity(prompt, timeout=90)
-                    if plex_context and len(plex_context.strip()) >= 20:
-                        signals = self._text_to_json_via_llm(plex_context, schema) or []
-                        fonte_usada = "perplexity"
-                        logger.info("enrich_signals Perplexity extraiu N sinais",
-                                    extra={"company_id": company_id, "count": len(signals)})
-                else:
-                    logger.warning("Perplexity nao disponivel — fallback pulado")
-            except Exception as e:
-                logger.warning(f"enrich_signals Perplexity falhou: {e}")
-
-        # === Tentativa 3: busca web SERVER-SIDE via IA (OpenAI *-search-preview).
-        # SEM navegador -> funciona no Streamlit Cloud, onde a Tentativa 2
-        # (Perplexity-browser) e pulada. So roda se ainda nao ha sinais: no local
-        # o Perplexity ja resolveu (sem custo extra); no Cloud este e o caminho
-        # que funciona. Assim uma versao nao prejudica a outra. ===
-        if not signals:
-            ws_context = self._search_via_openai_websearch(name, city, state)
-            if ws_context and len(ws_context.strip()) >= 20:
-                signals = self._text_to_json_via_llm(ws_context, schema) or []
-                fonte_usada = "busca_web_ia"
-                logger.info("enrich_signals busca web IA extraiu N sinais",
+            queries = [
+                f'"{name}" {city} premio ranking educacao',
+                f'"{name}" {city} noticias destaque',
+                # Imprensa local RS — onde maioria dos premios/noticias de escolas saem
+                f'"{name}" {city} site:gauchazh.clicrbs.com.br OR site:g1.globo.com',
+                # ENEM eh forte sinal de qualidade no RS (escola que destaca em ENEM aparece)
+                f'"{name}" {city} ENEM resultado destaque',
+                # Estado (nao so cidade) — captura redes/franquias maiores
+                f'"{name}" {state} reconhecimento educacao',
+            ]
+            all_snippets = []
+            for q in queries:
+                s = self._search_web(q, max_results=8)
+                if s:
+                    all_snippets.append(s)
+            ddg_context = "\n\n".join(all_snippets)
+            if ddg_context and len(ddg_context.strip()) >= 20:
+                signals = self._text_to_json_via_llm(ddg_context, schema) or []
+                fonte_usada = fonte_usada or "duckduckgo"
+                logger.info("enrich_signals DuckDuckGo extraiu N sinais",
                             extra={"company_id": company_id, "count": len(signals)})
 
         if not signals:
             # Mensagem honesta — diz o que REALMENTE aconteceu
             if fonte_usada == "duckduckgo":
                 erro_msg = "DuckDuckGo retornou contexto mas nenhum sinal estruturado (ranking/premio/noticia) foi extraido"
-            elif fonte_usada == "perplexity":
-                erro_msg = "Perplexity respondeu mas nenhum sinal estruturado foi extraido"
             elif fonte_usada == "busca_web_ia":
                 erro_msg = "A busca web (IA) respondeu mas nenhum sinal estruturado (ranking/premio/noticia) foi extraido — a escola pode nao ter cobertura publica recente"
             elif ddg_context:

@@ -561,13 +561,13 @@ TOOLS = [
     },
     {
         "name": "enriquecer_contatos",
-        "description": "Busca contatos/decisores de uma escola usando cascade de fontes: web scraping, Apollo, Hunter, Snov e Perplexity. Encontra diretores, coordenadores e gestores com email e telefone. Pode demorar 30-60 segundos por escola. ACAO SENSIVEL: consome creditos de APIs.",
+        "description": "Busca contatos/decisores de uma escola usando cascade de fontes: web scraping, Apollo, Hunter, Snov e busca web por IA. Encontra diretores, coordenadores e gestores com email e telefone. Pode demorar 30-60 segundos por escola. ACAO SENSIVEL: consome creditos de APIs.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "escola_nome": {"type": "string", "description": "Nome da escola para buscar contatos"},
                 "escola_id": {"type": "string", "description": "ID da escola (UUID)"},
-                "fonte": {"type": "string", "description": "Forcar uma fonte especifica: scraping, apollo, hunter, snov, perplexity. Se nao informado, usa cascade completa."}
+                "fonte": {"type": "string", "description": "Forcar uma fonte especifica: scraping, apollo, hunter, snov, web (busca web por IA). Se nao informado, usa cascade completa."}
             }
         }
     },
@@ -5513,7 +5513,7 @@ def _handle_uso_apis(params: Dict) -> str:
         insight = f"Custo total registrado: USD {total_cost_usd:.4f}. Sem custo neste mes ainda."
 
     # Limites mensais (operacionais)
-    limites = {"apollo": 60, "snov": 50, "hunter": 25, "perplexity": 200}
+    limites = {"apollo": 60, "snov": 50, "hunter": 25}
     for api, data in apis_output.items():
         if api in limites:
             data["limite_mensal_creditos"] = limites[api]
@@ -6811,10 +6811,12 @@ def _handle_enriquecer_contatos(params: Dict) -> str:
         from agents.contact_finder import ContactFinderAgent
         finder = ContactFinderAgent()
 
-        if fonte == "perplexity":
-            # Usar apenas Perplexity
-            from tools.perplexity_browser import perplexity_browser
-            contatos_raw = perplexity_browser.search_school_contacts(
+        if fonte in ("web", "web_search", "perplexity"):
+            # Somente busca web via IA. ("perplexity" segue aceito por
+            # compatibilidade — o modulo foi aposentado em Ago/2026 e
+            # substituido por tools/web_search.py, que e API pura.)
+            from tools import web_search
+            contatos_raw = web_search.search_school_contacts(
                 escola.get("name", ""), escola.get("city", ""), escola.get("state", "")
             )
             # Salvar no banco
@@ -6828,20 +6830,20 @@ def _handle_enriquecer_contatos(params: Dict) -> str:
                         "role": c.get("role", ""),
                         "email": c.get("email", ""),
                         "phone": c.get("phone", ""),
-                        "source": "perplexity",
+                        "source": "web_search",
                         "confidence_score": c.get("confidence_score", 30),
                     })
                     salvos += 1
                 except Exception as _e:
                     # Log em vez de silent fail — facilita debug quando contatos
-                    # do Perplexity nao sao salvos (duplicate email, constraint, etc)
+                    # nao sao salvos (duplicate email, constraint, etc)
                     falhas_insert += 1
                     logger.debug(
-                        f"enriquecer_contatos Perplexity: falha ao inserir contato: {_e}",
+                        f"enriquecer_contatos web_search: falha ao inserir contato: {_e}",
                         extra={"contato": c.get("full_name", "?"), "email": c.get("email", "")},
                     )
             return json.dumps({
-                "fonte": "perplexity",
+                "fonte": "web_search",
                 "escola": escola.get("name"),
                 "contatos_encontrados": len(contatos_raw),
                 "salvos_no_banco": salvos,
