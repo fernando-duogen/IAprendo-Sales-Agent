@@ -49,14 +49,22 @@ class GooglePlacesClient:
         from dotenv import load_dotenv
         load_dotenv()
         self.api_key = os.getenv("GOOGLE_MAPS_API_KEY", "")
-        self._enabled = bool(self.api_key)
+        # ENABLE_GEOCODING agora DESLIGA de verdade. Era config decorativa:
+        # nenhum caminho que chama o Google a consultava, entao setar
+        # ENABLE_GEOCODING=false nao impedia nenhuma chamada paga.
+        _flag = os.getenv("ENABLE_GEOCODING", "true").strip().lower() != "false"
+        self._enabled = bool(self.api_key) and _flag
         # Cache em memoria por processo: evita PAGAR duas vezes a mesma
         # pesquisa (ex.: enricher e depois whatsapp_finder na mesma escola,
         # ou reprocessar um lote). Chave = query normalizada.
         self._cache: Dict[str, Any] = {}
         self._cache_hits = 0
         if not self._enabled:
-            logger.info("Google Places desabilitado (GOOGLE_MAPS_API_KEY vazio)")
+            logger.info(
+                "Google Places desabilitado "
+                + ("(ENABLE_GEOCODING=false)" if self.api_key and not _flag
+                   else "(GOOGLE_MAPS_API_KEY vazio)")
+            )
 
     def is_available(self) -> bool:
         return self._enabled
@@ -173,7 +181,14 @@ class GooglePlacesClient:
         radius_m: int = 2000,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        """Busca escolas próximas a uma coordenada."""
+        """Busca escolas próximas a uma coordenada.
+
+        NAO E USADO em producao (auditoria Ago/2026: zero chamadores no repo).
+        A busca por proximidade do produto usa a tool `escolas_proximas`
+        (Haversine sobre o CRM/MEC, sem custo). Mantido porque e superficie
+        paga do Places que pode ser util em descoberta de campo — mas se for
+        chamado, LEMBRE que cada consulta custa (~US$0,032).
+        """
         if not self._enabled:
             return []
 

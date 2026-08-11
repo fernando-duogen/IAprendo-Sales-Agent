@@ -2331,15 +2331,31 @@ def _handle_agregar_estatisticas_escolas(params: Dict) -> str:
                         "para contagens nacionais use consulta_livre com contar=true.",
             }, ensure_ascii=False)
         _CAP = 20000
+        _PAGE = 1000  # PostgREST clampa .limit() nesse teto
         _cols = "total_matriculas,total_docentes,matriculas_medio,matriculas_fund_af,qt_coordenadores"
-        q = db.client.table("mec_catalog").select(_cols)
-        if params.get("uf"):
-            q = q.eq("state", str(params["uf"]).upper()[:2])
-        if params.get("cidade"):
-            q = q.ilike("city_norm", f"%{_normalize(params['cidade'])}%")
-        if params.get("admin_dependency"):
-            q = q.ilike("admin_dependency", f"%{params['admin_dependency']}%")
-        rows = q.limit(_CAP).execute().data or []
+
+        def _q_base():
+            q = db.client.table("mec_catalog").select(_cols)
+            if params.get("uf"):
+                q = q.eq("state", str(params["uf"]).upper()[:2])
+            if params.get("cidade"):
+                q = q.ilike("city_norm", f"%{_normalize(params['cidade'])}%")
+            if params.get("admin_dependency"):
+                q = q.ilike("admin_dependency", f"%{params['admin_dependency']}%")
+            return q
+
+        # PAGINA de verdade: com .limit(20000) o PostgREST devolvia no maximo
+        # 1000 linhas, `truncado` NUNCA disparava (len < _CAP) e a resposta
+        # afirmava cobertura total. "Quantas matriculas em SP?" virava a soma
+        # de 1000 escolas apresentada como o estado inteiro.
+        rows: List[Dict[str, Any]] = []
+        _off = 0
+        while _off < _CAP:
+            _page = (_q_base().range(_off, _off + _PAGE - 1).execute().data) or []
+            rows.extend(_page)
+            if len(_page) < _PAGE:
+                break
+            _off += _PAGE
         total_escolas = len(rows)
         truncado = total_escolas >= _CAP
         if total_escolas == 0:
@@ -5547,7 +5563,18 @@ def _handle_uso_apis(params: Dict) -> str:
     from datetime import datetime, timezone
     from collections import defaultdict
 
-    USD_BRL = 5.50  # fallback se nao conseguir buscar cotacao
+    # Cotacao AO VIVO (mesma fonte do painel Resultados). Antes era 5.50 fixo
+    # com o comentario "fallback se nao conseguir buscar" — mas nunca havia
+    # tentativa: o chat e o painel davam valores em R$ diferentes p/ o mesmo
+    # gasto, e a tool ainda devolvia 5.50 como se fosse a taxa real.
+    USD_BRL = 5.50
+    try:
+        import requests as _req
+        _r_fx = _req.get("https://economia.awesomeapi.com.br/last/USD-BRL", timeout=5)
+        if _r_fx.status_code == 200:
+            USD_BRL = float(_r_fx.json().get("USDBRL", {}).get("bid", 5.50))
+    except Exception:
+        pass  # sem rede: segue no fallback
 
     query = db.client.table("api_usage").select(
         "api_name,endpoint,credits_used,success,created_at,"

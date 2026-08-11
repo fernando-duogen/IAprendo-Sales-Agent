@@ -227,8 +227,12 @@ def get_due_follow_ups(
                 "id, company_id, contact_id, subject, body, "
                 "follow_up_number, sent_at, opened_at, clicked_at, replied_at, "
                 "bounced_at, parent_id"
+            # desc=True: os 500 MAIS RECENTES. Com desc=False pegavamos os 500
+            # mais ANTIGOS — passado o 500o envio, todo email novo ficava fora
+            # da janela e NUNCA gerava follow-up (o job seguia "com sucesso",
+            # varrendo emails velhos ja esgotados pelo guard de follow_up_number).
             ).eq("status", "sent").not_.is_("sent_at", "null").order(
-                "sent_at", desc=False
+                "sent_at", desc=True
             ).limit(500).execute()
 
             sent_messages = result.data or []

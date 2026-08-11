@@ -34,7 +34,11 @@ def render_buscar_brasil(embedded: bool = True) -> None:
             "(e add_mec_facet_rpcs.sql para a cascata de cidades).",
             "warning",
         )
-        st.stop()
+        # `return` (nao st.stop): este helper roda DENTRO de uma aba, e o
+        # st.stop() matava o resto do script — as abas "Preparar escolas" e
+        # "Sinais" ficavam VAZIAS quando faltava o catalogo (cenario tipico da
+        # VM). O Streamlit renderiza todas as abas no mesmo run.
+        return
 
     total_base = source.total()
 

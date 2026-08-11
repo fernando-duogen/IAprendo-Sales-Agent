@@ -1021,29 +1021,45 @@ def _handle_priorizar_leads_enem(params: Dict) -> str:
     prioridade_filter = params.get("prioridade")
     limite = min(int(params.get("limite", 30)), 100)
 
-    # Campos que precisamos para classificar
+    # Campos que precisamos para classificar.
+    # Inclui as colunas das DUAS safras (2024/2025): linhas antigas so tem as
+    # _2024 e ficavam sem gap/trajetoria -> nunca eram classificadas.
     select_fields = (
-        "inep_code,company_id,enem_dependencia,enem_amostra_confiavel,"
-        "enem_potencial_melhoria,enem_presentes,enem_gap_vs_peer_2025,"
-        "peer_trajetoria_6y,peer_delta_media_geral_2022_2025,"
+        "inep_code,company_id,enem_ano,enem_dependencia,enem_amostra_confiavel,"
+        "enem_potencial_melhoria,enem_presentes,"
+        "enem_gap_vs_peer_2025,enem_gap_vs_peer_2024,"
+        "peer_trajetoria_6y,peer_trajetoria_5y,"
+        "peer_delta_media_geral_2022_2025,peer_delta_media_geral_2022_2024,"
         "peer_mun_nome,socio_mun_nome"
     )
 
-    try:
+    def _pagina(offset: int):
         q = db.client.table("school_analytics").select(select_fields).eq(
             "enem_amostra_confiavel", True
         )
         q = _apply_dependencia_filter(q, dependencia)
         if municipio:
-            q = q.ilike("peer_mun_nome", f"%{municipio}%")
+            # match EXATO: o ilike '%x%' fazia "Santa Maria" puxar tambem
+            # "Santa Maria do Herval"
+            q = q.eq("peer_mun_nome", municipio)
         if uf:
             q = q.eq("peer_uf_sigla", uf.upper())
-        # Over-fetch para permitir reclassificacao local
-        r = q.limit(MAX_ROWS_FETCH).execute()
+        return q.range(offset, offset + _POSTGREST_PAGE_SIZE - 1).execute()
+
+    # PAGINA: o PostgREST clampa .limit() em 1000. Recortes grandes
+    # (ex.: Estadual/Brasil = 15.828 escolas) viravam amostra de 1/16
+    # apresentada como total.
+    rows: List[Dict[str, Any]] = []
+    try:
+        _off = 0
+        while _off < MAX_ROWS_FETCH:
+            _page = (_pagina(_off).data) or []
+            rows.extend(_page)
+            if len(_page) < _POSTGREST_PAGE_SIZE:
+                break
+            _off += _POSTGREST_PAGE_SIZE
     except Exception as e:
         return json.dumps({"erro": f"Falha na query: {str(e)[:200]}"})
-
-    rows = r.data or []
 
     # Classificar cada row
     ranked: List[Tuple[str, Dict[str, Any]]] = []

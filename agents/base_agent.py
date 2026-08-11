@@ -257,7 +257,11 @@ class BaseAgent(ABC):
             # Coluna ainda nao existe (migration pendente)? Reenvia SEM os
             # campos novos em vez de perder a atualizacao inteira. Assim um
             # deploy de codigo nunca fica bloqueado esperando a migration.
-            _msg = str(e)
+            # IMPORTANTE: o texto do PostgREST vem no __cause__ — o
+            # supabase_client levanta DatabaseError("Falha ao atualizar...")
+            # com `raise ... from e`, entao str(e) sozinho NUNCA casava e a
+            # protecao era inoperante.
+            _msg = f"{e} | {getattr(e, '__cause__', '')}"
             if "PGRST204" in _msg or "column" in _msg.lower():
                 _opcionais = {"google_rating", "google_reviews_count", "google_maps_url"}
                 _reduzido = {k: v for k, v in updates.items() if k not in _opcionais}

@@ -238,8 +238,10 @@ def render_inteligencia() -> None:
                 if radar_inep:
                     alvo_filtros["inep"] = radar_inep
                 else:
+                    # NAO usar st.stop() aqui: mataria a aba "Explorador"
+                    # (Streamlit renderiza todas as abas no mesmo run).
                     alert_banner("Selecione uma escola na lista acima.", "error")
-                    st.stop()
+                    escala = None
             if radar_mun.strip():
                 alvo_filtros["municipio"] = radar_mun.strip()
             if radar_uf.strip():
@@ -249,19 +251,23 @@ def render_inteligencia() -> None:
 
             if not radar_refs:
                 alert_banner("Selecione pelo menos uma referencia em 'Comparar com'.", "error")
-                st.stop()
+                escala = None
 
-            with st.spinner("Buscando dados..."):
-                result_raw = _handle_analisar_dados_analytics({
-                    "operacao": "comparacao",
-                    "alvo": {"escala": escala, "filtros": alvo_filtros},
-                    "metricas": metricas,
-                    "comparar_com": radar_refs,
-                    "agregacao": "media",
-                })
-                result = json.loads(result_raw)
+            result = {}
+            if escala:
+                with st.spinner("Buscando dados..."):
+                    result_raw = _handle_analisar_dados_analytics({
+                        "operacao": "comparacao",
+                        "alvo": {"escala": escala, "filtros": alvo_filtros},
+                        "metricas": metricas,
+                        "comparar_com": radar_refs,
+                        "agregacao": "media",
+                    })
+                    result = json.loads(result_raw)
 
-            if "erro" in result:
+            if not result:
+                pass  # falta selecao — banner ja exibido acima
+            elif "erro" in result:
                 alert_banner(f"Erro: {result['erro']}", "error")
                 if result.get("opcoes"):
                     st.info(f"Voce quis dizer: {', '.join(result['opcoes'][:5])}")
@@ -649,14 +655,17 @@ def render_inteligencia() -> None:
                         "warning",
                     )
 
-                # Validacao: comparacao sem comparar_com
+                # Validacao: comparacao sem comparar_com.
+                # `_pode_rodar` em vez de st.stop(): o helper roda dentro de uma
+                # aba e o stop mataria o resto da pagina.
+                _pode_rodar = True
                 if exp_op == "comparacao" and not exp_comparar:
                     alert_banner(
                         "Selecione pelo menos uma opcao em **Comparar com** "
                         "(ex: municipio, estado, brasil).",
                         "error",
                     )
-                    st.stop()
+                    _pode_rodar = False
 
                 params = {
                     "operacao": exp_op,
@@ -671,13 +680,18 @@ def render_inteligencia() -> None:
                 if exp_comparar:
                     params["comparar_com"] = exp_comparar
 
-                with st.spinner("Executando analisar_dados_analytics..."):
-                    result_raw = _handle_analisar_dados_analytics(params)
+                result_raw = "{}"
+                result = {}
+                if _pode_rodar:
+                    with st.spinner("Executando analisar_dados_analytics..."):
+                        result_raw = _handle_analisar_dados_analytics(params)
                     result = json.loads(result_raw)
 
                 st.markdown("")
 
-                if "erro" in result:
+                if not result:
+                    pass  # faltou selecao — banner ja exibido acima
+                elif "erro" in result:
                     alert_banner(f"Erro: {result['erro']}", "error")
                     if "metricas_rejeitadas" in result:
                         st.caption(f"Rejeitadas: {result['metricas_rejeitadas']}")

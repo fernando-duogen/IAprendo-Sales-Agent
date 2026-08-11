@@ -231,10 +231,14 @@ class ProactiveActionEngine:
             fu_number = (email.get("follow_up_number") or 0) + 1
 
             # Verificar se ja tem draft pendente
+            # 'pending' e o status canonico do CHECK (pending/approved/
+            # rejected/sent). Com 'pending_approval' (inexistente) a contagem
+            # era SEMPRE 0 e o guard nunca disparava: cada rodada empilhava um
+            # novo draft para o mesmo lead, poluindo a fila.
             existing = db.client.table("approval_queue").select(
                 "id", count="exact"
             ).eq("company_id", company_id).eq(
-                "status", "pending_approval"
+                "status", "pending"
             ).execute()
             if existing.count and existing.count > 0:
                 logger.debug(f"Ja existe draft pendente para {company_id}")

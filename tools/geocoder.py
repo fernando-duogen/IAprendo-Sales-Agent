@@ -181,3 +181,55 @@ class Geocoder:
 
 
 geocoder = Geocoder()
+
+
+def main() -> None:
+    """CLI: geocodifica escolas sem coordenadas.
+
+    Uso (documentado em docs/ e no README ha tempos, mas o bloco __main__ nao
+    existia — `python -m tools.geocoder` simplesmente NAO FAZIA NADA):
+
+        python -m tools.geocoder                 # ate 50 escolas
+        python -m tools.geocoder --limite 200
+        python -m tools.geocoder --sem-fallback  # so Google/Nominatim
+    """
+    import argparse
+    import sys as _sys
+
+    from database.supabase_client import db as _db
+
+    parser = argparse.ArgumentParser(description="Geocodifica escolas sem lat/long")
+    parser.add_argument("--limite", type=int, default=50,
+                        help="Maximo de escolas nesta rodada (default 50)")
+    parser.add_argument("--sem-fallback", action="store_true",
+                        help="Nao usar busca web (IA) quando Nominatim falhar")
+    args = parser.parse_args()
+
+    try:
+        rows = _db.client.table("companies").select(
+            "id,name,address,city,state,latitude,longitude"
+        ).is_("latitude", "null").limit(args.limite).execute().data or []
+    except Exception as e:
+        print(f"[ERRO] Falha ao buscar escolas: {e}")
+        _sys.exit(1)
+
+    if not rows:
+        print("Nenhuma escola sem coordenadas. Nada a fazer.")
+        return
+
+    print(f"Geocodificando {len(rows)} escola(s)...")
+    res = geocoder.process_batch(
+        rows, max_per_run=args.limite,
+        use_perplexity_fallback=not args.sem_fallback,
+    )
+    print(f"  Processadas : {res['processed']}")
+    print(f"  Encontradas : {res['found']}")
+    print(f"  Falharam    : {res['failed']}")
+    if res.get("fallback_used"):
+        print(f"  Via busca web: {res['fallback_used']}")
+    for f in (res.get("failed_details") or [])[:10]:
+        print(f"   - {f.get('name')}: {f.get('error')}")
+
+
+if __name__ == "__main__":
+    main()

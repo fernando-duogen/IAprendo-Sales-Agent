@@ -19,7 +19,9 @@ TIER_CONFIG: Dict[str, Dict[str, str]] = {
     "CRITICAL": {"emoji": "\U0001f534", "color": "#E53935", "bg": "#FFEBEE", "label": "Critico"},
     "HOT":      {"emoji": "\U0001f7e0", "color": "#FB8C00", "bg": "#FFF3E0", "label": "Quente"},
     "WARM":     {"emoji": "\U0001f7e1", "color": "#F9A825", "bg": "#FFFDE7", "label": "Morno"},
-    "COLD":     {"emoji": "\U0001f7e2", "color": "#43A047", "bg": "#E8F5E9", "label": "Frio"},
+    # COLD em CINZA (nao verde): verde lia-se como "esta tudo bem" para um lead
+    # frio. Alinhado com dashboard/labels.py, que ja usava ⚪ #90A4AE.
+    "COLD":     {"emoji": "⚪", "color": "#90A4AE", "bg": "#ECEFF1", "label": "Frio"},
 }
 
 

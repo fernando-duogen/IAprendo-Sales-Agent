@@ -308,6 +308,10 @@ def _check_api_quotas() -> Dict[str, Any]:
         "hunter": 25,
         "snov": 50,
         "brevo": 300,
+        # google_maps estava FORA de qualquer alerta de cota. O tier gratuito
+        # da Google (~US$200/mes) da folga enorme, mas sem teto um loop podia
+        # queimar credito sem ninguem ver. 200/dia = ~6.000/mes.
+        "google_maps": 200,
     }
     usage = {}
     alerts: List[str] = []
