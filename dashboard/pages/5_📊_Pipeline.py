@@ -1313,7 +1313,7 @@ def render_recomendadas():
         _ticket = 7.99
     _me = st.session_state.get("username", "fernando")
 
-    for _ld in _leads:
+    for _i_ld, _ld in enumerate(_leads):
         _stars = POTENTIAL_STARS.get(str(_ld.get("prioridade") or ""), "★☆☆")
         _no_crm = not _ld.get("esta_em_companies")
         c1, c2, c3, c4 = st.columns([0.9, 4.2, 3.2, 1.8])
@@ -1327,7 +1327,9 @@ def render_recomendadas():
                     f"{(_ld.get('motivo') or '')[:90]}</span>", unsafe_allow_html=True)
         with c4:
             if _no_crm:
-                if st.button("Trabalhar", key=f"rec_work_{_ld.get('inep')}",
+                # key com indice: 2 leads sem INEP gerariam a MESMA key
+                # ("rec_work_None") -> DuplicateElementKey derruba a aba
+                if st.button("Trabalhar", key=f"rec_work_{_i_ld}_{_ld.get('inep') or 'x'}",
                              help="Importa a escola e atribui a voce"):
                     try:
                         _res = db.client.table("mec_catalog").select("*")                             .eq("inep_code", str(_ld.get("inep"))).limit(1).execute().data

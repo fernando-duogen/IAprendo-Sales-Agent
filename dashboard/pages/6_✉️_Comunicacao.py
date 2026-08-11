@@ -1293,10 +1293,48 @@ with tab_aprovacao:
                             with st.expander("Ver resposta completa"):
                                 st.markdown(f"> {_full_reply}")
                     with col_action:
-                        if st.button("🤖 Responder com IA", key=f"inbox_respond_{rep.get('queue_id', idx)}", use_container_width=True):
-                            st.session_state["inbox_generate_queue_id"] = rep.get("queue_id")
-                            st.session_state["inbox_generate_company_id"] = rep.get("company_id")
-                            st.toast("IAlex esta gerando resposta... verificar aba Pendentes em ~10s", icon="🤖")
+                        # key com idx: 2 replies sem queue_id gerariam a MESMA
+                        # key ("..._None") e derrubariam a pagina inteira.
+                        _qid_rep = rep.get("queue_id")
+                        if st.button(
+                            "🤖 Responder com IA",
+                            key=f"inbox_respond_{idx}_{_qid_rep or 'x'}",
+                            use_container_width=True,
+                            disabled=not _qid_rep,
+                            help=(
+                                "Gera uma sugestao de resposta e coloca na fila de "
+                                "aprovacao (nada e enviado)."
+                                if _qid_rep else
+                                "Sem mensagem original vinculada — nao da pra gerar resposta."
+                            ),
+                        ):
+                            # ANTES: so gravava 2 chaves de sessao que NINGUEM lia
+                            # e mostrava um toast prometendo resultado em 10s.
+                            # Agora gera de verdade via reply_handler (mesmo motor
+                            # do processamento automatico) -> fila de aprovacao.
+                            with st.spinner("Gerando resposta com IA..."):
+                                try:
+                                    from tools.reply_handler import reply_handler
+                                    _res = reply_handler.process_reply(_qid_rep)
+                                except Exception as _e_reply:
+                                    _res = None
+                                    st.error(f"Erro ao gerar: {str(_e_reply)[:200]}")
+                            if _res and _res.get("new_queue_id"):
+                                st.success(
+                                    "✅ Resposta gerada e enviada para a fila de "
+                                    "**aprovacao** (aba Aguardando). Nada foi enviado."
+                                )
+                                st.rerun()
+                            elif _res is None:
+                                st.warning(
+                                    "Nao consegui gerar a resposta agora. Tente pelo "
+                                    "IAlex ('sugerir resposta para <escola>')."
+                                )
+                            else:
+                                st.info(
+                                    "Esta resposta nao gerou sugestao automatica "
+                                    "(ex.: descadastro/rejeicao). Trate manualmente."
+                                )
 
 
 # =============================================================================
@@ -1465,7 +1503,7 @@ with tab_followups:
                         )
                         st.write("Sera usado o padrao mais comum: **nome.sobrenome**")
                         st.caption(
-                            "Dica: busque contatos no Perplexity (pagina Escolas) "
+                            "Dica: use 'Buscar contatos na web (IA)' na pagina Escolas "
                             "para encontrar emails pessoais que ajudem a detectar o padrao."
                         )
                     elif analysis.get("suggested_patterns"):
@@ -1480,7 +1518,7 @@ with tab_followups:
                             "warning",
                         )
                         st.caption(
-                            "Dica: busque contatos no Perplexity (pagina Escolas ou Mapa) "
+                            "Dica: use 'Buscar contatos na web (IA)' na pagina Escolas "
                             "para encontrar emails que permitam detectar o dominio e padrao."
                         )
 

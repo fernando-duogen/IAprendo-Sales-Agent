@@ -944,13 +944,13 @@ if st.session_state.escola_detail_id:
     with header_cols[1]:
         if st.button("Buscar sinais", icon=":material/psychology:",
                      use_container_width=True, key="escola_buscar_sinais",
-                     help="Pesquisa rankings, premios e noticias via web (DuckDuckGo + Perplexity). Salva como memorias."):
+                     help="Pesquisa rankings, premios e noticias na web (busca por IA + DuckDuckGo). Salva como memorias."):
             try:
                 from tools.discovery_engine import discovery_engine
                 with st.status(f"Buscando sinais de {company.get('name', '?')}...",
                                 expanded=True) as status:
                     st.write("🔍 Buscando rankings, premios e noticias na web "
-                             "(Perplexity no local; busca web por IA no app online)...")
+                             "(busca por IA; DuckDuckGo como reserva)...")
                     sinais_result = discovery_engine.enrich_signals(company_id)
                     n_sinais = sinais_result.get("sinais_adicionados", 0)
                     n_found = sinais_result.get("sinais_encontrados", 0)
@@ -997,6 +997,12 @@ if st.session_state.escola_detail_id:
             alert_banner(msg_text, "error")
         elif msg_type == "info":
             alert_banner(msg_text, "info")
+        elif msg_type == "warning":
+            # Faltava: mensagens 'warning' (ex.: motivo de "sem sinais novos")
+            # eram descartadas silenciosamente e o usuario nao via nada.
+            alert_banner(msg_text, "warning")
+        else:
+            alert_banner(str(msg_text), "info")
         st.session_state.escola_msg = None
 
     # --- Cabecalho com card e metricas ---
@@ -1650,31 +1656,38 @@ if st.session_state.escola_detail_id:
             ),
         ):
             from tools import web_search as _ws
+            found = []
             if not _ws.is_available():
                 st.error("Busca web indisponivel (OPENAI_API_KEY ausente).")
-                st.stop()
-            with st.spinner("Buscando na web (alguns segundos)..."):
-                try:
-                    found = _ws.search_school_contacts(
-                        company.get("name", ""),
-                        company.get("city", ""),
-                        company.get("state", ""),
-                    )
-                except Exception as e:
-                    found = []
-                    st.error(f"Erro na busca: {e}")
-            if found:
-                st.session_state["perplexity_results"] = found
-                st.session_state["perplexity_company_id"] = company_id
-                st.rerun()
             else:
-                st.warning("Nenhum contato encontrado na web. Tente Apollo/Hunter ou pesquise manualmente.")
+                # Dominio da escola: permite deduzir email de quem so tem nome
+                _dom = (company.get("email_domain") or "").strip()
+                if not _dom and company.get("website"):
+                    _dom = re.sub(r"^https?://(www\.)?", "",
+                                  company["website"]).split("/")[0].strip()
+                with st.spinner("Buscando na web (alguns segundos)..."):
+                    try:
+                        found = _ws.search_school_contacts(
+                            company.get("name", ""),
+                            company.get("city", ""),
+                            company.get("state", ""),
+                            dominio=_dom,
+                        )
+                    except Exception as e:
+                        found = []
+                        st.error(f"Erro na busca: {e}")
+                if found:
+                    st.session_state["perplexity_results"] = found
+                    st.session_state["perplexity_company_id"] = company_id
+                    st.rerun()
+                else:
+                    st.warning("Nenhum contato encontrado na web. Tente Apollo/Hunter ou pesquise manualmente.")
 
-        # --- Exibir resultados do Perplexity para confirmacao ---
+        # --- Exibir resultados da busca web para confirmacao ---
         if st.session_state.get("perplexity_company_id") == company_id and st.session_state.get("perplexity_results"):
             found = st.session_state["perplexity_results"]
             has_suggested = any(ct.get("_suggested_email") for ct in found)
-            alert_banner(f"Perplexity encontrou {len(found)} contato(s). Selecione quais importar:", "success")
+            alert_banner(f"Busca web encontrou {len(found)} contato(s). Selecione quais importar:", "success")
             if has_suggested:
                 alert_banner("Emails sugeridos por padrao detectado (marcados com ?). Verifique antes de importar.", "info")
             import json as json_mod
@@ -1715,7 +1728,7 @@ if st.session_state.escola_detail_id:
                             "company_id": company_id,
                             "full_name": ct["full_name"],
                             "role": ct.get("role", ""),
-                            "source": "perplexity",
+                            "source": "web_search",
                             "confidence_score": ct.get("confidence_score", 60),
                             "decision_maker_type": dm_type,
                             "outreach_priority": priority,
@@ -1737,7 +1750,7 @@ if st.session_state.escola_detail_id:
                             saved_count += 1
                     st.session_state.pop("perplexity_results", None)
                     st.session_state.pop("perplexity_company_id", None)
-                    st.session_state.escola_msg = ("success", f"{saved_count} contatos importados via Perplexity!")
+                    st.session_state.escola_msg = ("success", f"{saved_count} contatos importados via busca web!")
                     st.rerun()
             with ic2:
                 if st.button("Descartar resultados"):

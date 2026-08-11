@@ -1,8 +1,10 @@
 """
 _runtime - Deteccao de ambiente de execucao do dashboard.
 
-Usado para esconder funcionalidades que so funcionam localmente
-(ex: botao Perplexity que chama venv/python.exe via subprocess + Selenium).
+Usado para esconder funcionalidades que so funcionam localmente (i.e. que
+dependem do venv Windows via subprocess). NOTA (Ago/2026): o antigo botao de
+Perplexity — o principal motivo deste gate — foi aposentado; a busca web hoje
+e API pura (tools/web_search.py) e roda em qualquer ambiente, sem gate.
 """
 import os
 from pathlib import Path

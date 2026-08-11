@@ -89,6 +89,9 @@ if _q and len(_q.strip()) >= 2:
         _c2.markdown(stage_pill(_e.get("status"), _e.get("commercial_stage")),
                      unsafe_allow_html=True)
         if _c3.button("Abrir →", key=f"open_{_e['id']}"):
+            # Sem setar o id, a pagina Escolas abria a ULTIMA ficha vista
+            # (escola_detail_id persiste entre paginas) — ou a lista generica.
+            st.session_state["escola_detail_id"] = _e["id"]
             st.switch_page("pages/2_🏫_Escolas.py")
     for _ct in _res["contatos"]:
         st.markdown(f"👤 **{_ct.get('full_name')}** — {_ct.get('role') or ''} · "
@@ -232,6 +235,8 @@ def _render_activity(a: dict, overdue: bool):
             st.error(_r.get("erro")) if not _r.get("ok") else st.rerun()
     if a.get("company_id"):
         if _c3.button("→", key=f"go_{a['id']}", help="Abrir escola"):
+            # O company_id ja estava disponivel aqui e era descartado
+            st.session_state["escola_detail_id"] = a["company_id"]
             st.switch_page("pages/2_🏫_Escolas.py")
 
 

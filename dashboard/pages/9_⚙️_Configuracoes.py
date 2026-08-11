@@ -935,10 +935,20 @@ with tab_config:
         if st.button("▶️ Executar agora (teste)", use_container_width=True):
             try:
                 from agent.scheduler import ialex_scheduler
-                ialex_scheduler.run_pipeline_now()
-                st.success(
-                    "✅ Pipeline iniciado em segundo plano. Voce recebera o resumo no WhatsApp quando terminar."
-                )
+                # O retorno era DESCARTADO: em modo MANUAL o scheduler bloqueia
+                # a execucao e o painel mostrava ✅ mesmo assim, prometendo um
+                # resumo no WhatsApp que nunca chegava.
+                _res_run = ialex_scheduler.run_pipeline_now() or {}
+                if _res_run.get("ok", True):
+                    st.success(
+                        "✅ Pipeline iniciado em segundo plano. Voce recebera o resumo no WhatsApp quando terminar."
+                    )
+                else:
+                    st.warning(
+                        "⚠️ " + (_res_run.get("message")
+                                 or f"Execucao bloqueada ({_res_run.get('reason', 'motivo nao informado')}). "
+                                    "Confira o Modo de autonomia acima.")
+                    )
             except Exception as e:
                 st.error(f"Erro ao disparar: {e}")
 
@@ -1031,8 +1041,15 @@ with tab_config:
         if st.button("▶️ Rodar follow-ups agora", use_container_width=True, key="btn_run_fu"):
             try:
                 from agent.scheduler import ialex_scheduler
-                ialex_scheduler.run_followup_now()
-                st.success("✅ Geracao de follow-ups iniciada em segundo plano. Resumo chegara no WhatsApp.")
+                _res_fu = ialex_scheduler.run_followup_now() or {}
+                if _res_fu.get("ok", True):
+                    st.success("✅ Geracao de follow-ups iniciada em segundo plano. Resumo chegara no WhatsApp.")
+                else:
+                    st.warning(
+                        "⚠️ " + (_res_fu.get("message")
+                                 or f"Execucao bloqueada ({_res_fu.get('reason', 'motivo nao informado')}). "
+                                    "Confira o Modo de autonomia.")
+                    )
             except Exception as e:
                 st.error(f"Erro: {e}")
 

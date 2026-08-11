@@ -136,7 +136,8 @@ def _limpo(valor: Any) -> str:
 
 
 def search_school_contacts(
-    name: str, city: str, state: str, timeout_seconds: int = 60
+    name: str, city: str, state: str, timeout_seconds: int = 60,
+    dominio: str = "",
 ) -> List[Dict[str, Any]]:
     """Busca contatos/decisores de uma escola na web.
 
@@ -186,14 +187,37 @@ def search_school_contacts(
             conf = int(it.get("confianca") or 0)
         except (TypeError, ValueError):
             conf = 0
-        out.append({
+        item: Dict[str, Any] = {
             "full_name": full_name or "Responsavel",
             "role": role or "Responsavel",
             "email": email or None,
             "phone": phone or None,
             "source": "web_search",
             "confidence_score": max(0, min(conf, 100)) or 50,
-        })
+        }
+
+        # Email INSTITUCIONAL (secretaria@, contato@) x pessoal — o front usa
+        # isso p/ marcar [DEPARTAMENTO] e nao tratar como decisor.
+        if email:
+            try:
+                from tools.email_deducer import is_personal_email
+                item["_is_general_email"] = not is_personal_email(email)
+            except Exception:
+                item["_is_general_email"] = False
+
+        # Sem email mas COM nome + dominio conhecido: deduzir pelo padrao da
+        # escola (ex.: nome.sobrenome@dominio). Marcado como sugerido/nao
+        # verificado. Recupera a funcionalidade que existia no parser antigo.
+        if not email and full_name and dominio:
+            try:
+                from tools.email_deducer import apply_pattern
+                sugerido = apply_pattern(full_name, "nome.sobrenome", dominio)
+                if sugerido:
+                    item["_suggested_email"] = sugerido
+            except Exception:
+                pass
+
+        out.append(item)
 
     logger.info("web_search contatos", extra={
         "school": name, "city": city, "encontrados": len(out),

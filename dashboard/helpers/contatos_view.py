@@ -860,7 +860,7 @@ def render_contatos() -> None:
                 )
 
                 if not contacts:
-                    st.caption("Nenhum contato encontrado. Use o Perplexity na pagina Escolas para buscar.")
+                    st.caption("Nenhum contato encontrado. Use 'Buscar contatos na web (IA)' na pagina Escolas.")
                     continue
 
                 # Agrupar por tipo de decisor
