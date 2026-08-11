@@ -194,7 +194,7 @@ else:
 - ✅ Integração HubSpot bidirecional (Supabase ↔ HubSpot push + pull)
 - ✅ Tracking completo (enviado→entregue→aberto→clicado→respondido)
 - ✅ Registro manual de interações (aba "Registrar Contato" em Escolas + tool `registrar_contato` no IAlex) — paridade dashboard ↔ WhatsApp para logar contatos feitos fora da plataforma
-- ✅ Multi-user (login + identidade dinâmica) — **3 usuários: Fernando, Lizianne, Felipe**. `streamlit-authenticator` no dashboard + `utils/sender_profile.py` resolve identidade ativa em tempo real (writer/brain/brevo). IAlex detecta automaticamente quem mandou o comando pelo número do WhatsApp e usa o perfil correto (configurados em `config/users.yaml`)
+- ✅ Multi-user (login + identidade dinâmica) — **4 usuários: Fernando, Lizianne, Felipe, Charles**. `streamlit-authenticator` no dashboard + `utils/sender_profile.py` resolve identidade ativa em tempo real (writer/brain/brevo). IAlex detecta automaticamente quem mandou o comando pelo número do WhatsApp e usa o perfil correto (configurados em `config/users.yaml`)
 - ✅ Health-check robusto do IAlex no startup (`whatsapp_bridge.ping_real()` + `restart_instance()`) — detecta sessão Baileys "fantasma" (Connection Closed) e reinicia automático
 
 ### Inteligência ENEM (Fase 1-3, Abril 2026)
