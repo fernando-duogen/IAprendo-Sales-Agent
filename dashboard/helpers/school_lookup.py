@@ -181,6 +181,20 @@ def get_crm_schools() -> List[Tuple[str, str]]:
         return []
 
 
+def invalidate_crm_schools() -> None:
+    """Invalida o cache de escolas do CRM. Chamar APOS escrever em `companies`.
+
+    get_crm_schools tem TTL 300 e alimenta os seletores "Buscar escola" das
+    paginas Escolas e Contatos. Como nada limpava esse cache, a escola recem
+    importada nao aparecia no buscador por ate 5 minutos, e a recem excluida
+    continuava listada — parecia que a acao nao tinha funcionado.
+    """
+    try:
+        get_crm_schools.clear()
+    except Exception:
+        pass
+
+
 # ===========================================================================
 # UTILIDADES DE FORMATACAO
 # ===========================================================================

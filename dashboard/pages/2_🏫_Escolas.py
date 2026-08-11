@@ -19,6 +19,7 @@ from dashboard.theme import (
 from dashboard.helpers.table_select import (
     reset_if_rows_changed, selected_positions,
 )
+from dashboard.helpers.school_lookup import invalidate_crm_schools
 from utils.fit_score import calcular_fit_score, fit_emoji, fit_cor_hex
 from utils.rede_name import resolver_nome_rede, set_rede_override, has_rede_overrides_table
 
@@ -1193,6 +1194,15 @@ if st.session_state.escola_detail_id:
                 _cta_lbl = "Ir para Mensagens" if _next["page"] == "mensagens" else "Ir para Prospectar"
                 if st.button(_cta_lbl, key="cta_next_action", use_container_width=True,
                              icon=":material/arrow_forward:"):
+                    # Levar a escola junto. O CTA diz "selecione no Pipeline" e
+                    # depois jogava o usuario numa lista de centenas sem nenhuma
+                    # selecao — o company_id estava em escopo e era descartado.
+                    if _next.get("page") == "prospectar":
+                        st.session_state["pipeline_selected_ids"] = [company_id]
+                        # Invalida o cache da tabela pra ela ja abrir marcada
+                        # (mesmas chaves de _reset_ckbox_keys no Pipeline).
+                        for _k in ("_tbl_df_cached", "_tbl_filter_sig", "tbl_editor_v3"):
+                            st.session_state.pop(_k, None)
                     st.switch_page(_pg_file)
 
     st.markdown("")
@@ -1614,7 +1624,11 @@ if st.session_state.escola_detail_id:
                 "secretaria": 4, "administrativo": 5, "outro": 6,
             }
 
-            with st.form("add_contact_form"):
+            # clear_on_submit: sem isso os campos continuavam preenchidos apos o
+            # envio, parecia que "nao foi", e o usuario clicava de novo — criando
+            # contato duplicado. (O form de EDICAO acima nao leva isso: ele
+            # mostra os dados atuais do registro e deve continuar mostrando.)
+            with st.form("add_contact_form", clear_on_submit=True):
                 ac_col1, ac_col2 = st.columns(2)
                 with ac_col1:
                     new_name = st.text_input("Nome completo *", placeholder="Ex: João da Silva")
@@ -1811,7 +1825,9 @@ if st.session_state.escola_detail_id:
         except Exception:
             pass
 
-        with st.form(f"registrar_contato_{company_id}"):
+        # clear_on_submit: mesma armadilha do form de contato — o texto ficava
+        # na tela apos registrar e gerava interacao duplicada.
+        with st.form(f"registrar_contato_{company_id}", clear_on_submit=True):
             r1c1, r1c2, r1c3 = st.columns([1.2, 1, 1])
             with r1c1:
                 canal_pt = st.radio(
@@ -2030,6 +2046,7 @@ if st.session_state.escola_detail_id:
             with dc1:
                 if st.button("Sim, excluir tudo", type="primary"):
                     if db.delete_company(company_id):
+                        invalidate_crm_schools()
                         st.session_state.escola_msg = (
                             "success", f"{company.get('name')} excluida.")
                         st.session_state.pop("confirm_delete", None)
@@ -2159,13 +2176,19 @@ else:
                 else:
                     search = search_sel  # fallback: filtra por texto
         with fc2:
+            # key= porque as OPCOES vem dos dados: sem ela, a identidade do
+            # widget muda junto com a lista (importar escolas, alterar status em
+            # massa, excluir a ultima escola de um status) e o filtro volta
+            # sozinho para o default. Os demais filtros desta barra tem opcoes
+            # literais, entao sao estaveis e nao precisam de key.
             all_statuses_pt = sorted(df["Status"].unique().tolist())
             sel_status = st.multiselect("Status", all_statuses_pt, default=all_statuses_pt,
-                                        label_visibility="collapsed", placeholder="Filtrar status...")
+                                        label_visibility="collapsed", placeholder="Filtrar status...",
+                                        key="esc_flt_status")
         with fc3:
             all_types = sorted([t for t in df["Tipo"].dropna().unique().tolist() if t])
             sel_type = st.multiselect("Tipo", all_types, default=[], label_visibility="collapsed",
-                                      placeholder="Filtrar tipo...")
+                                      placeholder="Filtrar tipo...", key="esc_flt_tipo")
         with fc4:
             score_range = st.slider("Score", 0, 100, (0, 100), label_visibility="collapsed")
 
@@ -2538,6 +2561,7 @@ else:
                         if st.button("Sim, excluir selecionadas", type="primary",
                                      key="confirm_del_sel"):
                             _n = db.bulk_delete_companies(_ids_del)
+                            invalidate_crm_schools()
                             st.session_state.escola_msg = ("success", f"{_n} escola(s) excluida(s).")
                             st.session_state.pop("confirm_sel_delete", None)
                             st.rerun()
@@ -2600,6 +2624,7 @@ else:
                 with cd1:
                     if st.button("Sim, excluir", type="primary", key="confirm_del_single"):
                         if db.delete_company(del_id):
+                            invalidate_crm_schools()
                             st.session_state.escola_msg = ("success", f"{del_name} excluida.")
                         else:
                             st.session_state.escola_msg = (
@@ -2645,6 +2670,7 @@ else:
                     with cd1:
                         if st.button("Sim, excluir tudo", type="primary"):
                             deleted = db.bulk_delete_companies(ids_to_del)
+                            invalidate_crm_schools()
                             st.session_state.escola_msg = ("success", f"{deleted} escolas excluidas.")
                             st.session_state.pop("confirm_bulk_delete", None)
                             st.rerun()

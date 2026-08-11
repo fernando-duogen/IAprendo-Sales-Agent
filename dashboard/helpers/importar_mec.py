@@ -50,8 +50,14 @@ def render_buscar_brasil(embedded: bool = True) -> None:
     st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
     fc1, fc2, fc3 = st.columns(3)
 
+    # key= em todo filtro cujas OPCOES vem dos dados. Sem key, a identidade do
+    # widget e derivada dos parametros — inclusive da lista de opcoes. Como
+    # source.ufs()/cities()/deps() sao cacheadas com TTL 600/300, bastava o
+    # cache expirar e a lista ser remontada para o filtro virar um widget novo e
+    # voltar ao default no meio do trabalho ("escolhi 12 cidades e perdi").
     with fc1:
-        sel_ufs = st.multiselect("Estado(s) (UF):", source.ufs(), default=[])
+        sel_ufs = st.multiselect("Estado(s) (UF):", source.ufs(), default=[],
+                                 key="mec_flt_uf")
 
     with fc2:
         city_opts = source.cities(sel_ufs)
@@ -59,10 +65,12 @@ def render_buscar_brasil(embedded: bool = True) -> None:
         if sel_ufs and not city_opts:
             _city_help = ("Cascata de cidades requer a RPC mec_catalog_cities "
                           "(rode add_mec_facet_rpcs.sql no Supabase).")
-        sel_cities = st.multiselect("Cidade(s):", city_opts, default=[], help=_city_help)
+        sel_cities = st.multiselect("Cidade(s):", city_opts, default=[],
+                                    help=_city_help, key="mec_flt_cidade")
 
     with fc3:
-        sel_dep = st.multiselect("Tipo de escola:", source.deps(), default=[])
+        sel_dep = st.multiselect("Tipo de escola:", source.deps(), default=[],
+                                 key="mec_flt_dep")
 
     fc4, fc5 = st.columns(2)
     with fc4:
@@ -79,7 +87,8 @@ def render_buscar_brasil(embedded: bool = True) -> None:
         )
         porte_labels = [p[0] for p in porte_options]
         porte_raw_vals = [p[1] for p in porte_options]
-        sel_porte_labels = st.multiselect("Porte da escola:", porte_labels, default=[])
+        sel_porte_labels = st.multiselect("Porte da escola:", porte_labels, default=[],
+                                          key="mec_flt_porte")
         sel_porte_raw = [porte_raw_vals[porte_labels.index(lbl)] for lbl in sel_porte_labels]
 
     with fc5:
@@ -211,6 +220,11 @@ def render_buscar_brasil(embedded: bool = True) -> None:
         if st.button("Confirmar e Importar Agora", type="primary"):
             with st.spinner("Importando escolas (pode levar alguns minutos para volumes grandes)..."):
                 result = source.import_filtered(filters, limit=int(sample_limit))
+            # Sem isto, a escola recem importada nao aparecia no buscador da
+            # pagina Escolas por ate 5 min (get_crm_schools, TTL 300, que nada
+            # invalidava) — e o usuario concluia que a importacao falhou.
+            from dashboard.helpers.school_lookup import invalidate_crm_schools
+            invalidate_crm_schools()
 
             if not result.get("ok"):
                 st.error("❌ **Erro na importacao**. Veja o detalhe abaixo.")

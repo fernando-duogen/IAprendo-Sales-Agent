@@ -155,6 +155,12 @@ with _ref_cols[0]:
             _load_queue_counts_cached.clear()
         except Exception:
             pass
+        try:
+            # Faltava: os contadores "Sem nenhum contato (N)" seguiam errados
+            # mesmo depois do refresh explicito.
+            _load_contact_stats.clear()
+        except Exception:
+            pass
         st.rerun()
 
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -164,16 +170,31 @@ st.markdown('<hr class="divider">', unsafe_allow_html=True)
 # Helper: carregar contact stats (reusado pelo filtro "sem contato")
 # ==========================================================================
 @st.cache_data(ttl=60, show_spinner=False)
-def _load_contact_stats() -> dict:
-    """Carrega contact stats (cache 60s). Retorna dict vazio em caso de erro."""
+def _load_contact_stats(_companies: list, cache_key: tuple) -> dict:
+    """Carrega contact stats (cache 60s). Retorna dict vazio em caso de erro.
+
+    `_companies` tem underscore de proposito: o Streamlit NAO tenta hashear
+    argumentos assim (lista de dicts nao e hasheavel). Quem define a identidade
+    do cache e `cache_key`.
+
+    Antes esta funcao lia a global `all_companies` de fora dos argumentos: o
+    cache nao chaveava por ela, e o botao "Atualizar dados" — que limpa os
+    outros dois caches — nao limpava este. Resultado: os contadores "Sem nenhum
+    contato (N)" continuavam errados mesmo apos o refresh explicito.
+    """
     try:
         from utils.contact_stats import compute_contact_coverage
         _cts = db.client.table("contacts").select(
             "company_id,email,phone,phone_whatsapp,decision_maker_type,source"
         ).execute().data or []
-        return compute_contact_coverage(all_companies, _cts)
+        return compute_contact_coverage(_companies, _cts)
     except Exception:
         return {}
+
+
+def _contact_stats() -> dict:
+    """Wrapper: monta a chave de cache a partir das escolas carregadas."""
+    return _load_contact_stats(all_companies, tuple(c["id"] for c in all_companies))
 
 
 # ==========================================================================
@@ -203,7 +224,7 @@ def render_execucao():
                 del st.session_state[_k]
 
     # --- Filtros rapidos de preparo (novo) ---
-    contact_stats = _load_contact_stats()
+    contact_stats = _contact_stats()
     sem_contato_set = set(contact_stats.get("escolas_sem_contato_ids", []))
     sem_email_set = set(contact_stats.get("escolas_sem_email_ids", []))
     sem_whatsapp_set = set(contact_stats.get("escolas_sem_whatsapp_ids", []))
@@ -551,6 +572,8 @@ def render_execucao():
                         help="DESFAZER NAO EH POSSIVEL. Apaga escolas + contatos + interactions + queue.",
                     ):
                         deleted = db.bulk_delete_companies(sorted(current_sel_set))
+                        from dashboard.helpers.school_lookup import invalidate_crm_schools
+                        invalidate_crm_schools()
                         st.session_state["pipeline_selected_ids"] = []
                         st.session_state.pop("_pipe_xlsx_cache", None)
                         _reset_ckbox_keys()
@@ -900,6 +923,18 @@ def render_execucao():
             "force_used": force_reprocess,
             "timestamp": datetime.now().isoformat() if "datetime" in globals() else "",
         }
+
+        # O pipeline acabou de mudar status/contatos/fila: sem invalidar, o
+        # stepper do topo (ja renderizado neste run com dados de ate 30s atras)
+        # mostrava "✅ 20 processadas" ao lado de "Novas: 20 / Qualificadas: 0".
+        # O botao manual "🔄 Atualizar dados" era o contorno desse bug.
+        for _cache in (_load_all_companies_cached, _load_queue_counts_cached,
+                       _load_contact_stats):
+            try:
+                _cache.clear()
+            except Exception:
+                pass
+        st.rerun()
 
     # Acao COMPOSTA (mockup 'Preparar escolas'): 1 botao roda a cascata toda;
     # as etapas tecnicas viram detalhe avancado (blueprint v1.1 §4 Prospectar).
@@ -1422,6 +1457,11 @@ def render_recomendadas():
                             _cd["owner_username"] = _me
                             _cid = db.insert_company(_cd)
                             if _cid:
+                                # Senao a escola so aparece no buscador da
+                                # pagina Escolas depois do TTL de 5 min.
+                                from dashboard.helpers.school_lookup import (
+                                    invalidate_crm_schools)
+                                invalidate_crm_schools()
                                 # Catalogo MEC nao tem matriculas -> sincronizar do
                                 # censo (senao detectar_dados/Potencial R$/OPR ficam zerados)
                                 try:

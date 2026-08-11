@@ -203,6 +203,30 @@ def _aprovacao_pendente_stats() -> Dict[str, int]:
 
 
 # ============================================================================
+# NAVEGACAO COM CONTEXTO
+# ============================================================================
+
+# Estado que a pagina de destino sabe ler. Ate aqui o company_id do item era
+# simplesmente descartado no switch_page — e action_params, montado em 3 lugares
+# (_acao_imediata_items), NUNCA era lido por ninguem: codigo morto. Na pratica,
+# "Ver escola" num lead CRITICO abria a ULTIMA ficha visitada, porque
+# escola_detail_id sobrevive a navegacao. O padrao correto ja existia em
+# dashboard/app.py:93-95 e pages/4_Negocios.py:234-235.
+_DEST_STATE = {"company_id": "escola_detail_id"}
+
+
+def _carregar_contexto(item: Dict[str, Any]) -> None:
+    """Leva o alvo do item para a pagina de destino, antes do switch_page."""
+    params = dict(item.get("action_params") or {})
+    if item.get("company_id") and not params.get("company_id"):
+        params["company_id"] = item["company_id"]
+    for chave, valor in params.items():
+        destino = _DEST_STATE.get(chave)
+        if destino and valor:
+            st.session_state[destino] = valor
+
+
+# ============================================================================
 # RENDER PRINCIPAL
 # ============================================================================
 
@@ -237,6 +261,7 @@ def render_action_panel() -> None:
                 btn_key = f"action_{item['type']}_{item.get('company_id', item.get('queue_id', ''))}"
                 if st.button(item["action_label"], key=btn_key, use_container_width=True):
                     if item.get("action_page"):
+                        _carregar_contexto(item)
                         st.switch_page(item["action_page"])
 
     st.divider()
