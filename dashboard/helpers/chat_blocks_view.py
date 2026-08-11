@@ -220,8 +220,11 @@ _ACTIONS_KEY = "chat_email_actions"  # {queue_id: "approved"|"rejected"|"sent"|.
 
 
 def _get_queue_manager():
-    from approval_queue.queue_manager import ApprovalQueueManager
-    return ApprovalQueueManager()
+    # A classe chama-se QueueManager (singleton `queue_manager`). O nome errado
+    # aqui fazia TODA acao inline do chat falhar com ImportError, engolido pelo
+    # except de render_block — o preview sumia e nada era aprovado/enviado.
+    from approval_queue.queue_manager import queue_manager
+    return queue_manager
 
 
 def _fetch_queue_status(qid: str) -> str:

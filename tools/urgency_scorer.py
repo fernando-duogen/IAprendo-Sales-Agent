@@ -425,20 +425,36 @@ class UrgencyScorer:
             if not inep:
                 return ENEM_DEFAULT_SCORE
 
-            # Buscar dados ENEM
+            # Buscar dados ENEM.
+            # A coluna e `enem_amostra_confiavel` — o nome errado
+            # (`amostra_confiavel`) fazia o PostgREST devolver 400, o except
+            # engolia e TODA escola recebia o score default. Resultado: 15% do
+            # score de urgencia era constante e nunca havia lead HOT/CRITICAL.
             sa = db.client.table("school_analytics").select(
-                "enem_media_geral,enem_percentil_br,amostra_confiavel"
+                "enem_media_geral,enem_percentil_br,enem_amostra_confiavel,"
+                "peer_delta_media_geral_2022_2025"
             ).eq("inep_code", str(inep)).limit(1).execute()
             if not sa.data:
                 return ENEM_DEFAULT_SCORE
 
             row = sa.data[0]
-            if not row.get("amostra_confiavel"):
+            if not row.get("enem_amostra_confiavel"):
                 return ENEM_DEFAULT_SCORE
 
-            # Classificacao simplificada P1/P2/P3
-            percentil = row.get("enem_percentil_br") or 0
-            delta = 0
+            # Classificacao P1/P2/P3 (alinhada com enem_tools._classificar_prioridade)
+            percentil = row.get("enem_percentil_br")
+            try:
+                delta = float(row.get("peer_delta_media_geral_2022_2025") or 0)
+            except (TypeError, ValueError):
+                delta = 0.0
+
+            if percentil is None:
+                # Sem percentil nao da pra classificar — nao chutar P3
+                return ENEM_DEFAULT_SCORE
+            try:
+                percentil = float(percentil)
+            except (TypeError, ValueError):
+                return ENEM_DEFAULT_SCORE
 
             if percentil >= 70 and delta >= 0:
                 priority = "P1"  # Alta performance + melhorando
@@ -448,7 +464,9 @@ class UrgencyScorer:
                 priority = "P2"  # Media
 
             return ENEM_PRIORITY_SCORES.get(priority, ENEM_DEFAULT_SCORE)
-        except Exception:
+        except Exception as e:
+            # Nao engolir em silencio: erro de coluna/schema ficava invisivel
+            logger.warning(f"urgency ENEM sub-score falhou: {str(e)[:200]}")
             return ENEM_DEFAULT_SCORE
 
     # ========================================================================

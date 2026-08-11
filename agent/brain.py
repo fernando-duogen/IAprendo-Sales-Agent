@@ -3569,21 +3569,33 @@ def _handle_iniciar_prospeccao(params: Dict) -> str:
 
 
 def _resolve_queue_id(params: Dict) -> Optional[str]:
-    """Resolve queue_id a partir de queue_id direto ou posicao na fila."""
-    qid = params.get("queue_id")
+    """Resolve queue_id a partir de queue_id direto ou posicao na fila.
+
+    CRITICO: a numeracao TEM que ser a MESMA que o usuario viu em
+    `fila_aprovacao` — created_at DESC e o mesmo filtro de status (nenhum, se
+    ele nao pediu). Antes divergia duas vezes (ASC + sempre 'pending'), entao
+    "aprova o 2" podia atingir OUTRO email — que depois era ENVIADO de verdade.
+    """
+    qid = (params.get("queue_id") or "").strip() if isinstance(
+        params.get("queue_id"), str) else params.get("queue_id")
     if qid:
         return qid
-    pos = params.get("posicao")
-    if pos and isinstance(pos, int) and pos >= 1:
-        try:
-            r = db.client.table("approval_queue").select("id").eq(
-                "status", "pending"
-            ).order("created_at", desc=False).limit(pos).execute()
-            items = r.data or []
-            if len(items) >= pos:
-                return items[pos - 1]["id"]
-        except Exception:
-            pass
+    try:
+        pos = int(params.get("posicao"))
+    except (TypeError, ValueError):
+        return None
+    if pos < 1:
+        return None
+    try:
+        q = db.client.table("approval_queue").select("id")
+        if params.get("status"):
+            q = q.eq("status", params["status"])
+        r = q.order("created_at", desc=True).limit(pos).execute()
+        items = r.data or []
+        if len(items) >= pos:
+            return items[pos - 1]["id"]
+    except Exception:
+        pass
     return None
 
 
@@ -5318,9 +5330,20 @@ def _parse_agendar_para(raw: Optional[str]) -> Optional[str]:
     if not raw or not raw.strip():
         return None
     raw = raw.strip()
-    # Se ja e ISO 8601 valido, retornar direto
+    # Se ja e ISO 8601 valido, normalizar o FUSO antes de devolver.
+    # CRITICO: ISO sem offset ("2026-08-12T16:00") era devolvido cru; o Postgres
+    # (timestamptz) interpreta como UTC e o envio saia 3h ADIANTADO no horario
+    # de Brasilia. Agora um horario sem fuso e assumido como America/Sao_Paulo,
+    # que e como o usuario fala ("amanha as 16h").
     try:
-        datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            try:
+                from zoneinfo import ZoneInfo
+                dt = dt.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
+                return dt.isoformat()
+            except Exception:
+                return f"{dt.isoformat()}-03:00"
         return raw
     except (ValueError, TypeError):
         pass
@@ -5334,44 +5357,108 @@ def _parse_agendar_para(raw: Optional[str]) -> Optional[str]:
     m = re.match(r"(\d{2})/(\d{2})/(\d{4})\s+(\d{1,2}:\d{2})", raw)
     if m:
         return f"{m.group(3)}-{m.group(2)}-{m.group(1)}T{m.group(4)}:00-03:00"
-    # Se nao conseguir parsear, retorna como veio (GPT deve ter convertido)
-    return raw
+    # NAO entendido: devolver None. Antes retornava a string crua ("amanha 9h"),
+    # que ia direto pro UPDATE e estourava no Postgres (22007).
+    logger.warning(f"agendar_para nao reconhecido: {raw[:60]!r}")
+    return None
 
 
 def _handle_aprovar_mensagem(params: Dict) -> str:
     sched_iso = _parse_agendar_para(params.get("agendar_para"))
-    sched_msg = ""
-    if sched_iso:
-        sched_msg = f" Agendada para envio em {sched_iso}."
+    # Pediu agendamento mas nao deu pra entender? ABORTAR. Aprovar sem o
+    # agendamento faria a mensagem sair no proximo lote (minutos) em vez da
+    # data pedida — pior que falhar.
+    if params.get("agendar_para") and not sched_iso:
+        return json.dumps({
+            "erro": (
+                "Nao entendi a data/hora do agendamento. Converta para ISO 8601 "
+                "(ex.: '2026-08-15T09:00') e chame de novo. NADA foi aprovado."
+            ),
+        }, ensure_ascii=False)
+    sched_msg = f" Agendada para envio em {sched_iso}." if sched_iso else ""
+    now_iso = datetime.now().isoformat()
 
     if params.get("aprovar_todas"):
-        pending = db.client.table("approval_queue").select("id").eq("status", "pending").execute()
-        count = 0
-        for item in pending.data:
-            update = {"status": "approved", "approved_at": datetime.now().isoformat()}
-            if sched_iso:
-                update["scheduled_send_at"] = sched_iso
-            db.client.table("approval_queue").update(update).eq("id", item["id"]).execute()
-            count += 1
-        return json.dumps({
-            "aprovadas": count,
+        try:
+            _cap = min(int(params.get("limite") or 100), 200)
+        except (TypeError, ValueError):
+            _cap = 100
+        pending = db.client.table("approval_queue").select("id").eq(
+            "status", "pending"
+        ).order("created_at", desc=True).limit(_cap).execute()
+        ids = [i["id"] for i in (pending.data or [])]
+        if not ids:
+            return json.dumps({"aprovadas": 0, "mensagem": "Nao ha mensagens pendentes."})
+        update = {"status": "approved", "approved_at": now_iso}
+        if sched_iso:
+            update["scheduled_send_at"] = sched_iso
+        try:
+            # UPDATE unico (antes: 1 round-trip por item, sem try/except —
+            # falha no meio deixava aprovacao parcial silenciosa)
+            res = db.client.table("approval_queue").update(update).in_(
+                "id", ids
+            ).eq("status", "pending").execute()
+        except Exception as e:
+            return json.dumps({"erro": f"Falha ao aprovar em lote: {str(e)[:200]}"})
+        aprovadas = len(res.data or [])
+        out = {
+            "aprovadas": aprovadas,
             "agendamento": sched_iso,
-            "mensagem": f"{count} mensagens aprovadas.{sched_msg}",
-        })
+            "mensagem": f"{aprovadas} mensagens aprovadas.{sched_msg}",
+        }
+        if len(ids) >= _cap:
+            out["aviso"] = (
+                f"Limite de {_cap} por chamada — pode haver mais pendentes. "
+                "Rode de novo para continuar."
+            )
+        return json.dumps(out, ensure_ascii=False)
 
-    queue_id = params.get("queue_id")
+    queue_id = _resolve_queue_id(params)
     if not queue_id:
-        return json.dumps({"erro": "Informe o ID da mensagem ou use aprovar_todas=true."})
+        return json.dumps({
+            "erro": "Informe queue_id, posicao (1, 2, 3... como listado em fila_aprovacao) ou aprovar_todas=true.",
+        }, ensure_ascii=False)
 
-    update = {"status": "approved", "approved_at": datetime.now().isoformat()}
+    update = {"status": "approved", "approved_at": now_iso}
     if sched_iso:
         update["scheduled_send_at"] = sched_iso
-    db.client.table("approval_queue").update(update).eq("id", queue_id).execute()
+    try:
+        # CAS em 'pending': nao "re-aprova" item ja aprovado/enviado/rejeitado
+        res = db.client.table("approval_queue").update(update).eq(
+            "id", queue_id
+        ).eq("status", "pending").execute()
+    except Exception as e:
+        return json.dumps({"erro": f"Falha ao aprovar: {str(e)[:200]}"})
+
+    if not (res.data or []):
+        # Nao afetou nada: dizer o que REALMENTE aconteceu (antes respondia
+        # "aprovada com sucesso" mesmo sem ter aprovado)
+        try:
+            atual = db.client.table("approval_queue").select(
+                "status,subject,sent_at"
+            ).eq("id", queue_id).limit(1).execute().data or []
+        except Exception:
+            atual = []
+        if not atual:
+            return json.dumps({
+                "erro": f"Mensagem {queue_id} nao encontrada na fila.",
+            }, ensure_ascii=False)
+        st = atual[0].get("status")
+        return json.dumps({
+            "erro": (
+                f"Nada aprovado: a mensagem '{atual[0].get('subject')}' esta com "
+                f"status '{st}'"
+                + (" (ja foi ENVIADA)" if atual[0].get("sent_at") else "")
+                + ". Só itens pendentes podem ser aprovados."
+            ),
+            "status_atual": st,
+        }, ensure_ascii=False)
+
     return json.dumps({
         "aprovada": queue_id,
         "agendamento": sched_iso,
         "mensagem": f"Mensagem aprovada com sucesso.{sched_msg}",
-    })
+    }, ensure_ascii=False)
 
 
 def _handle_consultar_interacoes(params: Dict) -> str:

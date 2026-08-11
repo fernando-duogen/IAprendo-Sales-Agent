@@ -1195,7 +1195,7 @@ if st.session_state.escola_detail_id:
                     else f"apenas {_n} avaliacao(oes) — leia com cautela"
                 ) if _n else "sem contagem de avaliacoes"
                 _cor = COLORS["success"] if _r >= 4.5 else (
-                    COLORS["warning"] if _r >= 3.5 else COLORS["danger"])
+                    COLORS["warning"] if _r >= 3.5 else COLORS["error"])
                 _link = company.get("google_maps_url")
                 _link_html = (
                     f'<a href="{_link}" target="_blank" rel="noopener" '
@@ -1214,7 +1214,8 @@ if st.session_state.escola_detail_id:
                     f'{_link_html}</div>',
                     unsafe_allow_html=True,
                 )
-            except (TypeError, ValueError):
+            except Exception:
+                # Bloco decorativo: nunca pode derrubar a ficha da escola
                 pass
 
         section_header("Informacoes da Escola", "edit")

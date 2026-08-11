@@ -151,8 +151,11 @@ class Geocoder:
                         "latitude": result["latitude"],
                         "longitude": result["longitude"],
                     }
-                    # Se veio do Perplexity, atualizar tambem o endereco no banco
-                    if result.get("method") == "perplexity_fallback" and result.get("perplexity_address"):
+                    # Se veio da busca web, atualizar tambem o endereco no banco.
+                    # ("perplexity_fallback" e o nome historico — aceito p/ nao
+                    # perder resultados de execucoes antigas.)
+                    if result.get("method") in ("web_search_fallback", "perplexity_fallback") \
+                            and result.get("perplexity_address"):
                         updates["address"] = result["perplexity_address"]
                         fallback_used += 1
                     db.update_company(company_id, updates)
