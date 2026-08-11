@@ -106,6 +106,8 @@ _COMP_TEMPLATE = """<!DOCTYPE html>
     <div class="subtitle">{nome1} vs {nome2} &bull; {cidade}/{uf}</div>
   </div>
 
+  {aviso_safra}
+
   <!-- METRICAS LADO A LADO -->
   <div class="section">
     <div class="section-title"><span class="icon">📊</span> Visao Geral</div>
@@ -197,7 +199,25 @@ def generate_comparison_report(
 
     # Ano ENEM dinamico (mesmo padrao do OPR de 1 escola) — evita "ENEM 2024"
     # hardcoded quando a base ja e de outro ano.
-    enem_ano_disp = int((s1 or {}).get("enem_ano") or (s2 or {}).get("enem_ano") or 2025)
+    _ano1 = (s1 or {}).get("enem_ano")
+    _ano2 = (s2 or {}).get("enem_ano")
+    enem_ano_disp = int(_ano1 or _ano2 or 2025)
+    # SAFRAS DIFERENTES: comparar nota de 2024 com 2025 sob um unico titulo
+    # produz "+X pts" entre provas distintas. Avisar em destaque no relatorio.
+    _aviso_safra = ""
+    if _ano1 and _ano2 and int(_ano1) != int(_ano2):
+        _aviso_safra = (
+            f'<div style="background:#FFF3CD;border-left:4px solid #F0AD4E;'
+            f'padding:12px 16px;margin:16px 0;border-radius:6px;font-size:14px">'
+            f'<strong>⚠️ Atencao:</strong> as escolas estao em safras diferentes do '
+            f'ENEM ({int(_ano1)} vs {int(_ano2)}). As diferencas de pontuacao '
+            f'comparam provas de anos distintos e devem ser lidas com cautela.'
+            f'</div>'
+        )
+        logger.warning(
+            "comparison_report: safras ENEM diferentes",
+            extra={"inep1": inep1, "ano1": _ano1, "inep2": inep2, "ano2": _ano2},
+        )
 
     nome1 = _resolve_school_name(str(inep1))
     nome2 = _resolve_school_name(str(inep2))
@@ -369,6 +389,7 @@ def generate_comparison_report(
         meeting_link=meeting_link,
         qr_html=qr_html,
         enem_ano=enem_ano_disp,
+        aviso_safra=_aviso_safra,
         data_geracao=date.today().strftime("%d/%m/%Y"),
         logo_html=logo_html,
         robot_html=robot_html,

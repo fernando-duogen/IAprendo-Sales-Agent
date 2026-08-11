@@ -4421,50 +4421,90 @@ def _handle_melhor_horario(params: Dict) -> str:
 
 
 def _handle_funil_vendas(params: Dict) -> str:
-    """Mostra funil de conversão completo com gargalos."""
+    """Funil de conversao (ESCOLAS por etapa) + gargalo real.
+
+    Antes consultava status que NAO existem em companies ('sent', 'opened',
+    'replied' — o real e 'responded'), sempre contando 0, e ainda arrastava a
+    base da etapa anterior. Resultado: recomendava "gargalo em Email enviado"
+    para uma etapa impossivel — conselho inventado apresentado como fato.
+    Agora: etapas reais do CHECK de status + engajamento medido na
+    approval_queue (por ESCOLA, nao por mensagem).
+    """
     try:
-        etapas = [
+        # 1) Etapas de cadastro/preparo (status real de companies)
+        etapas_status = [
             ("raw", "Importadas"),
             ("qualified", "Qualificadas"),
             ("enriched", "Enriquecidas"),
             ("contacted", "Contatadas"),
-            ("sent", "Email enviado"),
-            ("opened", "Email aberto"),
-            ("replied", "Responderam"),
+            ("responded", "Responderam"),
         ]
+        counts: Dict[str, int] = {}
+        for status, _ in etapas_status:
+            r = db.client.table("companies").select(
+                "id", count="exact"
+            ).eq("status", status).limit(1).execute()
+            counts[status] = r.count or 0
 
+        # Funil acumulado: quem esta na etapa N ou DEPOIS ja passou pela N
+        ordem = [s for s, _ in etapas_status]
         funil = []
         anterior = None
-        for status, label in etapas:
-            result = db.client.table("companies").select("id", count="exact").eq("status", status).execute()
-            count = result.count or 0
+        for i, (status, label) in enumerate(etapas_status):
+            quantidade = sum(counts.get(s, 0) for s in ordem[i:])
             taxa = None
-            if anterior is not None and anterior > 0:
-                taxa = round((count / anterior) * 100, 1)
+            if anterior:
+                taxa = round((quantidade / anterior) * 100, 1)
             funil.append({
                 "etapa": label,
                 "status": status,
-                "quantidade": count,
+                "quantidade": quantidade,
                 "taxa_conversao": f"{taxa}%" if taxa is not None else None,
             })
-            anterior = count if count > 0 else anterior
+            anterior = quantidade
 
-        # Reuniões
-        meetings = db.client.table("meetings").select("id", count="exact").execute()
+        # 2) Engajamento real (escolas distintas com email enviado/aberto/respondido)
+        engajamento = {"escolas_com_envio": 0, "escolas_que_abriram": 0,
+                       "escolas_que_responderam": 0}
+        try:
+            msgs = db.client.table("approval_queue").select(
+                "company_id,sent_at,opened_at,replied_at"
+            ).not_.is_("sent_at", "null").limit(1000).execute().data or []
+            engajamento["escolas_com_envio"] = len(
+                {m["company_id"] for m in msgs if m.get("company_id")})
+            engajamento["escolas_que_abriram"] = len(
+                {m["company_id"] for m in msgs if m.get("opened_at") and m.get("company_id")})
+            engajamento["escolas_que_responderam"] = len(
+                {m["company_id"] for m in msgs if m.get("replied_at") and m.get("company_id")})
+        except Exception:
+            pass
 
-        # Identificar gargalo (menor taxa de conversão)
-        gargalo = None
-        menor_taxa = 100
+        meetings = db.client.table("meetings").select("id", count="exact").limit(1).execute()
+
+        # 3) Gargalo = menor taxa REAL entre etapas com base > 0
+        gargalo, menor_taxa = None, None
         for item in funil:
-            if item["taxa_conversao"] and float(item["taxa_conversao"].replace("%", "")) < menor_taxa:
-                menor_taxa = float(item["taxa_conversao"].replace("%", ""))
-                gargalo = item["etapa"]
+            if not item["taxa_conversao"]:
+                continue
+            v = float(item["taxa_conversao"].replace("%", ""))
+            if menor_taxa is None or v < menor_taxa:
+                menor_taxa, gargalo = v, item["etapa"]
+
+        if gargalo and menor_taxa is not None:
+            recomendacao = (f"Maior perda em '{gargalo}' ({menor_taxa}% de conversao "
+                            f"vindo da etapa anterior). Foque nessa etapa.")
+        else:
+            recomendacao = ("Ainda nao ha volume suficiente para apontar gargalo "
+                            "com honestidade.")
 
         return json.dumps({
             "funil": funil,
+            "engajamento": engajamento,
             "reunioes": meetings.count or 0,
             "gargalo": gargalo,
-            "recomendacao": f"Gargalo em '{gargalo}' ({menor_taxa}% de conversao). Foque nessa etapa." if gargalo else "Funil saudavel!",
+            "recomendacao": recomendacao,
+            "nota": ("Funil conta ESCOLAS por status; engajamento conta escolas "
+                     "distintas com email enviado/aberto/respondido."),
         }, ensure_ascii=False, default=str)
     except Exception as e:
         return json.dumps({"erro": f"Erro no funil: {str(e)[:200]}"})

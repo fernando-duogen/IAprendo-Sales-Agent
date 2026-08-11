@@ -137,9 +137,29 @@ if filter_tipo != "Todos":
 company_ids = {c["id"] for c in companies}
 
 messages = [m for m in raw_data["messages"] if m.get("company_id") in company_ids] if filter_city != "Todas" or filter_tipo != "Todos" else raw_data["messages"]
+
+
+def _no_periodo(registro: dict, campo: str) -> bool:
+    """O registro esta dentro do periodo escolhido? (cutoff_iso ja calculado).
+
+    O filtro "Periodo" existia na UI mas NAO era aplicado em lugar nenhum —
+    todos os numeros eram all-time, independente da escolha do usuario.
+    Aplicamos aos FLUXOS (mensagens, reunioes, custo); a base de escolas e
+    estoque e continua inteira (senao "Total de escolas" viraria ~0).
+    """
+    if cutoff_days >= 9999:
+        return True
+    valor = registro.get(campo)
+    if not valor:
+        return False
+    return str(valor) >= cutoff_iso
+
+
+messages = [m for m in messages if _no_periodo(m, "created_at")]
 sent_msgs = [m for m in messages if m.get("status") == "sent"]
-meetings = raw_data["meetings"]
-api_usage = raw_data["api_usage"]
+meetings = [m for m in raw_data["meetings"] if _no_periodo(m, "scheduled_at")]
+api_usage = [a for a in raw_data["api_usage"] if _no_periodo(a, "created_at")]
+_periodo_label = "todo o historico" if cutoff_days >= 9999 else f"ultimos {cutoff_days} dias"
 
 # =============================================================================
 # SECAO 1 — KPIs
@@ -153,11 +173,18 @@ total_respondidos = len([m for m in sent_msgs if m.get("replied_at")])
 total_clicados = len([m for m in sent_msgs if m.get("clicked_at")])
 total_reunioes = len([m for m in meetings if m.get("status") in ("scheduled", "completed")])
 
-taxa_abertura = f"{total_abertos * 100 // total_enviados}%" if total_enviados else "—"
-taxa_resposta = f"{total_respondidos * 100 // total_enviados}%" if total_enviados else "—"
+# round(...,1): a divisao inteira antiga transformava qualquer taxa < 1% em "0%"
+taxa_abertura = f"{round(total_abertos * 100 / total_enviados, 1)}%" if total_enviados else "—"
+taxa_resposta = f"{round(total_respondidos * 100 / total_enviados, 1)}%" if total_enviados else "—"
 
-# Custo total (usa cost_usd real quando disponivel, senao estima)
-total_cost_usd_kpi = sum(float(a.get("cost_usd") or 0) or 0.02 for a in api_usage)
+# Custo total — SO o que foi realmente registrado.
+# Antes: `float(a.get("cost_usd") or 0) or 0.02` transformava custo 0/NULL em
+# 2 centavos fantasma (inflava o total em ~39%) e, pior, passou a somar 2
+# centavos para cada FALHA de API (que grava cost_usd=0 de proposito).
+total_cost_usd_kpi = sum(
+    float(a["cost_usd"]) for a in api_usage if a.get("cost_usd") is not None
+)
+_sem_custo = sum(1 for a in api_usage if a.get("cost_usd") is None)
 custo_brl_kpi = total_cost_usd_kpi * USD_BRL
 custo_estimado = f"R$ {custo_brl_kpi:.2f}"
 
@@ -177,6 +204,13 @@ with k5:
 with k6:
     metric_card("Custo total", custo_estimado, icon="payments", color="#9E9E9E",
                 delta=f"{len(api_usage)} chamadas")
+
+st.caption(
+    f"Numeros de fluxo (envios, reunioes, custo) referentes a **{_periodo_label}**; "
+    f"'Escolas' e o total da base."
+    + (f" · {_sem_custo} chamada(s) sem custo registrado (nao somadas)."
+       if _sem_custo else "")
+)
 
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -298,17 +332,34 @@ status_labels = {
     "closed": "Fechadas",
 }
 
-# Calcular funil acumulativo
+# Calcular funil acumulativo.
+# Unidade: ESCOLAS em todas as etapas (antes as 3 ultimas contavam mensagens e
+# reunioes, misturando grandezas no mesmo grafico e nas taxas).
 status_counts = Counter(c.get("status", "raw") for c in companies)
-replied_count = len([m for m in sent_msgs if m.get("replied_at")])
-meeting_count = len([m for m in meetings if m.get("status") in ("completed", "scheduled")])
-closed_count = len([m for m in meetings if m.get("outcome") == "fechado"])
+_ids_responderam = {
+    m.get("company_id") for m in sent_msgs if m.get("replied_at") and m.get("company_id")
+}
+# quem esta com status 'responded' tambem conta como respondeu
+_ids_responderam |= {
+    c["id"] for c in companies if (c.get("status") or "") == "responded"
+}
+replied_count = len(_ids_responderam)
+meeting_count = len({
+    m.get("company_id") for m in meetings
+    if m.get("status") in ("completed", "scheduled") and m.get("company_id")
+})
+closed_count = len({
+    m.get("company_id") for m in meetings
+    if m.get("outcome") == "fechado" and m.get("company_id")
+})
 
 # Funil: cada etapa = escolas que chegaram ATE aqui (acumulado decrescente)
 # raw = total | qualified = qualified + enriched + contacted | etc
-progression = ["raw", "qualified", "enriched", "contacted"]
+# ATENCAO: 'responded' existe em companies e faltava aqui — a escola que
+# respondeu sumia de TODAS as etapas (a base do funil perdia registros).
+progression = ["raw", "qualified", "enriched", "contacted", "responded"]
 funnel_corrected = []
-for i, s in enumerate(progression):
+for i, s in enumerate(progression[:-1]):
     # Escolas que estao neste status OU posterior
     val = sum(status_counts.get(ss, 0) for ss in progression[i:])
     funnel_corrected.append(max(val, 0))
@@ -340,7 +391,7 @@ if funnel_corrected[0] > 0:
     for i in range(len(status_order) - 1):
         prev = funnel_corrected[i]
         curr = funnel_corrected[i + 1]
-        taxa = f"{curr * 100 // prev}%" if prev > 0 else "—"
+        taxa = f"{round(curr * 100 / prev, 1)}%" if prev > 0 else "—"
         with cols_tax[i]:
             st.markdown(
                 f'<div style="text-align:center;font-size:12px;color:#757575">'
@@ -422,8 +473,8 @@ if channels:
             "Abertos": stats["abertos"],
             "Clicados": stats["clicados"],
             "Respondidos": stats["respondidos"],
-            "Taxa abertura": f"{stats['abertos'] * 100 // env}%" if env else "—",
-            "Taxa resposta": f"{stats['respondidos'] * 100 // env}%" if env else "—",
+            "Taxa abertura": f"{round(stats['abertos'] * 100 / env, 1)}%" if env else "—",
+            "Taxa resposta": f"{round(stats['respondidos'] * 100 / env, 1)}%" if env else "—",
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 else:
@@ -458,7 +509,7 @@ if city_stats:
             "Enviados": env,
             "Abertos": stats["abertos"],
             "Respondidos": stats["respondidos"],
-            "Taxa resposta": f"{stats['respondidos'] * 100 // env}%" if env else "—",
+            "Taxa resposta": f"{round(stats['respondidos'] * 100 / env, 1)}%" if env else "—",
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 else:
@@ -563,15 +614,18 @@ with cc2:
 
 st.markdown("")
 
-api_stats = defaultdict(lambda: {"credits": 0, "cost_usd": 0.0, "tokens_in": 0, "tokens_out": 0})
+api_stats = defaultdict(lambda: {"credits": 0, "cost_usd": 0.0, "tokens_in": 0,
+                                 "tokens_out": 0, "sem_custo": 0})
 for a in api_usage:
     api_name = a.get("api_name", "?")
     api_stats[api_name]["credits"] += (a.get("credits_used") or 0)
-    # Custo real por tokens (se disponivel)
-    if a.get("cost_usd"):
+    # SO custo real. O fallback antigo (0.02 por linha sem custo) fabricava
+    # numero: 'anthropic', por ex., tem todas as linhas sem cost_usd e a tabela
+    # exibia ~USD 3,42 inventados.
+    if a.get("cost_usd") is not None:
         api_stats[api_name]["cost_usd"] += float(a["cost_usd"])
     else:
-        api_stats[api_name]["cost_usd"] += 0.02  # fallback: USD 0.02/credit
+        api_stats[api_name]["sem_custo"] += 1
     api_stats[api_name]["tokens_in"] += (a.get("prompt_tokens") or 0)
     api_stats[api_name]["tokens_out"] += (a.get("completion_tokens") or 0)
 
@@ -600,7 +654,12 @@ if api_stats:
         "USD": f"$ {total_cost_usd:.4f}",
         "BRL": f"R$ {total_cost:.2f}",
     })
-    st.caption(f"_Taxa USD/BRL: {USD_BRL:.2f} | Custo calculado por tokens reais quando disponivel_")
+    _total_sem_custo = sum(s["sem_custo"] for s in api_stats.values())
+    st.caption(
+        f"_Taxa USD/BRL: {USD_BRL:.2f} | Somente custo REGISTRADO_"
+        + (f" · {_total_sem_custo} chamada(s) antigas sem custo gravado nao entram no total"
+           if _total_sem_custo else "")
+    )
 
     r1, r2 = st.columns([1, 1])
     with r1:
@@ -665,7 +724,10 @@ st.markdown('<hr class="divider">', unsafe_allow_html=True)
 # =============================================================================
 # SECAO 8 — Top oportunidades
 # =============================================================================
-section_header("Top oportunidades (score preditivo)", "emoji_events")
+# O titulo dizia "score preditivo", mas a coluna exibida e o
+# qualification_score (a nota que a IA da na qualificacao) — sao metricas
+# diferentes por definicao do projeto. Rotulo alinhado ao dado real.
+section_header("Top oportunidades (score de qualificacao)", "emoji_events")
 
 top_schools = sorted(
     [c for c in companies if (c.get("qualification_score") or 0) > 0],

@@ -779,6 +779,9 @@ def generate_report(inep: str, benchmark_dep: Optional[str] = None) -> Optional[
                 uf if uf != "?" else "",
                 dep_name,
                 ["enem_media_geral"] + AREA_KEYS,
+                # A propria escola fora do benchmark + mesma safra ENEM
+                excluir_inep=str(inep),
+                enem_ano=(school or {}).get("enem_ano"),
             )
         except Exception:
             v_bench_data, v_bench_count, v_scope = {}, 0, "municipio"

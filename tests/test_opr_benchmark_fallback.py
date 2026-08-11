@@ -13,7 +13,9 @@ from tools import insight_charts as ic
 
 def _fake(counts):
     """Fabrica um _bench_query falso: counts = {'municipio':n,'estado':n,'brasil':n}."""
-    def _q(mun, uf, dep, metrics):
+    # **kwargs: a assinatura ganhou excluir_inep/enem_ano (auditoria Ago/2026 —
+    # a escola nao pode entrar no proprio benchmark, nem misturar safras).
+    def _q(mun, uf, dep, metrics, **kwargs):
         if mun:
             scope = "municipio"
         elif uf:

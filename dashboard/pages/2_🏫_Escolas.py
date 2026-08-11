@@ -199,6 +199,21 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
     amostra_ok = row.get("enem_amostra_confiavel") is True
     potencial = row.get("enem_potencial_melhoria")
 
+    # Safra REAL desta escola. Nem toda linha de school_analytics esta em 2025;
+    # ler colunas *_2025 fixas fazia as escolas de 2024 perderem gap/peer/socio.
+    try:
+        from agent.tools.enem_tools import campo_por_safra as _safra, trajetoria_peer as _traj_peer
+    except Exception:  # pragma: no cover
+        def _safra(r, base, anos=(2025, 2024)):
+            return r.get(f"{base}_2025")
+
+        def _traj_peer(r):
+            return r.get("peer_trajetoria_6y")
+    try:
+        _ano_row = int(row.get("enem_ano") or ENEM_VINTAGE)
+    except (TypeError, ValueError):
+        _ano_row = ENEM_VINTAGE
+
     # --- Banner de prioridade P1/P2/P3 via handler (fonte unica da verdade) ---
     try:
         from agent.tools.enem_tools import _classificar_prioridade, _aviso_p3
@@ -241,10 +256,11 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
 
     # --- Metricas principais (so se amostra confiavel) ---
     if amostra_ok and row.get("enem_media_geral") is not None:
-        section_header(f"Performance ENEM {ENEM_VINTAGE}", "trending_up")
+        # Rotulo usa a safra REAL da linha (nem toda escola esta em 2025)
+        section_header(f"Performance ENEM {_ano_row}", "trending_up")
         media_com = float(row.get("enem_media_geral") or 0)
         media_sem = row.get("enem_media_geral_sem_redacao")
-        gap = row.get("enem_gap_vs_peer_2025")
+        gap = _safra(row, "enem_gap_vs_peer")
         presentes = row.get("enem_presentes") or 0
 
         mc1, mc2, mc3, mc4 = st.columns(4)
@@ -268,7 +284,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
             if gap is not None:
                 gap_f = float(gap)
                 metric_card(
-                    f"Gap vs peer {ENEM_VINTAGE}",
+                    f"Gap vs peer {_ano_row}",
                     f"{gap_f:+.1f}",
                     COLORS["success"] if gap_f > 0 else COLORS["error"],
                     icon="compare_arrows",
@@ -350,7 +366,9 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
     st.markdown("")
 
     # --- Peer group (sempre mostra, mesmo sem amostra individual) ---
-    peer_traj = row.get("peer_trajetoria_6y")
+    # Fallback 6y -> 5y: escolas na safra 2024 so tem a coluna de 5 anos, e a
+    # secao INTEIRA sumia por causa disso.
+    peer_traj = _traj_peer(row)
     if peer_traj:
         section_header("Peer group — escolas do mesmo municipio x mesma dependencia", "groups")
         st.caption(
@@ -362,25 +380,29 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
 
         pc1, pc2, pc3, pc4 = st.columns(4)
         with pc1:
-            metric_card("Trajetoria 5 anos", str(peer_traj),
+            # Rotulo era "5 anos" lendo a coluna _6y (existem AS DUAS colunas)
+            _label_traj = ("Trajetoria 6 anos" if row.get("peer_trajetoria_6y")
+                           else "Trajetoria 5 anos")
+            metric_card(_label_traj, str(peer_traj),
                         COLORS["accent"], icon="timeline")
         with pc2:
-            delta = row.get("peer_delta_media_geral_2022_2025")
+            delta = row.get("peer_delta_media_geral_2022_2025") \
+                or row.get("peer_delta_media_geral_2022_2024")
             if delta is not None:
                 delta_f = float(delta)
                 metric_card(
-                    f"Delta 2022-{ENEM_VINTAGE}",
+                    f"Delta 2022-{_ano_row}",
                     f"{delta_f:+.1f}",
                     COLORS["success"] if delta_f > 0 else COLORS["error"],
                     icon="trending_flat",
                 )
         with pc3:
-            media_2024 = row.get("peer_media_geral_2025")
+            media_2024 = _safra(row, "peer_media_geral")
             if media_2024 is not None:
-                metric_card(f"Media peer {ENEM_VINTAGE}", f"{float(media_2024):.1f}",
+                metric_card(f"Media peer {_ano_row}", f"{float(media_2024):.1f}",
                             COLORS["info"], icon="analytics")
         with pc4:
-            presentes_2024 = row.get("peer_presentes_2025")
+            presentes_2024 = _safra(row, "peer_presentes")
             if presentes_2024 is not None:
                 metric_card("Presentes peer", f"{int(presentes_2024):,}".replace(",", "."),
                             COLORS["secondary"], icon="groups")
@@ -412,7 +434,7 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
     st.markdown("")
 
     # --- Contexto municipal (sempre rotulado) ---
-    renda_2024 = row.get("socio_renda_idx_media_2025")
+    renda_2024 = _safra(row, "socio_renda_idx_media")
     if renda_2024 is not None:
         section_header("Contexto do municipio (perfil socioeconomico)", "location_city")
         st.caption(
@@ -421,19 +443,20 @@ def _render_performance_tab(company: dict, company_id: str) -> None:
         )
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
-            metric_card(f"Indice de renda {ENEM_VINTAGE}", f"{float(renda_2024):.2f}",
+            metric_card(f"Indice de renda {_ano_row}", f"{float(renda_2024):.2f}",
                         COLORS["primary"], icon="paid")
         with sc2:
-            pais_sup = row.get("socio_pct_pais_superior_2025")
+            pais_sup = _safra(row, "socio_pct_pais_superior")
             if pais_sup is not None:
                 pct = float(pais_sup) * 100 if float(pais_sup) < 1 else float(pais_sup)
                 metric_card("% pais com superior", f"{pct:.1f}%",
                             COLORS["info"], icon="school")
         with sc3:
-            delta_renda = row.get("socio_delta_renda_2020_2025")
+            delta_renda = row.get("socio_delta_renda_2020_2025") \
+                or row.get("socio_delta_renda_2020_2024")
             if delta_renda is not None:
                 metric_card(
-                    f"Delta renda 2020-{ENEM_VINTAGE}",
+                    f"Delta renda 2020-{_ano_row}",
                     f"{float(delta_renda):+.2f}",
                     COLORS["success"] if float(delta_renda) > 0 else COLORS["error"],
                     icon="trending_up",

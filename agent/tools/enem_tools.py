@@ -531,6 +531,43 @@ def _formatar_contexto_municipal(
     }
 
 
+def campo_por_safra(
+    row: Dict[str, Any], base: str, anos: tuple = (2025, 2024)
+) -> Any:
+    """Le uma coluna com sufixo de SAFRA respeitando o `enem_ano` DA LINHA.
+
+    `school_analytics` nao esta 100% na mesma safra: algumas linhas ficaram em
+    2024 (colunas *_2024 preenchidas, *_2025 NULL). Ler `_2025` fixo fazia
+    essas escolas perderem gap/peer/socio silenciosamente — e nunca serem
+    classificadas em P1/P2/P3. Aqui tentamos primeiro o ano da propria linha e
+    depois os demais, em ordem de recencia.
+    """
+    if not row:
+        return None
+    ordem = []
+    try:
+        ano_linha = int(row.get("enem_ano") or 0)
+        if ano_linha:
+            ordem.append(ano_linha)
+    except (TypeError, ValueError):
+        pass
+    for a in anos:
+        if a not in ordem:
+            ordem.append(a)
+    for a in ordem:
+        v = row.get(f"{base}_{a}")
+        if v is not None:
+            return v
+    return None
+
+
+def trajetoria_peer(row: Dict[str, Any]) -> Optional[str]:
+    """Trajetoria do peer group: 6 anos, caindo para 5 se ausente."""
+    if not row:
+        return None
+    return row.get("peer_trajetoria_6y") or row.get("peer_trajetoria_5y")
+
+
 def _classificar_prioridade(row: Dict[str, Any]) -> Optional[str]:
     """Aplica regras P1/P2/P3 do plano.
 
@@ -543,11 +580,12 @@ def _classificar_prioridade(row: Dict[str, Any]) -> Optional[str]:
         return None
 
     potencial = row.get("enem_potencial_melhoria")
-    traj = row.get("peer_trajetoria_6y")
+    traj = trajetoria_peer(row)
     presentes = row.get("enem_presentes") or 0
     dep = row.get("enem_dependencia") or ""
-    gap = row.get("enem_gap_vs_peer_2025")
-    delta_22_24 = row.get("peer_delta_media_geral_2022_2025")
+    gap = campo_por_safra(row, "enem_gap_vs_peer")
+    delta_22_24 = row.get("peer_delta_media_geral_2022_2025") \
+        or row.get("peer_delta_media_geral_2022_2024")
 
     subindo = traj in ("Subindo", "Subindo forte")
     caindo = traj in ("Caindo", "Caindo forte")

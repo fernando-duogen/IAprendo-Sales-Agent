@@ -180,22 +180,53 @@ def _fetch_school_data(inep: str) -> Optional[Dict[str, Any]]:
 _MIN_BENCH = 3
 
 
+_BENCH_PAGE = 1000  # PostgREST clampa .limit() nesse teto
+
+
 def _bench_query(
-    municipio: str, uf: str, dependencia: str, metrics: List[str]
+    municipio: str, uf: str, dependencia: str, metrics: List[str],
+    excluir_inep: str = "", enem_ano: Optional[int] = None,
 ) -> Tuple[Dict[str, Optional[float]], int]:
-    """Uma consulta de benchmark (SEM fallback): media por metrica + contagem."""
+    """Uma consulta de benchmark (SEM fallback): media por metrica + contagem.
+
+    Cuidados (auditoria Ago/2026):
+    - EXCLUI a propria escola do benchmark (`excluir_inep`). Numa cidade com
+      3-5 privadas, a escola pesava 20-33% do "grupo de pares" e o gap vs peers
+      ficava artificialmente perto de zero.
+    - Filtra pela MESMA safra ENEM (nao misturar 2024 com 2025 na mesma media).
+    - PAGINA os resultados: o PostgREST clampa .limit() em 1000 e havia recorte
+      (ex.: SP/Estadual = 3.152 escolas) virando amostra arbitraria de 1/3.
+    - Municipio com match EXATO (o ilike '%x%' fazia "Santa Maria" puxar
+      "Santa Maria do Herval").
+    """
     db = _get_db()
     fields = ",".join(metrics + ["inep_code"])
-    q = db.client.table("school_analytics").select(fields).eq(
-        "enem_amostra_confiavel", True
-    )
-    if municipio:
-        q = q.ilike("peer_mun_nome", f"%{municipio}%")
-    if uf:
-        q = q.eq("peer_uf_sigla", uf.upper())
-    if dependencia:
-        q = q.eq("enem_dependencia", dependencia)
-    rows = (q.limit(1000).execute().data) or []
+
+    def _base():
+        q = db.client.table("school_analytics").select(fields).eq(
+            "enem_amostra_confiavel", True
+        )
+        if municipio:
+            q = q.eq("peer_mun_nome", municipio)
+        if uf:
+            q = q.eq("peer_uf_sigla", uf.upper())
+        if dependencia:
+            q = q.eq("enem_dependencia", dependencia)
+        if enem_ano:
+            q = q.eq("enem_ano", enem_ano)
+        if excluir_inep:
+            q = q.neq("inep_code", str(excluir_inep))
+        return q
+
+    rows: List[Dict[str, Any]] = []
+    offset = 0
+    while True:
+        page = (_base().range(offset, offset + _BENCH_PAGE - 1).execute().data) or []
+        rows.extend(page)
+        if len(page) < _BENCH_PAGE or len(rows) >= 25000:
+            break
+        offset += _BENCH_PAGE
+
     if not rows:
         return {}, 0
     result: Dict[str, Optional[float]] = {}
@@ -206,7 +237,8 @@ def _bench_query(
 
 
 def _fetch_benchmark(
-    municipio: str, uf: str, dependencia: str, metrics: List[str]
+    municipio: str, uf: str, dependencia: str, metrics: List[str],
+    excluir_inep: str = "", enem_ano: Optional[int] = None,
 ) -> Tuple[Dict[str, Optional[float]], int, str]:
     """Benchmark (medias por metrica) da MESMA dependencia, com FALLBACK de
     escopo quando o nivel pedido tem poucas escolas (< _MIN_BENCH):
@@ -230,7 +262,10 @@ def _fetch_benchmark(
         levels.append(("brasil", "", ""))
         best: Tuple[Dict[str, Optional[float]], int, str] = ({}, 0, levels[0][0])
         for scope, mun, uff in levels:
-            data, count = _bench_query(mun, uff, dependencia, metrics)
+            data, count = _bench_query(
+                mun, uff, dependencia, metrics,
+                excluir_inep=excluir_inep, enem_ano=enem_ano,
+            )
             if count >= _MIN_BENCH:
                 return data, count, scope
             if count > best[1]:
@@ -321,13 +356,17 @@ def generate_radar_chart(
     if not any(v is not None for v in school_vals):
         return None
 
-    # Benchmark (permite forçar dependência diferente)
+    # Benchmark (permite forçar dependência diferente).
+    # excluir_inep: a propria escola NAO entra no seu grupo de pares.
+    # enem_ano: comparar so com a MESMA safra do ENEM.
     bench_dep = benchmark_dep if benchmark_dep else dep
     bench_data, bench_count, bench_scope = _fetch_benchmark(
         municipio if benchmark == "municipio" else "",
         uf if benchmark in ("municipio", "estado") else "",
         bench_dep,
         metrics,
+        excluir_inep=str(inep),
+        enem_ano=school.get("enem_ano"),
     )
     bench_vals = [bench_data.get(m) for m in metrics]
 
