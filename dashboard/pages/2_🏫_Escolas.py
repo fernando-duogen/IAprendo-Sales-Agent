@@ -1182,6 +1182,41 @@ if st.session_state.escola_detail_id:
                 f'💡 Argumentos de venda</div>{_itens}</div>',
                 unsafe_allow_html=True,
             )
+        # --- Reputacao no Google (vem do enriquecimento; ja paga no Places) ---
+        _g_rating = company.get("google_rating")
+        if _g_rating:
+            try:
+                _r = float(_g_rating)
+                _n = company.get("google_reviews_count") or 0
+                _estrelas = "★" * int(round(_r)) + "☆" * (5 - int(round(_r)))
+                # Poucas avaliacoes => nota pouco confiavel; sinalizar
+                _nota_ctx = (
+                    f"{_n} avaliacoes" if _n >= 20
+                    else f"apenas {_n} avaliacao(oes) — leia com cautela"
+                ) if _n else "sem contagem de avaliacoes"
+                _cor = COLORS["success"] if _r >= 4.5 else (
+                    COLORS["warning"] if _r >= 3.5 else COLORS["danger"])
+                _link = company.get("google_maps_url")
+                _link_html = (
+                    f'<a href="{_link}" target="_blank" rel="noopener" '
+                    f'style="font-size:12px;margin-left:10px">ver no Maps ↗</a>'
+                ) if _link else ""
+                st.markdown(
+                    f'<div style="background:#FFFFFF;border:1px solid #E2E8F0;'
+                    f'border-left:4px solid {_cor};border-radius:10px;'
+                    f'padding:10px 16px;margin-bottom:14px">'
+                    f'<span style="font-size:11px;font-weight:700;color:#64748B;'
+                    f'text-transform:uppercase;letter-spacing:0.7px">Reputacao Google</span><br>'
+                    f'<span style="font-size:18px;font-weight:700;color:{_cor}">'
+                    f'{_r:.1f}</span> '
+                    f'<span style="color:{_cor}">{_estrelas}</span> '
+                    f'<span style="font-size:12px;color:#64748B">({_nota_ctx})</span>'
+                    f'{_link_html}</div>',
+                    unsafe_allow_html=True,
+                )
+            except (TypeError, ValueError):
+                pass
+
         section_header("Informacoes da Escola", "edit")
 
         # ----- OWNERSHIP: badge do dono + reatribuicao (admin) -----

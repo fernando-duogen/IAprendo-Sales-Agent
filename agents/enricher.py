@@ -84,6 +84,16 @@ class EnricherAgent(BaseAgent):
                         updates["longitude"] = google_data["longitude"]
                     if google_data.get("endereco") and _should_update("address"):
                         updates["address"] = google_data["endereco"]
+                    # Reputacao: JA vem paga no fieldMask (era descartada ate
+                    # Ago/2026). Nota + qtd de avaliacoes = sinal de
+                    # qualificacao; url = atalho pro Maps no painel.
+                    # Sempre atualiza (nota muda com o tempo).
+                    if google_data.get("rating") is not None:
+                        updates["google_rating"] = google_data["rating"]
+                    if google_data.get("reviews") is not None:
+                        updates["google_reviews_count"] = google_data["reviews"]
+                    if google_data.get("google_maps_url"):
+                        updates["google_maps_url"] = google_data["google_maps_url"]
         except Exception as e:
             logger.debug(f"Google Places skip: {e}")
 

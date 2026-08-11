@@ -5712,6 +5712,11 @@ def _handle_detalhes_escola(params: Dict) -> str:
             "motivo_score": escola.get("qualification_reasoning"),
             "lat": escola.get("latitude"),
             "lon": escola.get("longitude"),
+            # Reputacao Google (do enriquecimento). Interprete com a contagem:
+            # 4.8 com 3 avaliacoes NAO e o mesmo que 4.8 com 300.
+            "google_nota": escola.get("google_rating"),
+            "google_avaliacoes": escola.get("google_reviews_count"),
+            "google_maps_url": escola.get("google_maps_url"),
             "email_pattern": escola.get("email_pattern"),
             "email_domain": escola.get("email_domain"),
             "hubspot_id": escola.get("hubspot_company_id"),

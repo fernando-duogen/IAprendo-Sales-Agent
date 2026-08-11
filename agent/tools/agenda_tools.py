@@ -470,6 +470,20 @@ def _build_argumentos(company: Dict[str, Any]) -> List[str]:
         args.append("💻 Nivel tecnologico alto — perfil pronto para adotar plataforma.")
     elif tech == "baixo":
         args.append("🌱 Nivel tecnologico baixo — IAprendo como porta de entrada digital.")
+    # Reputacao Google — so com amostra minima (nota com 2 reviews nao diz nada)
+    try:
+        _nota = company.get("google_rating")
+        _revs = int(company.get("google_reviews_count") or 0)
+        if _nota is not None and _revs >= 10:
+            _nota = float(_nota)
+            if _nota >= 4.5:
+                args.append(f"⭐ Bem avaliada no Google ({_nota:.1f} em {_revs} avaliacoes) — "
+                            f"escola que cuida da reputacao tende a investir em qualidade.")
+            elif _nota <= 3.5:
+                args.append(f"⚠️ Reputacao fraca no Google ({_nota:.1f} em {_revs} avaliacoes) — "
+                            f"pode haver pressao de pais por melhoria; entre com cuidado.")
+    except (TypeError, ValueError):
+        pass
     if not confiavel and ana:
         args.append("⚠️ Poucos alunos fizeram ENEM — use dados como indicativos, nao cite numeros.")
     return args[:5]

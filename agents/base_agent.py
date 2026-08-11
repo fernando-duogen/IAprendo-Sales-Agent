@@ -254,12 +254,33 @@ class BaseAgent(ABC):
             )
             return result
         except Exception as e:
+            # Coluna ainda nao existe (migration pendente)? Reenvia SEM os
+            # campos novos em vez de perder a atualizacao inteira. Assim um
+            # deploy de codigo nunca fica bloqueado esperando a migration.
+            _msg = str(e)
+            if "PGRST204" in _msg or "column" in _msg.lower():
+                _opcionais = {"google_rating", "google_reviews_count", "google_maps_url"}
+                _reduzido = {k: v for k, v in updates.items() if k not in _opcionais}
+                if _reduzido and len(_reduzido) < len(updates):
+                    try:
+                        result = db.update_company(company_id, _reduzido)
+                        logger.warning(
+                            "Update sem campos opcionais (migration pendente?)",
+                            extra={
+                                'agent': self.agent_name,
+                                'company_id': company_id,
+                                'ignorados': sorted(set(updates) - set(_reduzido)),
+                            }
+                        )
+                        return result
+                    except Exception:
+                        pass
             logger.error(
                 "Falha ao atualizar empresa",
                 extra={
                     'agent': self.agent_name,
                     'company_id': company_id,
-                    'error': str(e)
+                    'error': _msg
                 },
                 exc_info=True
             )
