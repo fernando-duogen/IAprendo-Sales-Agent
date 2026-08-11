@@ -1774,6 +1774,40 @@ def _fetch_censo_series(inep: str) -> List[Dict[str, Any]]:
         return []
 
 
+def _mesma_medicao(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> bool:
+    """True se duas safras carregam EXATAMENTE a mesma medicao.
+
+    Por que existe: 141 escolas (5 no CRM) tem a linha de 2025 como COPIA da de
+    2024 em `school_enem_yearly` — mesma media ate a 4a casa E mesmo numero de
+    presentes. Isso acontece quando a escola NAO teve resultado proprio na safra
+    nova (nao atingiu amostra) e algo replicou a anterior.
+
+    Consequencia se ignorado: "quanto a escola evoluiu de 2024 p/ 2025?"
+    responde 0.0 — o usuario le "estagnou", quando a verdade e "nao ha dado
+    novo". Duas coisas MUITO diferentes para uma decisao comercial.
+
+    Criterio: media geral E presentes identicos. Coincidencia real nos dois,
+    com 4 casas decimais, e desprezivel (0,1% da base — justamente as copias).
+    """
+    if not a or not b:
+        return False
+
+    def _num(row: Dict[str, Any], campo: str) -> Optional[float]:
+        v = row.get(campo)
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    m_a, m_b = _num(a, "enem_media_geral"), _num(b, "enem_media_geral")
+    p_a, p_b = _num(a, "enem_presentes"), _num(b, "enem_presentes")
+    if m_a is None or m_b is None:
+        return False
+    return m_a == m_b and p_a == p_b
+
+
 def _fetch_enem_series(inep: str) -> List[Dict[str, Any]]:
     """Serie completa do school_enem_yearly para uma escola. Aplica gate
     amostra_confiavel: se FALSE, remove metricas individuais do payload
@@ -1803,6 +1837,19 @@ def _fetch_enem_series(inep: str) -> List[Dict[str, Any]]:
                 for f in gated_fields:
                     clean.pop(f, None)
             out.append(clean)
+
+        # Marca safras que sao COPIA da anterior (escola sem resultado proprio
+        # naquele ano). Sem isso, a serie sugere "manteve exatamente a nota" —
+        # e o LLM conclui "estagnou" onde o certo e "nao ha dado novo".
+        for i in range(1, len(out)):
+            if _mesma_medicao(out[i - 1], out[i]):
+                out[i]["dado_repetido_da_safra_anterior"] = True
+                out[i]["aviso"] = (
+                    f"Sem resultado proprio no ENEM {out[i].get('vintage_enem')}: "
+                    f"os numeros repetem a safra {out[i - 1].get('vintage_enem')} "
+                    f"(a escola provavelmente nao atingiu a amostra minima). "
+                    f"NAO interprete como estabilidade nem calcule evolucao."
+                )
         return out
     except Exception as e:
         logger.warning(f"_fetch_enem_series failed: {e}")
@@ -2615,12 +2662,19 @@ def _handle_ranking_evolucao_enem(params: Dict) -> str:
         return json.dumps({"erro": f"Falha ao buscar serie ENEM: {str(e)[:200]}"})
 
     ranked: List[Dict[str, Any]] = []
+    sem_dado_novo = 0
     for inep, anos in by_inep.items():
         ra, rp = anos.get(de_ano), anos.get(para_ano)
         if not ra or not rp:
             continue  # exige os DOIS anos confiaveis
         va, vp = ra.get(area_col), rp.get(area_col)
         if va is None or vp is None:
+            continue
+        # Safra nova e COPIA da anterior => a escola nao teve resultado proprio.
+        # Incluir daria delta 0.0 e ela apareceria como "estagnada" num ranking
+        # de evolucao — conclusao errada. Fora do ranking, contada a parte.
+        if _mesma_medicao(ra, rp):
+            sem_dado_novo += 1
             continue
         ranked.append({
             "inep": inep,
@@ -2653,9 +2707,10 @@ def _handle_ranking_evolucao_enem(params: Dict) -> str:
     logger.info("enem_tool_called", extra={
         "tool": "ranking_evolucao_enem", "area": area_col,
         "de_ano": de_ano, "para_ano": para_ano, "n_consideradas": len(ranked),
+        "sem_dado_novo": sem_dado_novo,
     })
 
-    return json.dumps({
+    saida = {
         "area": area_raw, "metrica": area_col,
         "de_ano": de_ano, "para_ano": para_ano,
         "ordem": "maior_evolucao" if ordem != "asc" else "maior_queda",
@@ -2664,7 +2719,16 @@ def _handle_ranking_evolucao_enem(params: Dict) -> str:
         "nota": (f"delta = nota {para_ano} - nota {de_ano}. So entram escolas com "
                  f"amostra ENEM confiavel nos DOIS anos."),
         "resultado": top,
-    }, ensure_ascii=False, default=str)
+    }
+    if sem_dado_novo:
+        saida["excluidas_sem_dado_novo"] = sem_dado_novo
+        saida["nota_exclusao"] = (
+            f"{sem_dado_novo} escola(s) ficaram FORA do ranking porque os numeros "
+            f"de {para_ano} repetem exatamente os de {de_ano} — ou seja, nao houve "
+            f"resultado proprio na safra nova (amostra insuficiente). Elas nao "
+            f"'estagnaram': nao ha o que comparar."
+        )
+    return json.dumps(saida, ensure_ascii=False, default=str)
 
 
 # ===========================================================================
