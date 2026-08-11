@@ -8,6 +8,9 @@ from dashboard.theme import (
     metric_card, status_badge, section_header,
     alert_banner, avatar, COLORS, STATUS_COLORS, score_color,
 )
+from dashboard.helpers.table_select import (
+    reset_if_rows_changed, selected_positions,
+)
 from database.supabase_client import db
 from utils.role_classifier import POWER_MAP_ROLES, ROLE_LABELS, ALL_ROLE_TYPES
 
@@ -674,6 +677,11 @@ def render_contatos() -> None:
                 st.caption(f"Exibindo {len(filtered_cts)} contato(s). Ordene clicando nos cabeçalhos. Clique em uma linha para ver ações.")
 
                 df_contatos = pd.DataFrame(filtered_cts)
+                # A selecao do st.dataframe e POSICIONAL e sobrevive a mudanca de
+                # filtro (ver dashboard/helpers/table_select.py). Sem isto, mudar
+                # o filtro fazia "Excluir" apagar OUTRO contato — sem confirmacao.
+                _flat_dropped = reset_if_rows_changed(
+                    "contatos_table_flat", [c.get("id") for c in filtered_cts])
                 selected = st.dataframe(
                     df_contatos[display_cols],
                     use_container_width=True,
@@ -684,10 +692,14 @@ def render_contatos() -> None:
                     height=500,
                     key="contatos_table_flat",
                 )
+                if _flat_dropped:
+                    st.caption("A lista mudou (filtro) — a selecao anterior foi limpa "
+                               "para nao agir no contato errado.")
 
                 # Ações rápidas abaixo da tabela quando uma linha é selecionada
-                selection = selected.get("selection", {}) if selected else {}
-                selected_rows = selection.get("rows", []) if selection else []
+                selected_rows = selected_positions(selected, len(filtered_cts))
+                if not selected_rows:
+                    st.session_state.pop("ct_flat_confirm_del", None)
                 if selected_rows:
                     sel = filtered_cts[selected_rows[0]]
                     st.markdown(
@@ -710,14 +722,28 @@ def render_contatos() -> None:
                             st.session_state["escola_detail_id"] = sel["company_id"]
                             st.switch_page("pages/2_🏫_Escolas.py")
                     with ac4:
-                        if st.button("Excluir", icon=":material/delete:",
-                                      use_container_width=True, key="ct_flat_del"):
-                            try:
-                                db.client.table("contacts").delete().eq("id", sel["id"]).execute()
-                                st.toast(f"{sel['Nome']} excluido!")
+                        # Exclusao de contato era o unico destrutivo do painel SEM
+                        # confirmacao — 1 clique apagava (e, com selecao orfa, o
+                        # contato errado). Agora 2 passos, com o alvo no rotulo.
+                        _flat_cfk = "ct_flat_confirm_del"
+                        if st.session_state.get(_flat_cfk) == sel["id"]:
+                            if st.button("⚠️ Confirmar", type="primary",
+                                          use_container_width=True, key="ct_flat_del_yes",
+                                          help=f"Excluir definitivamente {sel['Nome']}"):
+                                try:
+                                    db.client.table("contacts").delete().eq(
+                                        "id", sel["id"]).execute()
+                                    st.session_state.pop(_flat_cfk, None)
+                                    st.toast(f"{sel['Nome']} excluido.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao excluir: {e}")
+                        else:
+                            if st.button("Excluir", icon=":material/delete:",
+                                          use_container_width=True, key="ct_flat_del",
+                                          help="Clique 2x para confirmar (irreversivel)"):
+                                st.session_state[_flat_cfk] = sel["id"]
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro: {e}")
 
             # ========== TABELA AGRUPADA ==========
             else:
@@ -747,10 +773,17 @@ def render_contatos() -> None:
                     inner_cols = [c for c in inner_cols if c not in ("Cidade", "UF")]
                 inner_col_defs = {k: v for k, v in col_defs.items() if k in inner_cols}
 
-                for group_name, group_cts in sorted_groups:
+                for _gi, (group_name, group_cts) in enumerate(sorted_groups):
                     header = f"📁 {group_name} — {len(group_cts)} contato(s)"
                     with st.expander(header, expanded=expand_all_groups):
                         df_group = pd.DataFrame(group_cts)
+                        # Chave por INDICE, nao pelo nome do grupo: a chave antiga
+                        # (f"ct_group_{group_name}") vinha do dado, entao renomear
+                        # uma escola destruia o widget e a selecao sumia. O reset
+                        # abaixo cobre a reordenacao dos grupos.
+                        _gkey = f"ct_group_{_gi}"
+                        _grp_dropped = reset_if_rows_changed(
+                            _gkey, [c.get("id") for c in group_cts])
                         sel_group = st.dataframe(
                             df_group[inner_cols],
                             use_container_width=True,
@@ -758,10 +791,12 @@ def render_contatos() -> None:
                             on_select="rerun",
                             selection_mode="single-row",
                             column_config=inner_col_defs,
-                            key=f"ct_group_{group_name}",
+                            key=_gkey,
                         )
-                        sel_info = sel_group.get("selection", {}) if sel_group else {}
-                        sel_rows = sel_info.get("rows", []) if sel_info else []
+                        if _grp_dropped:
+                            st.caption("A lista deste grupo mudou — a selecao anterior "
+                                       "foi limpa para nao agir no contato errado.")
+                        sel_rows = selected_positions(sel_group, len(group_cts))
                         if sel_rows:
                             sel_ct = group_cts[sel_rows[0]]
                             ac1, ac2, ac3, ac4 = st.columns([3, 1, 1, 1])
@@ -779,14 +814,27 @@ def render_contatos() -> None:
                                     st.session_state["escola_detail_id"] = sel_ct["company_id"]
                                     st.switch_page("pages/2_🏫_Escolas.py")
                             with ac4:
-                                if st.button("Excluir", icon=":material/delete:",
-                                              use_container_width=True, key=f"ct_g_del_{sel_ct['id']}"):
-                                    try:
-                                        db.client.table("contacts").delete().eq("id", sel_ct["id"]).execute()
-                                        st.toast(f"{sel_ct['Nome']} excluido!")
+                                _grp_cfk = "ct_group_confirm_del"
+                                if st.session_state.get(_grp_cfk) == sel_ct["id"]:
+                                    if st.button("⚠️ Confirmar", type="primary",
+                                                  use_container_width=True,
+                                                  key=f"ct_g_del_yes_{sel_ct['id']}",
+                                                  help=f"Excluir definitivamente {sel_ct['Nome']}"):
+                                        try:
+                                            db.client.table("contacts").delete().eq(
+                                                "id", sel_ct["id"]).execute()
+                                            st.session_state.pop(_grp_cfk, None)
+                                            st.toast(f"{sel_ct['Nome']} excluido.")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao excluir: {e}")
+                                else:
+                                    if st.button("Excluir", icon=":material/delete:",
+                                                  use_container_width=True,
+                                                  key=f"ct_g_del_{sel_ct['id']}",
+                                                  help="Clique 2x para confirmar (irreversivel)"):
+                                        st.session_state[_grp_cfk] = sel_ct["id"]
                                         st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro: {e}")
 
     # ===========================================================================
     # TAB 2: HIERARQUIA — Power Map (visualizacao original)

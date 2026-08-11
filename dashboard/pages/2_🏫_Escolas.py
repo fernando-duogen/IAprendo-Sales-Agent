@@ -16,6 +16,9 @@ from dashboard.theme import (
     alert_banner, avatar, breadcrumb, timeline_item, COLORS, STATUS_COLORS,
     score_color,
 )
+from dashboard.helpers.table_select import (
+    reset_if_rows_changed, selected_positions,
+)
 from utils.fit_score import calcular_fit_score, fit_emoji, fit_cor_hex
 from utils.rede_name import resolver_nome_rede, set_rede_override, has_rede_overrides_table
 
@@ -2404,6 +2407,11 @@ else:
                        "(ou use o seletor por nome abaixo).")
 
             df_f_reset = df_f.reset_index(drop=True)
+            # A selecao do st.dataframe e POSICIONAL e o Streamlit NAO a reseta
+            # quando os dados mudam (ver dashboard/helpers/table_select.py).
+            # Sem isto, mudar um filtro faz "Excluir (3)" apagar OUTRAS 3 escolas
+            # — ou estourar IndexError se a lista nova for menor.
+            _sel_dropped = reset_if_rows_changed("escola_table", df_f_reset["id"].tolist())
             _tbl_event = st.dataframe(
                 df_f_reset[table_cols],
                 use_container_width=True,
@@ -2413,13 +2421,17 @@ else:
                 on_select="rerun",
                 selection_mode="multi-row",
             )
+            if _sel_dropped:
+                st.caption("A lista mudou (filtro ou ordenacao) — a selecao anterior "
+                           "foi limpa para nao agir na escola errada.")
             # Checkbox = SELECIONAR escolas p/ acao em grupo (nao navega).
-            try:
-                _sel_rows = list(_tbl_event.selection.rows)
-            except Exception:
-                _sel_rows = []
+            _sel_rows = selected_positions(_tbl_event, len(df_f_reset))
             _sel_ids = [df_f_reset.iloc[i]["id"] for i in _sel_rows]
             _sel_names = [df_f_reset.iloc[i]["name"] for i in _sel_rows]
+            if not _sel_ids:
+                # Sem selecao, a confirmacao pendente perde o alvo: limpar pra nao
+                # reaparecer aberta na proxima selecao (o "vermelho ja veio ligado").
+                st.session_state.pop("confirm_sel_delete", None)
 
             # --- Barra de SELECAO (so quando ha escolas marcadas) ---
             if _sel_ids:
@@ -2455,7 +2467,9 @@ else:
                 with _sb4:
                     if st.button(f"Excluir ({len(_sel_ids)})",
                                  icon=":material/delete:", use_container_width=True):
-                        st.session_state["confirm_sel_delete"] = list(_sel_ids)
+                        # Flag booleana, NAO snapshot de ids: a lista e relida ao
+                        # confirmar, entao o que o banner diz e o que e apagado.
+                        st.session_state["confirm_sel_delete"] = True
 
                 # Exportar selecionadas (XLSX, colunas visiveis)
                 try:
@@ -2464,6 +2478,7 @@ else:
                     _exp_sel_cols = [c for c in (["inep_code"] + table_cols)
                                      if c in df_f_reset.columns]
                     with pd.ExcelWriter(_buf_sel, engine="openpyxl") as _xw_sel:
+                        # _sel_rows ja vem com clamp (table_select.selected_positions)
                         df_f_reset.iloc[_sel_rows][_exp_sel_cols].to_excel(
                             _xw_sel, index=False, sheet_name="Selecionadas")
                     st.download_button(
@@ -2478,7 +2493,8 @@ else:
                 # Confirmacao de exclusao das selecionadas (chave propria p/ nao
                 # colidir com "Acoes em massa")
                 if st.session_state.get("confirm_sel_delete"):
-                    _ids_del = st.session_state["confirm_sel_delete"]
+                    # Ao vivo: reflete a selecao que esta na tela AGORA.
+                    _ids_del = list(_sel_ids)
                     alert_banner(
                         f"Confirma exclusao de {len(_ids_del)} escola(s) e todos os dados?",
                         "error")
@@ -2568,10 +2584,12 @@ else:
                 with am_col3:
                     if st.button(f"Excluir {len(df_f)} escolas", icon=":material/delete_forever:",
                                   use_container_width=True):
-                        st.session_state["confirm_bulk_delete"] = df_f["id"].tolist()
+                        # Flag booleana, NAO snapshot: se o filtro mudar antes de
+                        # confirmar, o banner e a exclusao seguem o filtro ATUAL.
+                        st.session_state["confirm_bulk_delete"] = True
 
                 if st.session_state.get("confirm_bulk_delete"):
-                    ids_to_del = st.session_state["confirm_bulk_delete"]
+                    ids_to_del = df_f["id"].tolist()
                     alert_banner(f"Confirma exclusao de {len(ids_to_del)} escolas e todos os dados?", "error")
                     cd1, cd2 = st.columns(2)
                     with cd1:

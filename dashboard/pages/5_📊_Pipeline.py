@@ -19,6 +19,7 @@ from dashboard.theme import (
     apply_theme_no_config, metric_card, section_header, alert_banner,
     pipeline_stepper, breadcrumb, status_badge, COLORS, STATUS_COLORS,
 )
+from dashboard.helpers.table_select import build_label_map
 
 apply_theme_no_config()
 
@@ -72,14 +73,19 @@ def _load_all_companies_cached() -> list:
     )
     # owner_username so existe apos a migration add_lead_ownership. Tenta com ele;
     # se a coluna ainda nao existe, cai pro select base (sem quebrar o Pipeline).
+    # Desempate por id e OBRIGATORIO: a maioria das escolas tem score 0 e o
+    # Postgres nao garante ordem estavel entre empates. Sem isso, a cada recarga
+    # (TTL 30s ou "Atualizar dados") as linhas empatadas vinham em ordem
+    # diferente, mudando a assinatura da tabela e invalidando o widget sozinho —
+    # as linhas se reordenavam e o clique em curso se perdia.
     try:
         rows = db.client.table("companies").select(
             _cols_base + ",owner_username,owner_assigned_at"
-        ).order("qualification_score", desc=True).execute().data or []
+        ).order("qualification_score", desc=True).order("id").execute().data or []
     except Exception:
         rows = db.client.table("companies").select(
             _cols_base
-        ).order("qualification_score", desc=True).execute().data or []
+        ).order("qualification_score", desc=True).order("id").execute().data or []
     from utils.fit_score import calcular_fit_score
     for _c in rows:
         _c["_alvo"] = int((_c.get("matriculas_fund_af") or 0) + (_c.get("matriculas_medio") or 0))
@@ -381,78 +387,13 @@ def render_execucao():
     tbl_filtered = [c for c in filtered_base if _passes_tbl_filter(c)]
     current_sel_set = set(st.session_state.get("pipeline_selected_ids", []))
 
-    # ----- Contador destacado (substitui o caption + painel "Selecionadas") -----
-    _sel_count = len(current_sel_set)
-    _color = "#4CAF50" if _sel_count > 0 else "#9E9E9E"
-    st.markdown(
-        f'<div style="background:{_color}15; border-left:4px solid {_color}; '
-        f'padding:10px 14px; border-radius:4px; margin:8px 0">'
-        f'<span style="font-size:16px; font-weight:600; color:{_color}">'
-        f'✓ {_sel_count} escola(s) selecionada(s) no total'
-        f'</span><br/>'
-        f'<span style="font-size:12px; color:#757575">'
-        f'Tabela mostra {len(tbl_filtered)} (de {len(filtered_base)} apos filtros de preparo). '
-        f'Escolas selecionadas FORA do filtro atual permanecem.'
-        f'</span></div>',
-        unsafe_allow_html=True,
-    )
-
-    # ----- Acoes sobre selecao: EXPORTAR XLSX + DELETAR em massa -----
-    if _sel_count > 0:
-        ax1, ax2, ax3 = st.columns([2, 2, 6])
-        with ax1:
-            try:
-                from utils.export_utils import escolas_to_xlsx_bytes, export_filename
-                _selected_ids_list = sorted(current_sel_set)
-                # Gerar XLSX so quando usuario clica (lazy via funcao de bytes)
-                _xlsx_bytes = escolas_to_xlsx_bytes(_selected_ids_list)
-                st.download_button(
-                    f"📥 Exportar XLSX ({_sel_count})",
-                    data=_xlsx_bytes,
-                    file_name=export_filename("escolas_iaprendo", "xlsx"),
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    help="Baixa XLSX com 2 abas: Escolas (todos os campos) + Contatos (decisores)",
-                )
-            except Exception as _ex_exp:
-                st.error(f"Export indisponivel: {_ex_exp}")
-        with ax2:
-            # Botao Deletar abre confirmacao (2-click pra evitar acidente)
-            _confirm_key = "pipe_confirm_bulk_delete"
-            if st.session_state.get(_confirm_key):
-                # Modo confirmacao — mostrar botao vermelho real
-                if st.button(
-                    f"⚠️ Confirmar DELETAR {_sel_count}",
-                    type="primary",
-                    use_container_width=True,
-                    key="pipe_do_bulk_delete",
-                    help="DESFAZER NAO EH POSSIVEL. Apaga escolas + contatos + interactions + queue.",
-                ):
-                    deleted = db.bulk_delete_companies(sorted(current_sel_set))
-                    st.session_state["pipeline_selected_ids"] = []
-                    _reset_ckbox_keys()
-                    # Invalidar cache pra refletir a remocao
-                    try:
-                        _load_all_companies_cached.clear()
-                    except Exception:
-                        pass
-                    st.session_state.pop(_confirm_key, None)
-                    st.toast(f"🗑️ {deleted} escola(s) deletada(s)")
-                    st.rerun()
-            else:
-                if st.button(
-                    f"🗑️ Deletar selecionadas",
-                    use_container_width=True,
-                    key="pipe_ask_bulk_delete",
-                    help="Clique 2x pra confirmar (irreversivel)",
-                ):
-                    st.session_state[_confirm_key] = True
-                    st.rerun()
-        with ax3:
-            if st.session_state.get("pipe_confirm_bulk_delete"):
-                if st.button("Cancelar", key="pipe_cancel_bulk_delete"):
-                    st.session_state.pop("pipe_confirm_bulk_delete", None)
-                    st.rerun()
+    # O contador e a barra de acoes sao DESENHADOS aqui (posicao visual correta)
+    # e PREENCHIDOS depois que a tabela sincroniza a selecao (~150 linhas abaixo).
+    # Antes liam pipeline_selected_ids ANTES do sync e ficavam 1 run atrasados:
+    # marcar uma escola nao mexia no contador, e a barra Exportar/Deletar nem
+    # aparecia no primeiro clique.
+    _sel_banner = st.empty()
+    _sel_actions = st.empty()
 
     if not tbl_filtered:
         alert_banner("Nenhuma escola corresponde aos filtros da tabela.", "info")
@@ -462,13 +403,21 @@ def render_execucao():
         # Sem reconstruir df a cada run → sem reconciliation do widget →
         # SEM LOOP. Regenera so quando filtros ou selecao externa muda.
         # ============================================================
+        # ATENCAO: a assinatura descreve o FILTRO, nunca a selecao.
+        # Com frozenset(current_sel_set) aqui, cada clique no checkbox mudava a
+        # assinatura -> regenerava o df e executava `del tbl_editor_v3` (abaixo),
+        # apagando o clique que o frontend acabava de mandar. Como a escrita em
+        # pipeline_selected_ids acontece so no fim do bloco, a assinatura ficava
+        # permanentemente 1 clique atrasada e o resultado era 1 clique perdido a
+        # cada 2 — o "as vezes nao seleciona". Selecao externa (presets, colar
+        # lista, limpar) continua refletida porque essas rotinas chamam
+        # _reset_ckbox_keys(), que invalida df + widget de uma vez.
         filter_signature = (
             tuple(sorted(tbl_cidade)),
             tuple(sorted(tbl_status)),
             tbl_score_min,
             tbl_busca or "",
             tuple(c["id"] for c in tbl_filtered),
-            frozenset(current_sel_set),
         )
         cached_sig = st.session_state.get("_tbl_filter_sig")
 
@@ -534,6 +483,100 @@ def render_execucao():
             # porque selected_ids = st.session_state.get(...) (linha 530+) le
             # o valor JA atualizado nesta linha. Sem rerun extra necessario.
 
+    # ======================================================================
+    # Contador + acoes sobre a selecao — preenchidos AGORA, com a selecao ja
+    # sincronizada pela tabela acima (antes ficavam 1 run atrasados).
+    # ======================================================================
+    current_sel_set = set(st.session_state.get("pipeline_selected_ids", []))
+    _sel_count = len(current_sel_set)
+    _color = "#4CAF50" if _sel_count > 0 else "#9E9E9E"
+    _sel_banner.markdown(
+        f'<div style="background:{_color}15; border-left:4px solid {_color}; '
+        f'padding:10px 14px; border-radius:4px; margin:8px 0">'
+        f'<span style="font-size:16px; font-weight:600; color:{_color}">'
+        f'✓ {_sel_count} escola(s) selecionada(s) no total'
+        f'</span><br/>'
+        f'<span style="font-size:12px; color:#757575">'
+        f'Tabela mostra {len(tbl_filtered)} (de {len(filtered_base)} apos filtros de preparo). '
+        f'Escolas selecionadas FORA do filtro atual permanecem.'
+        f'</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    if _sel_count == 0:
+        # Sem selecao a barra some; a flag de confirmacao precisa sumir junto,
+        # senao ao reselecionar o botao vermelho "Confirmar DELETAR" ja aparece
+        # pronto e a protecao de 2 cliques evapora.
+        st.session_state.pop("pipe_confirm_bulk_delete", None)
+    else:
+        with _sel_actions.container():
+            ax1, ax2, ax3 = st.columns([2, 2, 6])
+            with ax1:
+                # XLSX gerado SOB DEMANDA. Antes era gerado eagerly a cada rerun
+                # (ida ao banco + openpyxl a cada clique de qualquer widget).
+                _xlsx_sig = tuple(sorted(current_sel_set))
+                _xlsx_cache = st.session_state.get("_pipe_xlsx_cache")
+                if _xlsx_cache and _xlsx_cache[0] == _xlsx_sig:
+                    from utils.export_utils import export_filename
+                    st.download_button(
+                        f"📥 Baixar XLSX ({_sel_count})",
+                        data=_xlsx_cache[1],
+                        file_name=export_filename("escolas_iaprendo", "xlsx"),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="pipe_dl_xlsx",
+                        help="2 abas: Escolas (todos os campos) + Contatos (decisores)",
+                    )
+                else:
+                    if st.button(f"📥 Gerar XLSX ({_sel_count})",
+                                 use_container_width=True, key="pipe_gen_xlsx",
+                                 help="Monta o arquivo das escolas selecionadas"):
+                        try:
+                            from utils.export_utils import escolas_to_xlsx_bytes
+                            st.session_state["_pipe_xlsx_cache"] = (
+                                _xlsx_sig, escolas_to_xlsx_bytes(sorted(current_sel_set)))
+                            st.rerun()
+                        except Exception as _ex_exp:
+                            st.error(f"Export indisponivel: {_ex_exp}")
+            with ax2:
+                # Botao Deletar abre confirmacao (2-click pra evitar acidente)
+                _confirm_key = "pipe_confirm_bulk_delete"
+                if st.session_state.get(_confirm_key):
+                    # Modo confirmacao — mostrar botao vermelho real
+                    if st.button(
+                        f"⚠️ Confirmar DELETAR {_sel_count}",
+                        type="primary",
+                        use_container_width=True,
+                        key="pipe_do_bulk_delete",
+                        help="DESFAZER NAO EH POSSIVEL. Apaga escolas + contatos + interactions + queue.",
+                    ):
+                        deleted = db.bulk_delete_companies(sorted(current_sel_set))
+                        st.session_state["pipeline_selected_ids"] = []
+                        st.session_state.pop("_pipe_xlsx_cache", None)
+                        _reset_ckbox_keys()
+                        # Invalidar cache pra refletir a remocao
+                        try:
+                            _load_all_companies_cached.clear()
+                        except Exception:
+                            pass
+                        st.session_state.pop(_confirm_key, None)
+                        st.toast(f"🗑️ {deleted} escola(s) deletada(s)")
+                        st.rerun()
+                else:
+                    if st.button(
+                        "🗑️ Deletar selecionadas",
+                        use_container_width=True,
+                        key="pipe_ask_bulk_delete",
+                        help="Clique 2x pra confirmar (irreversivel)",
+                    ):
+                        st.session_state[_confirm_key] = True
+                        st.rerun()
+            with ax3:
+                if st.session_state.get("pipe_confirm_bulk_delete"):
+                    if st.button("Cancelar", key="pipe_cancel_bulk_delete"):
+                        st.session_state.pop("pipe_confirm_bulk_delete", None)
+                        st.rerun()
+
     # --- Autocomplete multiselect + Colar Lista (fallback pra busca por nome / cola externa) ---
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     section_header("Busca avancada (opcional)", "search")
@@ -541,12 +584,17 @@ def render_execucao():
 
     with sub_tab_auto:
         # Opts_map: display label -> id
-        opts_map = {}
-        for c in filtered_base:
+        def _pipe_label(c):
             fit = c.get("_fit") or 0
             score = c.get("qualification_score") or 0
-            label = f"{c.get('name', '?')[:50]} — {c.get('city','?')} · Score {score} · Fit {fit}"
-            opts_map[label] = c["id"]
+            return (f"{(c.get('name') or '?')[:70]} — {c.get('city') or '?'}"
+                    f"/{c.get('state') or '?'} · Score {score} · Fit {fit}")
+
+        # build_label_map desambigua colisoes de rotulo (nomes truncados iguais
+        # na mesma cidade sao rotina na base do MEC). Antes, o dict guardava so o
+        # ULTIMO id do par: a primeira escola nunca conseguia ficar marcada e o
+        # autocomplete devolvia a outra.
+        opts_map = build_label_map(filtered_base, _pipe_label)
 
         current_ids = set(st.session_state.get("pipeline_selected_ids", []))
         expected_labels = [lbl for lbl, cid in opts_map.items() if cid in current_ids]
@@ -571,10 +619,17 @@ def render_execucao():
             key=_multi_key,
             placeholder="Digite pra buscar escolas...",
         )
-        new_ids = [opts_map[lbl] for lbl in selected_labels]
+        # Escolas selecionadas que NAO estao em opts_map (porque nao passam nos
+        # filtros de preparo) nao tem label e sumiriam de expected_labels. Sem
+        # preservar aqui, ligar um filtro de preparo APAGAVA a selecao inteira,
+        # de forma permanente — e contradizia o texto exibido no contador
+        # ("Escolas selecionadas FORA do filtro atual permanecem").
+        _representable = set(opts_map.values())
+        _outside_multi = current_ids - _representable
+        _next_ids = _outside_multi | {opts_map[lbl] for lbl in selected_labels}
         # So atualizar se houve mudanca REAL (user interagiu com o multiselect)
-        if set(new_ids) != current_ids:
-            st.session_state["pipeline_selected_ids"] = new_ids
+        if _next_ids != current_ids:
+            st.session_state["pipeline_selected_ids"] = sorted(_next_ids)
             _reset_ckbox_keys()
             st.rerun()
 
@@ -1190,8 +1245,21 @@ def render_descoberta():
     if not filtered_sig:
         alert_banner("Nenhuma escola corresponde aos filtros.", "info")
     else:
-        df_sig = pd.DataFrame([{
-            "Sel": False,
+        # Ordem com desempate por id: sem isso, escolas com o mesmo Fit trocavam
+        # de lugar entre reruns e a selecao seguia a POSICAO, nao a escola.
+        _sig_rows = sorted(filtered_sig,
+                           key=lambda x: ((x.get("_fit") or 0), str(x.get("id") or "")),
+                           reverse=True)
+        _sig_ids = [c["id"] for c in _sig_rows]
+        # Espelho da selecao em session_state: e ele que faz a marcacao sobreviver
+        # ao refresh. Antes o estado vivia SO dentro do widget e, quando o cache
+        # de companies expirava (TTL 30s) e qualquer campo mudava, os novos bytes
+        # do df geravam um novo id de widget (data_editor.py:1109-1123) e TODOS os
+        # checkboxes zeravam no meio da operacao, sem forma de recuperar.
+        _sig_sel = set(st.session_state.get("sinais_selected_ids", []))
+
+        _sig_payload = [{
+            "Sel": c["id"] in _sig_sel,
             "Escola": (c.get("name") or "?")[:50],
             "Cidade": c.get("city") or "",
             "Score": int(c.get("qualification_score") or 0),
@@ -1201,7 +1269,20 @@ def render_descoberta():
             "Urgencia": c.get("urgency_tier") or "COLD",
             "Tipo": (c.get("admin_dependency") or "")[:15],
             "id": c["id"],
-        } for c in sorted(filtered_sig, key=lambda x: (x.get("_fit") or 0), reverse=True)])
+        } for c in _sig_rows]
+
+        # Assinatura = conteudo exibido MENOS a coluna Sel. A selecao nunca pode
+        # invalidar o widget (foi exatamente o bug do "1 clique em cada 2" na aba
+        # Execucao); mudanca real de dado invalida, e ai a coluna Sel ja vem
+        # remontada a partir do espelho acima.
+        _sig_signature = tuple(
+            tuple(v for k, v in row.items() if k != "Sel") for row in _sig_payload
+        )
+        if st.session_state.get("_sig_df_sig") != _sig_signature:
+            st.session_state["_sig_df_cached"] = pd.DataFrame(_sig_payload)
+            st.session_state["_sig_df_sig"] = _sig_signature
+            st.session_state.pop("sig_data_editor", None)
+        df_sig = st.session_state["_sig_df_cached"]
 
         # Sinalizacao de contagem (1.1 Quick Win)
         from dashboard._table_count import render_count
@@ -1228,11 +1309,13 @@ def render_descoberta():
             key="sig_data_editor",
         )
 
-        # Contar selecionados
+        # Contar selecionados + devolver ao espelho em session_state
         sel_mask = edited_sig["Sel"] == True
-        n_selected = int(sel_mask.sum())
-        selected_sig_ids = [df_sig.iloc[i]["id"] for i in edited_sig[sel_mask].index]
-        selected_sig_names = [df_sig.iloc[i]["Escola"] for i in edited_sig[sel_mask].index]
+        _sig_pos = [int(i) for i in edited_sig[sel_mask].index if 0 <= int(i) < len(_sig_ids)]
+        selected_sig_ids = [_sig_ids[i] for i in _sig_pos]
+        selected_sig_names = [str(df_sig.iloc[i]["Escola"]) for i in _sig_pos]
+        n_selected = len(selected_sig_ids)
+        st.session_state["sinais_selected_ids"] = selected_sig_ids
 
         if st.button(
             f"🔍 Buscar sinais ({n_selected} selecionada(s))",
