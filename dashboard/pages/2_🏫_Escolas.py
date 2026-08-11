@@ -84,12 +84,27 @@ if "escola_msg" not in st.session_state:
     st.session_state.escola_msg = None
 
 
+# Confirmacoes pendentes NAO podem sobreviver a troca de contexto: senao, ao
+# voltar para a mesma escola (ou reselecionar), o banner vermelho de exclusao
+# reaparece ja aberto, sem o usuario ter pedido — e a protecao de 2 cliques
+# vira 1 clique.
+_CONFIRM_KEYS = ("confirm_delete", "confirm_sel_delete",
+                 "confirm_single_delete", "confirm_bulk_delete")
+
+
+def _clear_confirms() -> None:
+    for _k in _CONFIRM_KEYS:
+        st.session_state.pop(_k, None)
+
+
 def go_to_detail(company_id: str) -> None:
     st.session_state.escola_detail_id = company_id
+    _clear_confirms()
 
 
 def go_to_list() -> None:
     st.session_state.escola_detail_id = None
+    _clear_confirms()
 
 
 # ---------------------------------------------------------------------------
@@ -1992,13 +2007,18 @@ if st.session_state.escola_detail_id:
             queue_count = len(db.get_queue_by_company(company_id))
             if queue_count > 0:
                 if st.button(f"Limpar fila ({queue_count} itens)", icon=":material/delete_sweep:"):
-                    db.delete_queue_items(company_id)
-                    st.session_state.escola_msg = ("success", f"{queue_count} itens removidos.")
+                    # Reporta o retorno REAL (int), nao a contagem pre-clique.
+                    _n_rm = db.delete_queue_items(company_id)
+                    _n_rm = queue_count if _n_rm is None else int(_n_rm)
+                    st.session_state.escola_msg = ("success", f"{_n_rm} itens removidos.")
                     st.rerun()
         with ac2:
             if st.button("Resetar para Novo", icon=":material/restart_alt:"):
-                db.reset_company_status(company_id, "raw")
-                st.session_state.escola_msg = ("success", "Status resetado.")
+                if db.reset_company_status(company_id, "raw"):
+                    st.session_state.escola_msg = ("success", "Status resetado.")
+                else:
+                    st.session_state.escola_msg = (
+                        "error", "Nao foi possivel resetar o status. Nada foi alterado.")
                 st.rerun()
         with ac3:
             if st.button("Excluir escola", type="primary", icon=":material/delete_forever:"):
@@ -2009,9 +2029,14 @@ if st.session_state.escola_detail_id:
             dc1, dc2 = st.columns(2)
             with dc1:
                 if st.button("Sim, excluir tudo", type="primary"):
-                    db.delete_company(company_id)
-                    st.session_state.pop("confirm_delete", None)
-                    go_to_list()
+                    if db.delete_company(company_id):
+                        st.session_state.escola_msg = (
+                            "success", f"{company.get('name')} excluida.")
+                        st.session_state.pop("confirm_delete", None)
+                        go_to_list()
+                    else:
+                        st.session_state.escola_msg = (
+                            "error", "Nao foi possivel excluir. A escola continua no banco.")
                     st.rerun()
             with dc2:
                 if st.button("Cancelar"):
@@ -2271,14 +2296,16 @@ else:
         st.markdown("")
 
         # --- Mensagem de feedback ---
+        # Mesmo tratamento do renderizador da ficha (linha ~1010): 'warning' e
+        # qualquer tipo desconhecido tem que aparecer. Este renderizador
+        # descartava 'warning' em silencio — e e ele que recebe o resultado das
+        # acoes em lote da lista ("alterado em N de M").
         if st.session_state.escola_msg:
             msg_type, msg_text = st.session_state.escola_msg
-            if msg_type == "success":
-                alert_banner(msg_text, "success")
-            elif msg_type == "error":
-                alert_banner(msg_text, "error")
-            elif msg_type == "info":
-                alert_banner(msg_text, "info")
+            if msg_type in ("success", "error", "info", "warning"):
+                alert_banner(msg_text, msg_type)
+            else:
+                alert_banner(str(msg_text), "info")
             st.session_state.escola_msg = None
 
         # --- Alternador Tabela/Mapa (rodada 5 — pedido do dono/mockup) ---
@@ -2459,10 +2486,18 @@ else:
                     if st.button(f"Alterar status ({len(_sel_ids)})",
                                  icon=":material/edit:", use_container_width=True):
                         _en = PT_TO_EN.get(_sel_new_st, "raw")
-                        for _cid in _sel_ids:
-                            db.reset_company_status(_cid, _en)
-                        st.session_state.escola_msg = (
-                            "success", f"Status de {len(_sel_ids)} escola(s) alterado.")
+                        # Conta o que REALMENTE mudou: antes a mensagem afirmava
+                        # o total selecionado mesmo se todas as chamadas falhassem.
+                        _ok_n = sum(1 for _cid in _sel_ids
+                                    if db.reset_company_status(_cid, _en))
+                        if _ok_n < len(_sel_ids):
+                            st.session_state.escola_msg = (
+                                "warning",
+                                f"Status alterado em {_ok_n} de {len(_sel_ids)} escola(s). "
+                                f"As demais nao foram alteradas.")
+                        else:
+                            st.session_state.escola_msg = (
+                                "success", f"Status de {_ok_n} escola(s) alterado.")
                         st.rerun()
                 with _sb4:
                     if st.button(f"Excluir ({len(_sel_ids)})",
@@ -2546,8 +2581,12 @@ else:
                     if st.button("Alterar status", icon=":material/edit:", use_container_width=True):
                         cid = escola_options[selected_escola_idx][0]
                         new_en = PT_TO_EN.get(new_st, "raw")
-                        db.reset_company_status(cid, new_en)
-                        st.toast(f"Status alterado para {new_st}!")
+                        if db.reset_company_status(cid, new_en):
+                            st.session_state.escola_msg = (
+                                "success", f"Status alterado para {new_st}.")
+                        else:
+                            st.session_state.escola_msg = (
+                                "error", "Nao foi possivel alterar o status. Nada mudou.")
                         st.rerun()
                 with ac_row2_3:
                     if st.button("Excluir escola", icon=":material/delete:", use_container_width=True):
@@ -2560,8 +2599,12 @@ else:
                 cd1, cd2 = st.columns(2)
                 with cd1:
                     if st.button("Sim, excluir", type="primary", key="confirm_del_single"):
-                        db.delete_company(del_id)
-                        st.session_state.escola_msg = ("success", f"{del_name} excluida.")
+                        if db.delete_company(del_id):
+                            st.session_state.escola_msg = ("success", f"{del_name} excluida.")
+                        else:
+                            st.session_state.escola_msg = (
+                                "error", f"Nao foi possivel excluir {del_name}. "
+                                         f"A escola continua no banco.")
                         st.session_state.pop("confirm_single_delete", None)
                         st.rerun()
                 with cd2:
@@ -2577,9 +2620,16 @@ else:
                 with am_col2:
                     if st.button(f"Alterar {len(df_f)} escolas", icon=":material/edit:", use_container_width=True):
                         new_en = PT_TO_EN.get(new_status_pt, "raw")
-                        for cid in df_f["id"].tolist():
-                            db.reset_company_status(cid, new_en)
-                        st.session_state.escola_msg = ("success", f"Status de {len(df_f)} escolas alterado.")
+                        _alvo = df_f["id"].tolist()
+                        _ok_b = sum(1 for cid in _alvo if db.reset_company_status(cid, new_en))
+                        if _ok_b < len(_alvo):
+                            st.session_state.escola_msg = (
+                                "warning",
+                                f"Status alterado em {_ok_b} de {len(_alvo)} escolas. "
+                                f"As demais nao foram alteradas.")
+                        else:
+                            st.session_state.escola_msg = (
+                                "success", f"Status de {_ok_b} escolas alterado.")
                         st.rerun()
                 with am_col3:
                     if st.button(f"Excluir {len(df_f)} escolas", icon=":material/delete_forever:",

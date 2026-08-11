@@ -31,6 +31,12 @@ apply_theme_no_config()
 from dashboard._auth_gate import require_auth
 require_auth()
 
+# Resultado da acao anterior (aprovar/rejeitar/salvar). Precisa vir ANTES de
+# qualquer conteudo: st.success chamado logo antes de st.rerun() e descartado
+# junto com o run abortado, entao a acao ficava sem retorno nenhum na tela.
+from dashboard.helpers.flash import flash_success, render_flash  # noqa: E402
+render_flash()
+
 # ---------------------------------------------------------------------------
 # Imports compartilhados (falha segura)
 # ---------------------------------------------------------------------------
@@ -84,11 +90,27 @@ rejected_count = _count_status("rejected")
 # ---------------------------------------------------------------------------
 # ESTADOS DE TOPO (mockup mensagens.html): fila unica por estado + Modelos
 # ---------------------------------------------------------------------------
+# As contagens ficam FORA dos rotulos das abas de proposito. O st.tabs nao tem
+# key: sua identidade vem dos rotulos. Com o numero embutido, toda acao mudava a
+# contagem -> mudava o rotulo -> as abas remontavam no indice 0. Na pratica:
+# aprovar uma mensagem na aba "Aprovadas" jogava o usuario de volta para
+# "Aguardando". Esta era a unica pagina do repo com rotulo dinamico.
+st.markdown(
+    f'<div style="display:flex;gap:18px;font-size:13px;color:#546E7A;'
+    f'margin:2px 0 10px">'
+    f'<span>⏳ Aguardando <strong style="color:#F57C00">{total}</strong></span>'
+    f'<span>✅ Aprovadas <strong style="color:#388E3C">{approved_count}</strong></span>'
+    f'<span>📤 Enviadas <strong style="color:#1976D2">{sent_count}</strong></span>'
+    f'<span>🚫 Rejeitadas <strong style="color:#9E9E9E">{rejected_count}</strong></span>'
+    f'</div>',
+    unsafe_allow_html=True,
+)
+
 (tab_aguardando, tab_aprovadas, tab_enviadas, tab_recebidas, tab_followups,
  tab_templates, tab_whatsapp, tab_metricas) = st.tabs([
-    f"⏳ Aguardando ({total})",
-    f"✅ Aprovadas ({approved_count})",
-    f"📤 Enviadas ({sent_count})",
+    "⏳ Aguardando",
+    "✅ Aprovadas",
+    "📤 Enviadas",
     "💬 Recebidas",
     "🔁 Follow-ups",
     "📄 Modelos",
@@ -123,7 +145,15 @@ with tab_aprovacao:
             if _nb:
                 st.warning(f"⚠️ {_nb} bloqueada(s) — contato sem email/telefone.")
             if _nf:
-                st.error(f"❌ {_nf} falha(s) no envio. Verifique os logs.")
+                # A causa vem junto quando existe: antes qualquer excecao virava
+                # "1 falha" sem motivo, e o usuario nao tem acesso aos logs.
+                _err = st.session_state.pop("_approved_send_error", None)
+                if _nf < 0:
+                    st.error("❌ O envio falhou antes de comecar — nenhuma mensagem "
+                             "foi enviada." + (f" Motivo: {_err}" if _err else ""))
+                else:
+                    st.error(f"❌ {_nf} falha(s) no envio."
+                             + (f" Motivo: {_err}" if _err else " Verifique os logs."))
             if not (_ns or _nb or _nf):
                 st.info("Nada a enviar (ja enviada ou ainda agendada para o futuro).")
 
@@ -137,8 +167,12 @@ with tab_aprovacao:
                 st.session_state["_approved_send_result"] = (
                     _r.get("sent", 0), _r.get("skipped", 0), _r.get("failed", 0),
                 )
-            except Exception:
-                st.session_state["_approved_send_result"] = (0, 0, 1)
+            except Exception as _e_send:
+                # -1 = a CHAMADA falhou; nao sabemos quantas mensagens falharam.
+                # Antes virava "1 falha", o que mentia quando eram 30 — e a causa
+                # era descartada (o usuario nao tem acesso aos logs).
+                st.session_state["_approved_send_result"] = (0, 0, -1)
+                st.session_state["_approved_send_error"] = str(_e_send)[:200]
             st.rerun()
 
         try:
@@ -148,10 +182,15 @@ with tab_aprovacao:
             ).eq("status", "approved").is_("sent_at", "null").order(
                 "approved_at", desc=True
             ).limit(50).execute().data or []
-        except Exception:
+            _approved_err = None
+        except Exception as _e_appr:
+            # Falha de rede nao pode virar "suas mensagens sumiram".
             approved_msgs = []
+            _approved_err = str(_e_appr)[:200]
 
-        if not approved_msgs:
+        if _approved_err:
+            st.error(f"Nao foi possivel carregar a fila de aprovadas: {_approved_err}")
+        elif not approved_msgs:
             alert_banner("Nenhuma mensagem aprovada aguardando envio.", "info")
         else:
             st.caption(f"{len(approved_msgs)} mensagem(ns) aprovada(s), aguardando envio.")
@@ -202,10 +241,14 @@ with tab_aprovacao:
                 "id,subject,body,company_id,contact_id,sent_at,opened_at,clicked_at,replied_at,"
                 "follow_up_number,companies(name,city),contacts(full_name,email)"
             ).eq("status", "sent").order("sent_at", desc=True).limit(50).execute().data or []
-        except Exception:
+            _sent_err = None
+        except Exception as _e_sent:
             sent_msgs = []
+            _sent_err = str(_e_sent)[:200]
 
-        if not sent_msgs:
+        if _sent_err:
+            st.error(f"Nao foi possivel carregar as enviadas: {_sent_err}")
+        elif not sent_msgs:
             alert_banner("Nenhuma mensagem enviada ainda.", "info")
         else:
             st.caption(f"Ultimas {len(sent_msgs)} mensagem(ns) enviada(s). Clique para ver o corpo completo.")
@@ -554,7 +597,7 @@ with tab_aprovacao:
                                     db.client.table("approval_queue").update({"body": updated_body}).eq("id", queue_id).execute()
                                 except Exception:
                                     pass
-                                st.success("Destinatario atualizado e nome no corpo ajustado!")
+                                flash_success("Destinatario atualizado e nome no corpo ajustado!")
                                 st.rerun()
                             else:
                                 st.error("Falha ao atualizar destinatario.")
@@ -612,7 +655,7 @@ with tab_aprovacao:
                                 if new_cid:
                                     saved = db.set_contact_on_queue(queue_id, new_cid)
                             if saved:
-                                st.success("Email salvo! Pode aprovar e enviar agora.")
+                                flash_success("Email salvo! Pode aprovar e enviar agora.")
                                 st.rerun()
                             else:
                                 st.error("Falha ao salvar email.")
@@ -1032,10 +1075,15 @@ with tab_aprovacao:
                                  icon=":material/block:"):
                         ok = queue_manager.reject(queue_id, reason=reason)
                         if ok:
-                            st.warning("Mensagem rejeitada.")
+                            flash_success("Mensagem rejeitada.")
                             st.session_state[f"show_reject_{queue_id}"] = False
                             st.session_state.refresh += 1
                             st.rerun()
+                        else:
+                            # Sem este else o clique era engolido: nem mensagem,
+                            # nem rerun, o painel so ficava aberto.
+                            st.error("Nao foi possivel rejeitar a mensagem. "
+                                     "Ela ainda esta na fila — tente de novo.")
                 with rcol2:
                     if st.button("Cancelar", key=f"cancel_reject_{queue_id}"):
                         st.session_state[f"show_reject_{queue_id}"] = False
@@ -1076,7 +1124,7 @@ with tab_aprovacao:
                                     st.session_state[f"subj_{queue_id}"] = rendered["subject"]
                                     st.session_state[f"body_{queue_id}"] = rendered["body"]
                                     st.session_state[f"show_template_{queue_id}"] = False
-                                    st.success("Mensagem substituida pelo template!")
+                                    flash_success("Mensagem substituida pelo template!")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro: {e}")
@@ -1320,7 +1368,7 @@ with tab_aprovacao:
                                     _res = None
                                     st.error(f"Erro ao gerar: {str(_e_reply)[:200]}")
                             if _res and _res.get("new_queue_id"):
-                                st.success(
+                                flash_success(
                                     "✅ Resposta gerada e enviada para a fila de "
                                     "**aprovacao** (aba Aguardando). Nada foi enviado."
                                 )
@@ -2285,7 +2333,7 @@ with tab_templates:
                     "separator": sig_separator,
                 }
                 if email_signature.save_signature(new_sig):
-                    st.success("Assinatura salva! Todos os proximos emails usarao essa assinatura.")
+                    flash_success("Assinatura salva! Todos os proximos emails usarao essa assinatura.")
                     st.rerun()
                 else:
                     st.error("Falha ao salvar assinatura.")
@@ -2433,7 +2481,7 @@ with tab_templates:
                         storage_path=_path,
                     )
                     if _aid:
-                        st.success(f"Anexo '{_uploaded.name}' carregado.")
+                        flash_success(f"Anexo '{_uploaded.name}' carregado.")
                         st.rerun()
                     else:
                         st.error("Falha ao registrar o anexo na biblioteca.")
@@ -2476,7 +2524,7 @@ with tab_templates:
                 with _row_c:
                     if st.button("Remover", key=f"comm_att_rm_{_aid_it}", use_container_width=True):
                         email_attachments.remove_attachment(_aid_it, also_delete_file=True)
-                        st.success(f"'{_name_it}' removido.")
+                        flash_success(f"'{_name_it}' removido.")
                         st.rerun()
                 with _row_d:
                     if _url_it:
@@ -2838,7 +2886,7 @@ with tab_whatsapp:
                                 "target_type": "whatsapp_custom",
                                 "is_active": True,
                             }).execute()
-                            st.success(f"Template '{wa_new_name}' salvo!")
+                            flash_success(f"Template '{wa_new_name}' salvo!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao salvar: {e}")

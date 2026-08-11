@@ -30,6 +30,11 @@ apply_theme_no_config()
 from dashboard._auth_gate import require_auth
 require_auth()
 
+# Resultado da acao anterior — ver dashboard/helpers/flash.py (st.success antes
+# de st.rerun() era descartado junto com o run abortado).
+from dashboard.helpers.flash import flash_success, render_flash  # noqa: E402
+render_flash()
+
 # =============================================================================
 # Header
 # =============================================================================
@@ -615,7 +620,7 @@ with tab_config:
                     ialex_scheduler.reload_followup_schedule()
             except Exception:
                 pass
-            st.success(f"✅ Modo alterado de {result['from']} para {result['to']}")
+            flash_success(f"✅ Modo alterado de {result['from']} para {result['to']}")
             st.rerun()
         else:
             st.error(f"❌ Falha: {result.get('error', '?')}")
@@ -922,7 +927,7 @@ with tab_config:
                         ialex_scheduler.reload_pipeline_schedule()
                 except Exception:
                     pass
-                st.success(
+                flash_success(
                     f"✅ Configuracao salva! Pipeline {'ATIVO' if enabled else 'DESATIVADO'}. "
                     f"Proximo run: {selected_time.strftime('%H:%M')} "
                     f"nos dias {', '.join([pipeline_config.day_label(d) for d in selected_days])}."
@@ -1029,7 +1034,7 @@ with tab_config:
                         ialex_scheduler.reload_followup_schedule()
                 except Exception:
                     pass
-                st.success(
+                flash_success(
                     f"✅ Follow-ups {'ATIVOS' if fu_enabled else 'DESATIVADOS'}. "
                     f"Rodam diariamente as {fu_time.strftime('%H:%M')}."
                 )
@@ -1108,7 +1113,7 @@ with tab_config:
             new_cfg = pipeline_config.get_config()
             new_cfg["persona_mode"] = persona_choice
             if pipeline_config.save_config(new_cfg):
-                st.success(
+                flash_success(
                     f"✅ Modo de comunicacao alterado para "
                     f"{'Padrao' if persona_choice == 'padrao' else 'Adaptativo'}."
                 )
@@ -1210,7 +1215,7 @@ with tab_config:
             new_cfg["multichannel_channels"] = selected_channels
             new_cfg["cadence_steps"] = current_cadence
             if pipeline_config.save_config(new_cfg):
-                st.success("✅ Cadencia multichannel salva!")
+                flash_success("✅ Cadencia multichannel salva!")
                 st.rerun()
             else:
                 st.error("Falha ao salvar.")
@@ -1220,7 +1225,7 @@ with tab_config:
             new_cfg = pipeline_config.get_config()
             new_cfg["multichannel_enabled"] = False
             if pipeline_config.save_config(new_cfg):
-                st.success("✅ Multichannel desabilitado. Tudo voltou a usar apenas email.")
+                flash_success("✅ Multichannel desabilitado. Tudo voltou a usar apenas email.")
                 st.rerun()
 
     # =============================================================================
@@ -1346,7 +1351,7 @@ with tab_skills:
                             _db_skills.client.table("learned_skills").update({
                                 "status": "archived",
                             }).eq("id", skill["id"]).execute()
-                            st.success(f"Skill '{selected_name}' arquivada!")
+                            flash_success(f"Skill '{selected_name}' arquivada!")
                             st.rerun()
         else:
             alert_banner(
@@ -1390,7 +1395,7 @@ with tab_skills:
                             "status": "active",
                             "created_by": "dashboard",
                         }).execute()
-                        st.success(f"Skill '{sk_name}' criada com sucesso!")
+                        flash_success(f"Skill '{sk_name}' criada com sucesso!")
                         st.rerun()
 
         # --- Skills arquivadas ---
@@ -1405,7 +1410,7 @@ with tab_skills:
                             _db_skills.client.table("learned_skills").update({
                                 "status": "active",
                             }).eq("id", s["id"]).execute()
-                            st.success(f"Skill '{s.get('name')}' reativada!")
+                            flash_success(f"Skill '{s.get('name')}' reativada!")
                             st.rerun()
 
     except Exception as e:
@@ -1507,7 +1512,7 @@ with tab_vendas:
                 _va_away_until = _fc2.date_input("Ausente ate:")
                 if st.form_submit_button("Marcar ausencia"):
                     if _ag_cfg.set_away(_va_away_user, _va_away_until.isoformat()):
-                        st.success(f"{_va_away_user} ausente ate {_va_away_until}.")
+                        flash_success(f"{_va_away_user} ausente ate {_va_away_until}.")
                         st.rerun()
                     else:
                         st.error("Falha ao salvar ausencia.")

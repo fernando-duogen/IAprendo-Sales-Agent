@@ -11,6 +11,7 @@ from dashboard.theme import (
 from dashboard.helpers.table_select import (
     reset_if_rows_changed, selected_positions,
 )
+from dashboard.helpers.flash import flash_success, render_flash
 from database.supabase_client import db
 from utils.role_classifier import POWER_MAP_ROLES, ROLE_LABELS, ALL_ROLE_TYPES
 
@@ -55,6 +56,8 @@ def render_contatos() -> None:
     # HEADER
     # ===========================================================================
     section_header("Mapa de Poder", "hub")
+    # Resultado da acao anterior (salvar/excluir contato) — ver helpers/flash.py.
+    render_flash()
     st.caption("Organograma de decisores por escola. Hierarquia: Direcao > Coordenacao > Apoio. Clique em Editar para alterar dados.")
 
     # ===========================================================================
@@ -341,6 +344,12 @@ def render_contatos() -> None:
                           icon=":material/edit:"):
                 st.session_state["editing_contact"] = ct_id
                 st.session_state["editing_company"] = company_id
+                # Sem o rerun o formulario NAO abria neste run: o modal que le
+                # editing_contact ja foi renderizado antes desta funcao ser
+                # chamada (Hierarquia/Power Map). O usuario clicava, nada
+                # acontecia, clicava de novo e ai abria. O mesmo botao na aba
+                # Lista sempre teve o rerun — dai o "as vezes funciona".
+                st.rerun()
 
 
     # ===========================================================================
@@ -412,13 +421,17 @@ def render_contatos() -> None:
                     try:
                         db.client.table("contacts").update(update_data).eq("id", editing_id).execute()
                         st.session_state.pop("editing_contact", None)
-                        st.success("Contato atualizado!")
+                        flash_success("Contato atualizado!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
 
                 if cancel_btn:
                     st.session_state.pop("editing_contact", None)
+                    # A confirmacao pendente tem que sair junto: sem isso,
+                    # reabrir o mesmo contato mostrava o banner vermelho de
+                    # exclusao ja aberto, sem o usuario ter pedido.
+                    st.session_state.pop("confirm_delete_contact", None)
                     st.rerun()
 
                 if delete_btn:
@@ -434,7 +447,7 @@ def render_contatos() -> None:
                         db.client.table("contacts").delete().eq("id", editing_id).execute()
                         st.session_state.pop("editing_contact", None)
                         st.session_state.pop("confirm_delete_contact", None)
-                        st.success("Contato excluido!")
+                        flash_success("Contato excluido!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro: {e}")
@@ -648,7 +661,7 @@ def render_contatos() -> None:
                                     removed += 1
                                 except Exception:
                                     pass
-                    st.success(f"Removidas {removed} duplicatas!")
+                    flash_success(f"Removidas {removed} duplicatas!")
                     st.rerun()
 
         # ------------------- EXIBIÇÃO -------------------
