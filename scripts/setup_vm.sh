@@ -77,6 +77,29 @@ fi
 # 4c) Garante o pin do streamlit do dashboard (o full pode ter afrouxado):
 ./venv/bin/pip install -q "streamlit>=1.56,<1.57"
 
+# 4d) NAVEGADOR p/ o kaleido — sem isto NENHUM PNG e gerado (radar do OPR, graficos
+# de email) e a falha e SILENCIOSA: o relatorio sai completo, so sem imagem.
+#   - kaleido 0.2.x trazia o proprio binario; a 1.x (que o pip instala hoje, porque
+#     requirements.txt pede kaleido>=0.2.1 sem teto) dirige um Chrome EXTERNO.
+#   - `chromium-browser` do apt e o snap: o wrapper re-executa o binario e os
+#     descritores do pipe de controle se perdem -> "browser seemed to close
+#     immediately after starting". NAO serve.
+#   - `kaleido_get_chrome`/`choreo_get_chrome` baixam Chrome for Testing, que a
+#     Google so publica para x86_64 no Linux. NAO serve em ARM.
+#   - O chromium do Playwright tem build nativo arm64 e roda sem confinamento. Serve.
+BROWSER_BIN=""
+if ./venv/bin/python -c "import playwright" 2>/dev/null; then
+  sudo DEBIAN_FRONTEND=noninteractive ./venv/bin/playwright install-deps chromium >/dev/null 2>&1 || true
+  ./venv/bin/playwright install chromium >/dev/null 2>&1 || true
+  BROWSER_BIN=$(find "$HOME/.cache/ms-playwright" -maxdepth 3 -type f -name chrome 2>/dev/null | head -1)
+fi
+if [ -n "$BROWSER_BIN" ]; then
+  echo "   navegador p/ graficos: $BROWSER_BIN"
+else
+  echo "   [aviso] sem navegador p/ o kaleido — OPR e emails sairao SEM grafico."
+  echo "           Corrija com: ./venv/bin/playwright install chromium"
+fi
+
 echo "== [5/7] systemd: dashboard.service (Streamlit 24/7 em 127.0.0.1:8501) =="
 sudo tee /etc/systemd/system/dashboard.service >/dev/null <<UNIT
 [Unit]
@@ -89,6 +112,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$DIR
 Environment=PYTHONIOENCODING=utf-8
+Environment=BROWSER_PATH=$BROWSER_BIN
 ExecStart=$DIR/venv/bin/streamlit run $DIR/dashboard/main.py --server.address 127.0.0.1 --server.port 8501 --server.headless true
 Restart=always
 RestartSec=10
@@ -109,6 +133,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$DIR
 Environment=PYTHONIOENCODING=utf-8
+Environment=BROWSER_PATH=$BROWSER_BIN
 ExecStart=$DIR/venv/bin/python $DIR/agent/start_ialex.py
 Restart=always
 RestartSec=10

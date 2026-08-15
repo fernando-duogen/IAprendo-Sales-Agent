@@ -168,3 +168,31 @@ passa a renderizar os gráficos nativamente — fim da limitação do Streamlit 
   o proxy (laranja) com Full (strict).
 - **Capacidade ARM**: "out of capacity" no A1 free → retente / outra AD.
 - **1 sessão WhatsApp por vez** (Fase B): nunca rode o IAlex no PC e na VM juntos.
+- **OPR/gráficos saem SEM imagem (falha silenciosa)** — o kaleido precisa de um
+  navegador **externo** e a VM não vem com nenhum. Sintoma: o relatório sai
+  completo (texto, tabelas, comparações) mas sem o radar, e **nada** é avisado na
+  tela — o erro é engolido em `logger.debug` (`tools/report_generator.py`).
+  Diagnóstico: `./venv/bin/python -c "from tools.insight_charts import generate_radar_chart as g; p=g('43104975',benchmark='municipio',benchmark_dep='Privada',scale=1); print(len(p) if p else 'FALHOU')"`
+  Três caminhos que **não** funcionam em ARM, e por quê:
+  1. `apt install chromium-browser` → é o **snap**; o wrapper re-executa o binário
+     e os descritores do pipe de controle se perdem
+     (*"browser seemed to close immediately after starting"*). O navegador roda
+     sozinho na mão, mas não sob o kaleido.
+  2. `kaleido_get_chrome` / `choreo_get_chrome` → baixam Chrome for Testing, que a
+     Google publica só para **x86_64** no Linux.
+  3. Deixar sem nada e confiar no gate `charts_renderable()` → ele devolve **True**
+     na Oracle por suposição (`tools/insight_charts.py`, "Local/Oracle → True"),
+     então a proteção contra "gerar OPR sem gráfico" **não dispara** na VM.
+  Correção (é o que `scripts/setup_vm.sh` passo 4d faz):
+  ```bash
+  ./venv/bin/playwright install chromium          # build nativo arm64, sem snap
+  ```
+  e aponte os serviços para ele (o `/snap/bin` **não** está no PATH do systemd, e
+  o binário do Playwright não está em PATH nenhum — a variável é obrigatória):
+  ```
+  Environment=BROWSER_PATH=/home/ubuntu/.cache/ms-playwright/chromium-<versao>/chrome-linux/chrome
+  ```
+  nos dois units (`dashboard.service` e `ialex.service`), depois
+  `sudo systemctl daemon-reload && sudo systemctl restart dashboard ialex`.
+  Confirme que chegou no processo:
+  `sudo tr '\0' '\n' < /proc/$(systemctl show -p MainPID --value ialex)/environ | grep BROWSER_PATH`
