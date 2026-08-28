@@ -69,6 +69,9 @@ def _profiles_from_usernames(usernames: Dict[str, Any]) -> Dict[str, Dict[str, A
             "phone": info.get("phone", ""),
             "role": info.get("role", ""),
             "is_admin": bool(info.get("is_admin", False)),
+            # Quem ASSINA os e-mails deste usuario. Vazio = ele mesmo.
+            # Ver get_email_identity() — separa "quem opera" de "quem assina".
+            "email_identity_from": (info.get("email_identity_from") or "").strip(),
             "whatsapp_numbers": [
                 "".join(c for c in str(n) if c.isdigit())
                 for n in (info.get("whatsapp_numbers") or [])
@@ -170,6 +173,7 @@ def _fallback_profile() -> Dict[str, Any]:
         "role": "",
         "is_admin": False,  # default fallback nao tem privilegio
         "whatsapp_numbers": [],
+        "email_identity_from": "",
     }
 
 
@@ -203,6 +207,69 @@ def get_active_sender() -> Dict[str, Any]:
 
     # 3) Fallback .env
     return _fallback_profile()
+
+
+# ---------------------------------------------------------------------------
+# Identidade de SAIDA do e-mail (quem assina) — separada de quem OPERA
+# ---------------------------------------------------------------------------
+# Um usuario pode operar com identidade propria (leads, metas, created_by dele)
+# e ainda assim assinar os e-mails como outra pessoa. E o caso do agente
+# "vendedor1", que prospecta em nome proprio mas manda e-mail como o Fernando.
+#
+# Isso NAO e copia de dados: a assinatura e os anexos continuam morando num
+# registro so (o do dono da identidade), entao editar a assinatura do Fernando
+# muda a de quem herda dele no mesmo instante.
+#
+# IMPORTANTE: a heranca vale SO para saida de e-mail. get_active_sender_username()
+# — que alimenta owner_username/created_by — continua devolvendo quem opera.
+def _resolve_identity_username(start: str, profiles: Dict[str, Any]) -> str:
+    """Segue a cadeia `email_identity_from` a partir de `start`.
+
+    Defensivo por design: ciclo (a->b->a) ou alvo inexistente fazem o usuario
+    assinar como ele mesmo. Identidade errada e pior que heranca perdida.
+    """
+    seen = set()
+    cur = start
+    while True:
+        if cur not in profiles or cur in seen:
+            return start
+        seen.add(cur)
+        nxt = (profiles[cur].get("email_identity_from") or "").strip()
+        if not nxt or nxt == cur or nxt not in profiles:
+            return cur
+        cur = nxt
+
+
+def get_email_identity(username: Optional[str] = None) -> Dict[str, Any]:
+    """Perfil a usar como REMETENTE (De:, nome/e-mail/telefone no corpo,
+    assinatura e anexos).
+
+    Sem argumento, parte do sender ativo. Se o perfil tiver
+    `email_identity_from`, devolve o perfil apontado; senao, ele mesmo.
+    """
+    profiles = _load_profiles()
+    if username is None:
+        base = get_active_sender()
+        start = base.get("username") or ""
+    else:
+        base = profiles.get(username) or _fallback_profile()
+        start = username
+    if start not in profiles:
+        # fallback .env ou usuario desconhecido: assina como ele mesmo
+        return base
+    return profiles[_resolve_identity_username(start, profiles)]
+
+
+def get_email_identity_username(username: Optional[str] = None) -> Optional[str]:
+    """Username que indexa assinatura e anexos do e-mail.
+
+    None quando nao ha identidade cadastrada (fallback .env) — mesma semantica
+    de get_active_sender_username(), pra preservar o comportamento atual de
+    cair na assinatura global legada.
+    """
+    ident = get_email_identity(username)
+    u = ident.get("username")
+    return None if (not u or u == "default") else u
 
 
 def get_profile_by_username(username: str) -> Optional[Dict[str, Any]]:

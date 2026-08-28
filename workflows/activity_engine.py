@@ -47,7 +47,19 @@ OUTBOUND_TYPES = ["email_sent", "whatsapp_sent", "linkedin_sent", "call_made"]
 REPLY_TYPES = ["email_replied", "whatsapp_replied", "linkedin_replied"]
 ADVANCED_STAGES = {"reuniao", "proposta", "cliente", "perdido"}
 
-DEFAULT_USERS = ["fernando", "lizianne", "felipe"]
+# Ultimo recurso, so se o YAML E o sender_profile falharem. Manter uma lista
+# literal aqui envelhece em silencio (ficou sem o `charles` por meses e um
+# usuario ausente daqui some dos seletores e das metas quando o fallback roda).
+DEFAULT_USERS = ["fernando", "lizianne", "felipe", "charles"]
+
+
+def _usernames_from_profiles() -> List[str]:
+    """Usuarios via sender_profile (mesma fonte do YAML, com cache por mtime)."""
+    try:
+        from utils.sender_profile import list_profiles
+        return [p.get("username") for p in list_profiles() if p.get("username")]
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -125,9 +137,9 @@ def all_usernames() -> List[str]:
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         users = list((data.get("credentials", {}) or {}).get("usernames", {}) or {})
-        return users or list(DEFAULT_USERS)
+        return users or _usernames_from_profiles() or list(DEFAULT_USERS)
     except Exception:
-        return list(DEFAULT_USERS)
+        return _usernames_from_profiles() or list(DEFAULT_USERS)
 
 
 def admin_username() -> str:

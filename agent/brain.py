@@ -2280,9 +2280,12 @@ def _handle_reatribuir_lead(params: Dict) -> str:
     if novo:
         # validar que o username existe
         try:
-            from utils.sender_profile import get_profile_by_username
+            from utils.sender_profile import get_profile_by_username, list_profiles
             if not get_profile_by_username(novo):
-                return json.dumps({"erro": f"Usuario '{novo}' nao existe. Validos: fernando, lizianne, felipe."})
+                # lista gerada, nao literal: a versao antiga ficou sem o charles
+                _validos = ", ".join(sorted(
+                    p.get("username") for p in list_profiles() if p.get("username")))
+                return json.dumps({"erro": f"Usuario '{novo}' nao existe. Validos: {_validos}."})
         except Exception:
             pass
     ok = db.set_company_owner(company["id"], novo)

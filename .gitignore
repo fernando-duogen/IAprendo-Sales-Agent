@@ -49,6 +49,8 @@ credentials.json
 token.pickle
 config/secrets.json
 config/users.yaml
+# ...e qualquer backup dele (users.yaml.bak-*): tem hash de senha.
+config/users.yaml.*
 
 # Logs
 logs/

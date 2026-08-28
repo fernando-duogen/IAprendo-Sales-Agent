@@ -1316,6 +1316,23 @@ class Database:
                 update['body'] = edited_body
             if scheduled_send_at:
                 update['scheduled_send_at'] = scheduled_send_at
+            # CARIMBO DA IDENTIDADE: sem isto, no envio pelo AGENDADOR o
+            # send_approved chama o brevo com from_username=None, o remetente cai
+            # no .env e signature_username vira None -> assinatura global legada e
+            # anexos vazios. Aprovar e o unico momento em que sabemos com certeza
+            # quem esta por tras da mensagem, entao gravamos a identidade dele
+            # (que pode ser a de outra pessoa — ver sender_profile.get_email_identity).
+            # Dono do lead = quem OPERA. Guardado antes do carimbo abaixo, que
+            # sobrescreve send_as_username com a IDENTIDADE (que pode ser outra
+            # pessoa) — sem isto, o lead do agente "vendedor1" iria para o
+            # fernando no auto-claim.
+            _claim_username = send_as_username
+            if send_as_username is None:
+                try:
+                    from utils.sender_profile import get_email_identity_username
+                    send_as_username = get_email_identity_username()
+                except Exception:
+                    send_as_username = None
             # Merge metadata (envia ambos os overrides quando aplicavel)
             need_metadata = send_as_username is not None or attachment_urls is not None
             if need_metadata:
@@ -1352,12 +1369,12 @@ class Database:
                     extra['send_as'] = send_as_username
                 logger.info('Mensagem aprovada', extra=extra)
                 # AUTO-CLAIM: aprovar = comprometer-se com o envio -> vira dono
-                # do lead (se sem dono). Dono = quem envia (send_as override ou
-                # usuario ativo). Tolerante a falha.
+                # do lead (se sem dono). Dono = quem OPERA (override explicito de
+                # admin ou usuario ativo), NUNCA a identidade de assinatura.
                 try:
                     _company_id = (result.data[0] or {}).get('company_id')
                     if _company_id:
-                        self.claim_company_if_unowned(_company_id, send_as_username or None)
+                        self.claim_company_if_unowned(_company_id, _claim_username or None)
                 except Exception:
                     pass
             else:

@@ -67,26 +67,35 @@ class BrevoSender:
         # IMPORTANTE: from_name usa `email_sender_name` (ex: "Lizianne | DUOGEN")
         # ao inves de `name` (ex: "Lizianne"). Esse campo eh especifico do email
         # — outros lugares (saudacao IAlex, dashboard, prompts LLM) usam `name`.
-        signature_username = from_username  # usado para puxar a assinatura certa
-        if from_username and (not from_email or not from_name):
+        # get_email_identity (e nao get_active_sender): quem OPERA pode ser
+        # diferente de quem ASSINA. O agente "vendedor1" prospecta em nome
+        # proprio — leads e created_by ficam com ele — mas o e-mail sai como o
+        # Fernando, inclusive assinatura e anexos (que sao indexados por
+        # signature_username, resolvido aqui para a IDENTIDADE, nao para o
+        # operador). Sem heranca configurada, identidade == operador.
+        signature_username = from_username
+        if from_username:
             try:
-                from utils.sender_profile import get_profile_by_username
-                _p = get_profile_by_username(from_username)
-                if _p:
-                    from_email = from_email or _p.get("email") or self.from_email
-                    from_name = (from_name or _p.get("email_sender_name")
-                                 or _p.get("name") or self.from_name)
+                from utils.sender_profile import (
+                    get_email_identity, get_email_identity_username)
+                _p = get_email_identity(from_username)
+                signature_username = (get_email_identity_username(from_username)
+                                      or from_username)
+                from_email = from_email or _p.get("email") or self.from_email
+                from_name = (from_name or _p.get("email_sender_name")
+                             or _p.get("name") or self.from_name)
             except Exception:
                 pass
-        if not from_email or not from_name:
+        if not from_email or not from_name or not signature_username:
             try:
-                from utils.sender_profile import get_active_sender, get_active_sender_username
-                _active = get_active_sender()
+                from utils.sender_profile import (
+                    get_email_identity, get_email_identity_username)
+                _active = get_email_identity()
                 from_email = from_email or _active.get("email") or self.from_email
                 from_name = (from_name or _active.get("email_sender_name")
                              or _active.get("name") or self.from_name)
                 if not signature_username:
-                    signature_username = get_active_sender_username()
+                    signature_username = get_email_identity_username()
             except Exception:
                 from_email = from_email or self.from_email
                 from_name = from_name or self.from_name

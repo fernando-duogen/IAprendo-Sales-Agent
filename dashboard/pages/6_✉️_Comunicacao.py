@@ -37,6 +37,37 @@ require_auth()
 from dashboard.helpers.flash import flash_success, render_flash  # noqa: E402
 render_flash()
 
+def _aviso_identidade_herdada(secao: str) -> bool:
+    """Avisa quando a identidade de e-mail deste usuario e a de OUTRA pessoa.
+
+    Sem isto a tela vira um beco sem saida silencioso: o usuario edita uma
+    assinatura/anexo que nunca sera usado, porque no envio o que vale e o
+    registro do dono da identidade (ver utils/sender_profile.get_email_identity).
+    Retorna True quando ha heranca.
+    """
+    try:
+        from utils.sender_profile import (
+            get_active_sender, get_active_sender_username, get_email_identity)
+        _op = get_active_sender_username()
+        _ident = get_email_identity()
+        _ident_user = _ident.get("username")
+        if not _op or not _ident_user or _ident_user == _op:
+            return False
+        alert_banner(
+            f"Os e-mails deste usuario saem com a identidade de "
+            f"<strong>{_ident.get('name') or _ident_user}</strong> "
+            f"(<code>{_ident_user}</code>) — {secao} usados no envio sao os dele. "
+            f"O que voce editar aqui <strong>nao sera aplicado</strong>. "
+            f"Para mudar, edite no perfil de <code>{_ident_user}</code>.",
+            "info",
+        )
+        return True
+    except Exception:
+        return False
+
+
+
+
 # ---------------------------------------------------------------------------
 # Imports compartilhados (falha segura)
 # ---------------------------------------------------------------------------
@@ -2276,6 +2307,8 @@ with tab_templates:
         unsafe_allow_html=True,
     )
 
+    _aviso_identidade_herdada("assinatura e anexos")
+
     try:
         from integrations.email_signature import email_signature
 
@@ -2418,6 +2451,7 @@ with tab_templates:
     # Anexos de Email (sticky por usuario)
     # ============================================================
     section_header("Anexos de Email (PDF)", "attach_file")
+    _aviso_identidade_herdada("os anexos")
     _att_user = st.session_state.get("username", "")
     _att_name = st.session_state.get("name", _att_user or "?")
     st.markdown(

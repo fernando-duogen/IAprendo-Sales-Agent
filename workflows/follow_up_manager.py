@@ -616,9 +616,9 @@ def generate_follow_up(
     # Truncar body original para nao estourar contexto
     original_body_trimmed = (original_body or "")[:800]
 
-    # Sender ativo: dashboard logado ou IAlex thread-local ou fallback YOUR_*
-    from utils.sender_profile import get_active_sender as _get_active_sender_fu
-    _active_fu = _get_active_sender_fu()
+    # Identidade de SAIDA (quem assina) — ver sender_profile.get_email_identity
+    from utils.sender_profile import get_email_identity as _get_email_identity_fu
+    _active_fu = _get_email_identity_fu()
     prompt = (
         template
         .replace("{sender_name}", _active_fu.get("name") or settings.YOUR_NAME)

@@ -192,9 +192,11 @@ class WriterAgent(BaseAgent):
         # RAG: buscar exemplos de emails que funcionaram
         examples_section = self._get_rag_examples_section(company, contact)
 
-        # Remetente ativo (multi-user): dashboard logado OU IAlex thread-local OU fallback YOUR_*
-        from utils.sender_profile import get_active_sender
-        _sender = get_active_sender()
+        # Identidade de SAIDA (quem assina), que pode ser diferente de quem
+        # opera — ver utils/sender_profile.get_email_identity. Sem heranca
+        # configurada, e o proprio sender ativo.
+        from utils.sender_profile import get_email_identity
+        _sender = get_email_identity()
         prompt = (
             self.prompt_template
             .replace("{examples}", examples_section)
@@ -479,8 +481,8 @@ class WriterAgent(BaseAgent):
 
     def _format_sender_section(self) -> str:
         from config.settings import settings
-        from utils.sender_profile import get_active_sender
-        _sender = get_active_sender()
+        from utils.sender_profile import get_email_identity
+        _sender = get_email_identity()
         nl = chr(10)
         name = _sender.get("name") or settings.YOUR_NAME
         email = _sender.get("email") or settings.YOUR_EMAIL
