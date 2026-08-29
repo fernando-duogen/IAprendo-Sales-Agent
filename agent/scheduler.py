@@ -27,6 +27,67 @@ except Exception:  # pragma: no cover
 # Janela de envio automatico (BRT): envia somente entre 8h e 18h.
 BUSINESS_SEND_START, BUSINESS_SEND_END = 8, 18
 
+# Dias em que o envio AUTOMATICO pode ocorrer (0=segunda ... 6=domingo).
+# Ate 28/08/2026 nao havia regra de dia nenhuma: o job rodava a cada 5 min TODOS
+# os dias, entao o que fosse aprovado numa sexta a tarde saia no sabado as 8h.
+SEND_WEEKDAYS = frozenset({0, 1, 2, 3, 4})  # seg a sex
+
+# Sexta tem janela propria de 1 hora: e-mail de prospeccao enviado na sexta a
+# tarde chega quando o destinatario ja esta saindo e morre no fim de semana.
+FRIDAY = 4
+FRIDAY_SEND_HOUR = 8
+
+
+def send_window_check(agora: datetime) -> tuple:
+    """A janela do envio AUTOMATICO. Pura de proposito, para ser testavel.
+
+    Retorna (pode_enviar, motivo). O motivo vai pro log quando bloqueia.
+
+    Regras (horario de Porto Alegre):
+      - sabado e domingo: nunca;
+      - sexta: somente no horario das 8h (unica janela do dia);
+      - segunda a quinta: entre 8h e 18h.
+
+    NAO se aplica ao envio manual — o botao "Enviar agora" do painel e a tool
+    `enviar_aprovados` do WhatsApp chamam send_approved_messages() direto. Se a
+    pessoa clica num sabado, ela quer enviar num sabado.
+    """
+    dia, hora = agora.weekday(), agora.hour
+    if dia not in SEND_WEEKDAYS:
+        return False, f"{agora:%d/%m} e fim de semana — envio retomado na segunda as {BUSINESS_SEND_START}h"
+    if dia == FRIDAY:
+        if hora != FRIDAY_SEND_HOUR:
+            return False, (f"sexta so envia no horario das {FRIDAY_SEND_HOUR}h "
+                           f"(agora {agora:%H:%M}) — proximo envio na segunda as "
+                           f"{BUSINESS_SEND_START}h")
+        return True, ""
+    if not (BUSINESS_SEND_START <= hora < BUSINESS_SEND_END):
+        return False, (f"fora do horario comercial (agora {agora:%H:%M}; janela "
+                       f"{BUSINESS_SEND_START}h-{BUSINESS_SEND_END}h)")
+    return True, ""
+
+
+def next_send_slot(desejado: datetime):
+    """Quando uma mensagem agendada para `desejado` REALMENTE sai.
+
+    Se o horario escolhido cai fora da janela (fim de semana, sexta a tarde,
+    madrugada), o envio nao se perde: o send_approved busca
+    `scheduled_send_at <= agora`, entao a mensagem sai na proxima janela valida.
+    Esta funcao calcula esse instante para a TELA nao prometer um horario que
+    nao vai acontecer.
+
+    Granularidade de hora (o job roda a cada 5 min dentro da hora liberada).
+    """
+    if send_window_check(desejado)[0]:
+        return desejado
+    # anda de hora em hora ate a proxima janela (no maximo uma semana)
+    cursor = desejado.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    for _ in range(24 * 8):
+        if send_window_check(cursor)[0]:
+            return cursor
+        cursor += timedelta(hours=1)
+    return desejado  # inalcancavel com as regras atuais; nunca mente por omissao
+
 
 class IALexScheduler:
     """Agenda e envia mensagens proativas."""
@@ -486,20 +547,16 @@ class IALexScheduler:
         Roda a cada 5 minutos. Se scheduled_send_at <= NOW() ou NULL, envia.
         Notifica Fernando sobre envios E bloqueios (sem email).
 
-        Regra de horario comercial: o envio AUTOMATICO so ocorre entre 8h e 18h
-        (America/Sao_Paulo). Fora dessa janela, as mensagens aprovadas ficam
-        represadas e o envio e retomado as 8h. O botao "Enviar agora" do
+        Janela: ver send_window_check() — dias uteis, 8h-18h, e na sexta apenas
+        o horario das 8h. Fora dela as aprovadas ficam represadas (nada e
+        perdido: sao reavaliadas na proxima execucao). O botao "Enviar agora" do
         dashboard e a tool `enviar_aprovados` do WhatsApp chamam
         send_approved_messages() diretamente e NAO passam por este check.
         """
         now_brt = datetime.now(BRT)
-        if not (BUSINESS_SEND_START <= now_brt.hour < BUSINESS_SEND_END):
-            logger.info(
-                f"Envio agendado pulado: fora do horario comercial "
-                f"({now_brt.strftime('%H:%M')} BRT). "
-                f"Janela: {BUSINESS_SEND_START}h-{BUSINESS_SEND_END}h. "
-                f"Mensagens aprovadas seguem represadas ate as {BUSINESS_SEND_START}h."
-            )
+        _pode, _motivo = send_window_check(now_brt)
+        if not _pode:
+            logger.info(f"Envio agendado pulado: {_motivo}")
             return
 
         try:

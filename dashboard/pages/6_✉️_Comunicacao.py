@@ -37,6 +37,17 @@ require_auth()
 from dashboard.helpers.flash import flash_success, render_flash  # noqa: E402
 render_flash()
 
+
+def _quando_sai(desejado):
+    """Instante REAL do envio automatico para um agendamento (ver
+    agent/scheduler.next_send_slot). Em caso de erro devolve o proprio valor —
+    a tela nunca deve quebrar por causa de uma legenda."""
+    try:
+        from agent.scheduler import next_send_slot
+        return next_send_slot(desejado)
+    except Exception:
+        return desejado
+
 def _aviso_identidade_herdada(secao: str) -> bool:
     """Avisa quando a identidade de e-mail deste usuario e a de OUTRA pessoa.
 
@@ -457,7 +468,15 @@ with tab_aprovacao:
                         bulk_time = st.time_input("Horario", value=dtime(8, 0), key="bulk_sched_time")
                     bulk_sched_dt = datetime.combine(bulk_date, bulk_time, tzinfo=timezone(timedelta(hours=-3)))
                     bulk_sched_iso = bulk_sched_dt.isoformat()
-                    st.caption(f"Todas serao enviadas em {bulk_date.strftime('%d/%m/%Y')} as {bulk_time.strftime('%H:%M')}")
+                    _bulk_real = _quando_sai(bulk_sched_dt)
+                    if _bulk_real != bulk_sched_dt:
+                        st.caption(
+                            f"{bulk_date.strftime('%d/%m')} as {bulk_time.strftime('%H:%M')} "
+                            f"esta fora da janela de envio automatico (dia util 8h-18h; "
+                            f"sexta so as 8h) — todas serao enviadas em "
+                            f"{_bulk_real.strftime('%d/%m/%Y as %H:%M')}.")
+                    else:
+                        st.caption(f"Todas serao enviadas em {bulk_date.strftime('%d/%m/%Y')} as {bulk_time.strftime('%H:%M')}")
 
                 ba1, ba2 = st.columns(2)
                 with ba1:
@@ -923,9 +942,23 @@ with tab_aprovacao:
                     )
                 sched_dt = datetime.combine(sched_date, sched_time, tzinfo=timezone(timedelta(hours=-3)))
                 scheduled_send_at_iso = sched_dt.isoformat()
+                # O envio automatico so roda em dia util (e na sexta, so as 8h).
+                # Sem isto a legenda prometeria um horario que nao acontece —
+                # a mensagem nao se perde, mas sai depois do que esta escrito.
+                _real_dt = _quando_sai(sched_dt)
+                if _real_dt != sched_dt:
+                    st.markdown(
+                        f'<div style="font-size:13px;color:#C62828;margin-top:4px">'
+                        f'{sched_date.strftime("%d/%m")} as {sched_time.strftime("%H:%M")} '
+                        f'esta fora da janela de envio automatico (dia util 8h-18h; '
+                        f'sexta so as 8h). Sera enviado em '
+                        f'<strong>{_real_dt.strftime("%d/%m/%Y as %H:%M")}</strong>.'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
                 st.markdown(
                     f'<div style="font-size:13px;color:#FF6D00;margin-top:4px">'
-                    f'Email sera enviado em <strong>{sched_date.strftime("%d/%m/%Y")} as {sched_time.strftime("%H:%M")}</strong> (horario de Brasilia)'
+                    f'Email sera enviado em <strong>{_real_dt.strftime("%d/%m/%Y")} as {_real_dt.strftime("%H:%M")}</strong> (horario de Brasilia)'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
