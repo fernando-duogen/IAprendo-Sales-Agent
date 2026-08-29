@@ -946,7 +946,10 @@ if st.session_state.escola_detail_id:
     company = db.get_company_detail(company_id)
 
     if not company:
-        st.error("Escola nao encontrada.")
+        # escola_msg (e nao st.error): o st.rerun() logo abaixo descarta
+        # qualquer elemento do corpo. A pagina ja tem renderizador proprio
+        # dessa chave — reusar em vez de trazer um segundo mecanismo.
+        st.session_state.escola_msg = ("error", "Escola nao encontrada.")
         go_to_list()
         st.rerun()
 

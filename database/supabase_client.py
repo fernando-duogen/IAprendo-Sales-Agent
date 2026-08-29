@@ -1294,6 +1294,7 @@ class Database:
         scheduled_send_at: str = None,
         send_as_username: str = None,
         attachment_urls: list = None,
+        error_out: list = None,
     ) -> bool:
         """Aprova mensagem para envio. Se scheduled_send_at fornecido, agenda
         o envio para o horario especificado (ISO 8601). Se None, envia imediatamente.
@@ -1306,7 +1307,14 @@ class Database:
                 Lista de dicts [{"name", "url"}]. Salvo em metadata.attachment_urls.
                 Se None = sticky default (anexos ativos do user resolvidos no envio).
                 Se [] (lista vazia explicita) = enviar SEM anexos.
+            error_out: lista opcional onde o MOTIVO da falha e anexado. Existe
+                porque o retorno e bool e a tela mostrava so "Falha ao aprovar."
+                sem dizer nada. Parametro opcional -> nenhum chamador atual muda.
         """
+        def _falhou(motivo: str) -> bool:
+            if error_out is not None:
+                error_out.append(motivo)
+            return False
         try:
             from datetime import datetime
             update = {'status': 'approved', 'approved_at': datetime.utcnow().isoformat()}
@@ -1358,8 +1366,36 @@ class Database:
             # ainda estiver 'pending'. Se outro user ja aprovou/rejeitou, o
             # WHERE nao casa, result.data vem vazio e retornamos False — evita
             # 2 usuarios aprovarem a mesma mensagem.
-            result = (self.client.table('approval_queue').update(update)
-                      .eq('id', queue_id).eq('status', 'pending').execute())
+            #
+            # TOLERANTE A COLUNA AUSENTE (mesmo padrao de insert_approval_queue,
+            # :1272-1281): `metadata` nunca teve migration — o banco responde
+            # 42703 column "metadata" does not exist. Quando o carimbo de
+            # identidade acima passou a inclui-la em TODA aprovacao, a aprovacao
+            # inteira quebrou. Se o banco recusar um campo OPCIONAL, ele sai e o
+            # status='approved' ainda aterrissa; so o carimbo se perde ate a
+            # migration rodar. Repetir e seguro: o CAS garante que a tentativa
+            # que falhou nao alterou nada.
+            _OPCIONAIS = ('metadata', 'scheduled_send_at')
+
+            def _executar(payload):
+                return (self.client.table('approval_queue').update(payload)
+                        .eq('id', queue_id).eq('status', 'pending').execute())
+
+            try:
+                result = _executar(update)
+            except Exception as _e_upd:
+                # O texto do PostgREST costuma ficar no __cause__ (o client faz
+                # `raise ... from e`) — licao de agents/base_agent.py.
+                _msg = f"{_e_upd} | {getattr(_e_upd, '__cause__', '')}".lower()
+                _remover = [k for k in _OPCIONAIS if k in update and k in _msg]
+                if not _remover:
+                    raise
+                for _k in _remover:
+                    update.pop(_k, None)
+                logger.warning(
+                    'Coluna ausente na approval_queue; reenviando sem ela',
+                    extra={'queue_id': queue_id, 'campos_removidos': _remover})
+                result = _executar(update)
             success = bool(result.data)
             if success:
                 extra = {'queue_id': queue_id}
@@ -1380,10 +1416,17 @@ class Database:
             else:
                 logger.warning('Aprovacao ignorada: mensagem nao esta mais pending '
                                '(ja tratada por outro usuario?)', extra={'queue_id': queue_id})
+                return _falhou('a mensagem nao esta mais pendente '
+                               '(ja aprovada, rejeitada ou removida por outro usuario)')
             return success
         except Exception as e:
-            logger.error('Erro ao aprovar mensagem', extra={'queue_id': queue_id, 'error': str(e)})
-            return False
+            _detalhe = f"{e}"
+            _causa = getattr(e, '__cause__', None)
+            if _causa:
+                _detalhe = f"{_detalhe} | {_causa}"
+            logger.error('Erro ao aprovar mensagem',
+                         extra={'queue_id': queue_id, 'error': _detalhe})
+            return _falhou(_detalhe[:300])
 
     def reject_message(self, queue_id: str, reason: str = '') -> bool:
         """Rejeita mensagem (so se ainda estiver pending — guard de concorrencia)."""

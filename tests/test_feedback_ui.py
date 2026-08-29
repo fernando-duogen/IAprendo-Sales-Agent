@@ -108,9 +108,16 @@ def test_nenhum_success_e_descartado_pelo_rerun(path):
     tree = ast.parse(path.read_text(encoding="utf-8"))
     ofensores = []
     for seq in _blocos(tree):
-        for a, b in zip(seq, seq[1:]):
-            if _st_call(a) in ("success", "info", "warning", "error") \
-                    and _st_call(b) == "rerun":
+        for i, a in enumerate(seq):
+            if _st_call(a) not in ("success", "info", "warning", "error"):
+                continue
+            # Basta o rerun vir DEPOIS na mesma lista de statements — nao
+            # precisa ser adjacente. A versao antiga so olhava pares
+            # vizinhos e por isso nao pegou o st.success do 'Aprovar' (com
+            # 2 linhas no meio) — o mesmo clique que escondeu a coluna
+            # metadata ausente. Sem falso-positivo: se sao irmaos e o
+            # feedback vem antes, o rerun descarta sempre.
+            if any(_st_call(b) == "rerun" for b in seq[i + 1:]):
                 ofensores.append((a.lineno, _st_call(a)))
     assert not ofensores, (
         f"{path.name}: st.<tipo>() descartado pelo rerun nas linhas "

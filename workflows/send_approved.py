@@ -33,16 +33,33 @@ def send_approved_messages(limit: int = 50, only_queue_id: str = None) -> Dict[s
         from datetime import datetime, timezone
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        _qb = db.client.table("approval_queue").select(
-            "id, company_id, contact_id, subject, body, channel, scheduled_send_at, chart_urls"
-        ).eq("status", "approved").is_("sent_at", "null")
-        if only_queue_id:
-            # Envio manual explicito ("Enviar agora"): ignora o agendamento.
-            _qb = _qb.eq("id", only_queue_id)
-        else:
-            # Lote (scheduler): respeita scheduled_send_at (null ou ja vencido).
-            _qb = _qb.or_(f"scheduled_send_at.is.null,scheduled_send_at.lte.{now_iso}")
-        q = _qb.limit(limit).execute()
+        # `metadata` carrega o carimbo de remetente/anexos gravado na aprovacao
+        # (lido em :209 mais abaixo). Ele NAO estava neste select — o carimbo
+        # existia e nunca era lido. A coluna e recente (APLICAR-024), entao o
+        # select tem fallback: sem ele, o envio INTEIRO quebraria em qualquer
+        # ambiente onde a migration ainda nao rodou.
+        _COLS_BASE = ("id, company_id, contact_id, subject, body, channel, "
+                      "scheduled_send_at, chart_urls")
+
+        def _buscar(cols: str):
+            _qb = db.client.table("approval_queue").select(cols)                 .eq("status", "approved").is_("sent_at", "null")
+            if only_queue_id:
+                # Envio manual explicito ("Enviar agora"): ignora o agendamento.
+                _qb = _qb.eq("id", only_queue_id)
+            else:
+                # Lote (scheduler): respeita scheduled_send_at (null ou vencido).
+                _qb = _qb.or_(f"scheduled_send_at.is.null,scheduled_send_at.lte.{now_iso}")
+            return _qb.limit(limit).execute()
+
+        try:
+            q = _buscar(_COLS_BASE + ", metadata")
+        except Exception as _e_meta:
+            _txt = f"{_e_meta} | {getattr(_e_meta, '__cause__', '')}".lower()
+            if "metadata" not in _txt:
+                raise
+            logger.warning("approval_queue.metadata ausente (rode APLICAR-024); "
+                           "enviando sem o carimbo de remetente")
+            q = _buscar(_COLS_BASE)
         approved_msgs = q.data
     except Exception as e:
         logger.error("Erro ao buscar aprovadas", extra={"error": str(e)})

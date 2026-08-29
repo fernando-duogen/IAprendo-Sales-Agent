@@ -125,7 +125,7 @@ def render_memorias() -> None:
                         source="dashboard",
                     )
                     if mem_id:
-                        st.success(f"Memoria criada: {mem_id[:8]}")
+                        flash_success(f"Memoria criada: {mem_id[:8]}")
                         load_memories.clear()
                         st.rerun()
                     else:
@@ -316,7 +316,7 @@ def render_memorias() -> None:
                 if st.button("Excluir", type="primary", icon=":material/delete:"):
                     target_id = mems_filt[del_idx].get("id")
                     if memory.forget(target_id):
-                        st.success(f"Memoria {target_id[:8]} excluida.")
+                        flash_success(f"Memoria {target_id[:8]} excluida.")
                         load_memories.clear()
                         st.rerun()
                     else:

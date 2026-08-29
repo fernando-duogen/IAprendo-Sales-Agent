@@ -416,7 +416,7 @@ with tab_aprovacao:
                         for p in pending:
                             if queue_manager.reject(p["id"], reason=reason):
                                 count += 1
-                        st.success(f"{count} mensagens rejeitadas.")
+                        flash_success(f"{count} mensagens rejeitadas.")
                         st.session_state.pop("confirm_bulk_reject", None)
                         st.rerun()
                 with br2:
@@ -436,7 +436,7 @@ with tab_aprovacao:
                                 count += 1
                             except Exception:
                                 pass
-                        st.success(f"{count} mensagens excluidas da fila.")
+                        flash_success(f"{count} mensagens excluidas da fila.")
                         st.session_state.pop("confirm_bulk_delete_queue", None)
                         st.rerun()
                 with bd2:
@@ -482,7 +482,7 @@ with tab_aprovacao:
                         _msg = f"{count} mensagens aprovadas"
                         if bulk_sched_iso:
                             _msg += f" e agendadas para {bulk_date.strftime('%d/%m')} as {bulk_time.strftime('%H:%M')}"
-                        st.success(_msg + ".")
+                        flash_success(_msg + ".")
                         st.session_state.pop("confirm_bulk_approve", None)
                         st.rerun()
                 with ba2:
@@ -1032,11 +1032,13 @@ with tab_aprovacao:
                                 _att_override = _selected_for_msg
                     except Exception:
                         _att_override = None
+                    _err_apv = []
                     ok = queue_manager.approve(
                         queue_id, edited_subject=sub, edited_body=bod,
                         scheduled_send_at=scheduled_send_at_iso,
                         send_as_username=_final_send_as if _final_send_as != _logged_username else None,
                         attachment_urls=_att_override,
+                        error_out=_err_apv,
                     )
                     if ok:
                         extra_ids = st.session_state.get(f"extra_contacts_{queue_id}", [])
@@ -1065,12 +1067,18 @@ with tab_aprovacao:
                         _msg = "Mensagem aprovada!"
                         if extra_count:
                             _msg += f" + {extra_count} copia(s) para outros contatos."
-                        st.success(_msg)
+                        # flash_success: st.success aqui e descartado pelo
+                        # st.rerun() abaixo — o usuario aprovava e nao via nada.
+                        flash_success(_msg)
                         st.session_state.current_idx = max(0, idx)
                         st.session_state.refresh += 1
                         st.rerun()
                     else:
-                        st.error("Falha ao aprovar.")
+                        # O motivo REAL, em vez de "Falha ao aprovar." seco: foi
+                        # exatamente essa mensagem muda que escondeu por um dia
+                        # a coluna `metadata` ausente na approval_queue.
+                        _motivo = _err_apv[0] if _err_apv else "motivo nao informado"
+                        st.error(f"Falha ao aprovar: {_motivo}")
 
             with btn_col2:
                 if st.button("Usar Template", use_container_width=True, key=f"template_{queue_id}",

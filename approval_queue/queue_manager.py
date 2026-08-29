@@ -22,12 +22,18 @@ class QueueManager:
         scheduled_send_at: str = None,
         send_as_username: str = None,
         attachment_urls: list = None,
+        error_out: list = None,
     ) -> bool:
-        """Aprova mensagem. Pode editar, agendar envio e/ou definir remetente/anexos."""
+        """Aprova mensagem. Pode editar, agendar envio e/ou definir remetente/anexos.
+
+        error_out: lista opcional que recebe o MOTIVO da falha (a tela mostrava
+        so "Falha ao aprovar." sem dizer nada).
+        """
         return db.approve_message(
             queue_id, edited_subject, edited_body, scheduled_send_at,
             send_as_username=send_as_username,
             attachment_urls=attachment_urls,
+            error_out=error_out,
         )
 
     def reject(self, queue_id: str, reason: str = "") -> bool:
