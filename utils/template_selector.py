@@ -39,6 +39,16 @@ _GENERIC_LOCALPARTS = {
 _enem_cache: Dict[str, bool] = {}
 
 
+def limpar_cache_enem() -> None:
+    """Esquece o que ja foi consultado de ENEM.
+
+    O dashboard e o IAlex rodam por dias no mesmo processo: uma escola que
+    ganhe ENEM depois ficaria marcada como "sem ENEM" para sempre. Tambem e o
+    que permite testar deteccao de ENEM sem contaminacao entre casos.
+    """
+    _enem_cache.clear()
+
+
 def detectar_audience(contact: Optional[Dict[str, Any]]) -> str:
     """Classifica o contato como 'nominal' (pessoa real) ou 'generico' (caixa institucional).
 
@@ -195,6 +205,8 @@ def selecionar_template(
         "selecionar_template: escolhido",
         extra={"template": escolhido.get("name"), "audience": audience,
                "tem_matriculas": tem_mat, "tem_enem": tem_enem,
+               "data_profile": escolhido.get("data_profile"),
+               "inep": company.get("inep_code"),
                "escola": company.get("name")},
     )
     return escolhido

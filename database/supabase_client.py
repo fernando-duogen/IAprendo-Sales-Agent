@@ -81,6 +81,25 @@ _CENSO_TO_COMPANY_MATRICULAS = {
     "qt_doc_bas": "total_docentes",
 }
 
+# Quantas safras do censo olhar pra tras quando a mais recente vem vazia.
+# 6 cobre 2020-2025 (o que a base tem hoje) sem virar varredura.
+_CENSO_VINTAGES_LOOKBACK = 6
+
+# Campos que contam como MATRICULA. O mapa acima tambem traz docentes
+# (qt_doc_bas): uma safra com docentes preenchidos e matriculas nulas parece
+# "cheia" e faria o lookback parar nela sem trazer numero de aluno nenhum.
+_CAMPOS_MATRICULA = frozenset({
+    "total_matriculas", "matriculas_infantil", "matriculas_fundamental",
+    "matriculas_fund_ai", "matriculas_fund_af", "matriculas_medio",
+    "matriculas_eja",
+})
+
+
+def _tem_matricula(fields: Dict[str, Any]) -> bool:
+    """True se o dict mapeado traz ao menos uma matricula com valor > 0."""
+    return any(k in _CAMPOS_MATRICULA and (v or 0) > 0
+               for k, v in (fields or {}).items())
+
 
 def _censo_row_to_company_matriculas(censo_row: Dict[str, Any]) -> Dict[str, Any]:
     """Mapeia uma linha de school_censo_yearly -> dict de updates de matriculas/
@@ -413,6 +432,11 @@ class Database:
         try:
             existing = self.get_company_by_inep(inep_code)
             if existing:
+                # "Ja esta no CRM" nao pode ser no-op: a escola pode estar la
+                # com matriculas zeradas enquanto o censo tem o numero. Sem
+                # isto, reimportar uma escola conhecida nao conserta nada e ela
+                # segue recebendo o template pobre.
+                self.hydrate_company_matriculas(existing)
                 return {'ok': True, 'id': existing['id'], 'inep': inep_code,
                         'already': True, 'name': existing.get('name'),
                         'message': 'Ja estava no CRM.'}
@@ -1041,23 +1065,127 @@ class Database:
                           or (comp.get("matriculas_medio") or 0))
             if ja_tem and not force:
                 return {"updated": False, "reason": "company ja tem matriculas"}
+            # Varios vintages, do mais novo pro mais velho — e NAO so o primeiro.
+            # A safra mais recente costuma existir com as matriculas em branco
+            # (a linha e criada antes de o INEP publicar os numeros). Pegando so
+            # o topo, a escola ficava "sem matriculas" mesmo tendo o ano anterior
+            # inteiro preenchido: em 04/09/2026 eram 8 de 8 escolas zeradas do
+            # CRM nessa situacao (censo 2025 vazio, 2024 com dado).
             cy = (self.client.table("school_censo_yearly").select("*")
                   .eq("inep_code", inep).order("vintage_censo", desc=True)
-                  .limit(1).execute().data)
+                  .limit(_CENSO_VINTAGES_LOOKBACK).execute().data)
             if not cy:
                 return {"updated": False, "reason": "sem censo"}
-            fields = _censo_row_to_company_matriculas(cy[0])
+            # Uma safra so, inteira (matriculas + docentes do MESMO ano) —
+            # misturar anos daria um retrato que nunca existiu.
+            fields, usado = {}, None
+            for linha in cy:
+                candidato = _censo_row_to_company_matriculas(linha)
+                if _tem_matricula(candidato):
+                    fields, usado = candidato, linha.get("vintage_censo")
+                    break
             if not fields:
                 return {"updated": False, "reason": "censo sem matriculas"}
             self.update_company(comp["id"], fields)
             logger.info("Company matriculas sincronizadas do censo",
-                        extra={"inep": inep, "vintage": cy[0].get("vintage_censo"),
+                        extra={"inep": inep, "vintage": usado,
+                               "vintage_mais_novo": cy[0].get("vintage_censo"),
                                "fields": list(fields.keys())})
-            return {"updated": True, "fields": fields, "vintage": cy[0].get("vintage_censo")}
+            return {"updated": True, "fields": fields, "vintage": usado}
         except Exception as e:
             logger.error(f"sync_company_matriculas_from_censo falhou: {e}",
                          extra={"inep": inep})
             return {"updated": False, "reason": str(e)[:120]}
+
+    def hydrate_company_matriculas(self, company: Dict[str, Any]) -> Dict[str, Any]:
+        """Garante que a escola chegue com matriculas ANTES da escolha de template.
+
+        Por que existe: `template_selector.detectar_dados` decide se a escola
+        tem "dados ricos" olhando os campos de matricula do proprio dict de
+        company. Escola que entrou pelo catalogo (ou que esta no CRM desde o
+        CSV) pode ter esses campos zerados enquanto o Censo tem o numero — e
+        entao ela recebia o template pobre tendo dado disponivel.
+
+        Ordem: censo (fonte boa, serie historica) -> catalogo MEC (o que a
+        propria tela de importar mostra). Conservador nos dois: so preenche
+        campo vazio, nunca sobrescreve numero existente.
+
+        Devolve o dict de company ATUALIZADO. Retornar o mesmo objeto de
+        entrada seria o bug classico deste caminho: o banco muda e o seletor
+        continua vendo a copia velha em memoria.
+        """
+        comp = dict(company or {})
+        inep = str(comp.get("inep_code") or "").strip()
+        ja_tem = bool((comp.get("total_matriculas") or 0)
+                      or (comp.get("matriculas_fund_af") or 0)
+                      or (comp.get("matriculas_medio") or 0))
+        if ja_tem or not inep:
+            return comp
+
+        origem = None
+        try:
+            if self.sync_company_matriculas_from_censo(inep).get("updated"):
+                origem = "censo"
+            else:
+                origem = self._matriculas_from_catalog(inep, comp.get("id"))
+        except Exception as e:
+            logger.warning("hydrate_company_matriculas falhou",
+                           extra={"inep": inep, "error": str(e)[:150]})
+            return comp
+
+        if not origem:
+            return comp
+
+        # Reler do banco: os updates acima foram no banco, nao neste dict.
+        try:
+            fresco = self.get_company_by_inep(inep)
+            if fresco:
+                comp.update(fresco)
+        except Exception as e:
+            logger.warning("hydrate: reload da company falhou",
+                           extra={"inep": inep, "error": str(e)[:150]})
+        logger.info("Escola hidratada antes da escolha de template",
+                    extra={"inep": inep, "origem": origem,
+                           "total_matriculas": comp.get("total_matriculas"),
+                           "matriculas_fund_af": comp.get("matriculas_fund_af")})
+        return comp
+
+    def _matriculas_from_catalog(self, inep: str, company_id: Optional[str]) -> Optional[str]:
+        """Fallback: copia matriculas do mec_catalog pra company. Devolve a
+        origem ('catalogo') se atualizou, senao None.
+
+        Hoje isto e seguro-morto — nenhuma das escolas zeradas do CRM tem
+        numero no catalogo (medido em 04/09/2026). Existe porque a tela de
+        importar MOSTRA esses campos: se ela mostra, a escolha de template nao
+        pode ignorar.
+        """
+        if not company_id:
+            return None
+        try:
+            r = (self.client.table("mec_catalog")
+                 .select("total_matriculas,matriculas_fund_af,matriculas_medio")
+                 .eq("inep_code", inep).limit(1).execute().data)
+            if not r:
+                return None
+            # Whitelist explicita: nao iterar o que o SELECT devolveu. Um dia
+            # o select traz uma coluna a mais (ou "*") e o codigo copiaria
+            # qualquer coisa pra dentro de companies.
+            fields = {}
+            for col in ("total_matriculas", "matriculas_fund_af", "matriculas_medio"):
+                try:
+                    v = int((r[0] or {}).get(col) or 0)
+                except (TypeError, ValueError):
+                    continue
+                if v > 0:
+                    fields[col] = v
+            if not fields:
+                return None
+            self.update_company(company_id, fields)
+            return "catalogo"
+        except Exception as e:
+            logger.warning("fallback do catalogo falhou",
+                           extra={"inep": inep, "error": str(e)[:150]})
+            return None
 
     def backfill_company_matriculas_from_censo(self, limit: int = 5000) -> Dict[str, int]:
         """Sincroniza do censo todas as companies com matriculas zeradas que tem

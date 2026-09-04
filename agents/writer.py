@@ -127,7 +127,11 @@ class WriterAgent(BaseAgent):
                 if mode == "ai":
                     result = self.write_message(company, contact, all_contacts=contacts)
                 elif mode == "template_auto":
-                    # Selecao automatica por alvo (audience x dados)
+                    # Hidratar ANTES de escolher: o seletor decide "dados ricos"
+                    # pelos campos de matricula deste dict. Escola com o numero
+                    # so no censo recebia template pobre tendo dado disponivel.
+                    # Reatribuir e essencial — hydrate devolve um dict novo.
+                    company = db.hydrate_company_matriculas(company)
                     from utils.template_selector import selecionar_template
                     chosen = selecionar_template(company, contact, templates_ativos)
                     if not chosen:
@@ -139,6 +143,11 @@ class WriterAgent(BaseAgent):
                         continue
                     result = self._apply_template(chosen, company, contact)
                 else:
+                    # Template fixo: o template ja esta escolhido, mas o CORPO
+                    # renderiza matriculas — hidratar aqui evita e-mail com
+                    # numero vazio. Mesma chamada, e ela sai barata quando a
+                    # escola ja tem os campos preenchidos (nao consulta nada).
+                    company = db.hydrate_company_matriculas(company)
                     result = self._apply_template(template_data, company, contact)
 
                 if result:
