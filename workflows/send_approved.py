@@ -247,6 +247,10 @@ def send_approved_messages(limit: int = 50, only_queue_id: str = None) -> Dict[s
                 chart_urls=_chart_urls,
                 from_username=_send_as,  # None -> brevo_sender resolve do sender ativo / fallback
                 attachments=_attachments_arg,
+                # Copia oculta pro operador acompanhar o que saiu. Este e o
+                # UNICO caminho que manda e-mail para lead real — os pontos de
+                # "Enviar teste" nao passam por aqui e continuam sem BCC.
+                with_bcc=True,
             )
         if result.get("success"):
             # Marcar como enviada

@@ -195,6 +195,28 @@ class Settings:
     # Brevo (300/dia grátis)
     BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
 
+    @property
+    def BREVO_BCC_EMAIL(self) -> List[str]:
+        """Endereços em cópia oculta no envio de PRODUÇÃO (um ou vários).
+
+        Serve para o operador receber o e-mail exatamente como o cliente
+        recebeu — mesmo assunto, HTML, assinatura, anexos e gráficos.
+
+        Aceita um endereço ou vários separados por vírgula. Vazio (o default)
+        = sem BCC. O endereço real mora no `.env`, nunca aqui (regra Zero
+        Hardcode), igual a BREVO_SENDER_EMAIL.
+
+        Atenção: cada BCC consome um crédito Brevo separado — no plano
+        gratuito de 300/dia, um BCC reduz a capacidade efetiva para 150 envios.
+
+        Returns:
+            Lista de endereços (sem validação de formato — quem valida é
+            tools/brevo_sender._resolver_bcc, que precisa descartar item
+            inválido sem derrubar o envio).
+        """
+        raw = os.getenv("BREVO_BCC_EMAIL", "")
+        return [e.strip() for e in raw.split(",") if e.strip()]
+
     # Gmail (500/dia)
     GMAIL_CREDENTIALS_PATH: str = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials.json")
 

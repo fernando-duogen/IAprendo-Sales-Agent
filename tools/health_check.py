@@ -359,6 +359,36 @@ def _check_pipeline_config() -> Dict[str, Any]:
         return {"status": "unknown", "detail": f"pipeline_config indisponivel: {e}"}
 
 
+def _check_email_config() -> Dict[str, Any]:
+    """Remetente e copia oculta do envio de producao.
+
+    Existe porque essas duas coisas vivem no .env da VM: sem esta linha, a
+    unica forma de saber se o BCC esta ligado seria abrir o servidor por ssh.
+    E read-only de proposito — se fosse editavel pela tela, o mesmo valor teria
+    duas fontes de verdade (.env e banco) e uma regra de precedencia pra
+    inventar.
+    """
+    try:
+        from config.settings import settings
+        from tools.brevo_sender import brevo_sender
+        if not brevo_sender._enabled:
+            return {"status": "degraded", "detail": "Brevo sem API key — envio desabilitado"}
+        bcc = list(settings.BREVO_BCC_EMAIL)
+        # detail curto: a grade da tela corta em 40 chars (delta do metric_card).
+        if bcc:
+            detalhe = f"copia p/ {bcc[0]}" + (f" +{len(bcc) - 1}" if len(bcc) > 1 else "")
+        else:
+            detalhe = "sem copia oculta"
+        return {
+            "status": "healthy",
+            "detail": detalhe,
+            "meta": {"from_email": brevo_sender.from_email,
+                     "bcc": bcc, "bcc_count": len(bcc)},
+        }
+    except Exception as e:
+        return {"status": "unknown", "detail": f"config de email indisponivel: {e}"}
+
+
 # ============================================================================
 # Orchestration
 # ============================================================================
@@ -381,6 +411,7 @@ def run_health_check() -> Dict[str, Any]:
         ("error_rate_24h", _check_error_rate_24h),
         ("api_quotas", _check_api_quotas),
         ("pipeline_config", _check_pipeline_config),
+        ("email_config", _check_email_config),
     ]
 
     results: Dict[str, Any] = {}

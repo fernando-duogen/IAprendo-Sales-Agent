@@ -7,6 +7,7 @@ Nunca envia mensagem sem aprovacao humana previa.
 import requests
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -18,6 +19,49 @@ try:
     from agent.tools.enem_tools import ENEM_VINTAGE as _ENEM_VINTAGE
 except Exception:
     _ENEM_VINTAGE = 2025
+
+# Mesmo formato aceito por tools/email_verifier._is_valid_format.
+_RE_EMAIL = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+
+def _resolver_bcc(to_email: str) -> list:
+    """Enderecos de copia oculta para UM envio, no formato do payload Brevo.
+
+    Por que a validacao mora aqui e nao no settings: um endereco malformado
+    faz o Brevo responder 400, e o 400 nao tem retry (ver o ramo de erro do
+    cliente em send_email) — ou seja, um typo no BREVO_BCC_EMAIL faria **a
+    escola** nao receber o e-mail. A copia e uma conveniencia do operador;
+    ela nunca pode custar o envio ao cliente. Item invalido sai da lista com
+    warning e o envio segue.
+
+    Tambem descarta o proprio destinatario (o BCC seria uma segunda copia do
+    mesmo e-mail na mesma caixa) e duplicatas internas, sempre comparando
+    sem espacos e sem diferenciar maiuscula.
+
+    Returns:
+        [{"email": str}, ...] — vazio quando nao ha BCC configurado.
+    """
+    try:
+        configurados = settings.BREVO_BCC_EMAIL
+    except Exception as e:
+        logger.warning("BCC ignorado (falha ao ler config)", extra={"error": str(e)[:120]})
+        return []
+
+    alvo = str(to_email or "").strip().lower()
+    vistos, saida = set(), []
+    for bruto in configurados:
+        end = str(bruto or "").strip()
+        chave = end.lower()
+        if not _RE_EMAIL.match(end):
+            logger.warning("BCC ignorado (formato invalido)", extra={"bcc": end[:60]})
+            continue
+        if chave == alvo:
+            continue  # ja e o destinatario
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        saida.append({"email": end})
+    return saida
 
 
 class BrevoSender:
@@ -39,7 +83,8 @@ class BrevoSender:
                    queue_id: str = None, chart_urls: list = None,
                    from_email: str = None, from_name: str = None,
                    from_username: str = None,
-                   attachments: list = None) -> Dict[str, Any]:
+                   attachments: list = None,
+                   with_bcc: bool = False) -> Dict[str, Any]:
         """
         Envia um email via Brevo. Retorna dict com status, message_id e tracking_id.
 
@@ -57,6 +102,12 @@ class BrevoSender:
                         PDFs/arquivos. Brevo baixa do URL no momento do envio.
                         Se None, resolve dos anexos ativos do sender (sticky).
                         Se lista vazia [], envia SEM anexos (override pra desligar).
+            with_bcc: Se True, inclui os enderecos de BREVO_BCC_EMAIL em copia
+                        oculta. DEFAULT False de proposito: os pontos de
+                        "Enviar teste" ficam intocados e nao tem como copiar
+                        ninguem por acidente. Quem liga isso e o envio de
+                        producao (workflows/send_approved.py), o unico caminho
+                        que manda e-mail para lead real.
         """
         if not self._enabled:
             logger.warning("BREVO DESABILITADO - email NAO enviado (configure BREVO_API_KEY no .env)",
@@ -136,6 +187,12 @@ class BrevoSender:
             ]
             if valid:
                 payload["attachment"] = valid
+        # Copia oculta (so no envio de producao). O BCC recebe assunto e
+        # conteudo IDENTICOS ao do cliente — e esse o objetivo: ver o e-mail
+        # exatamente como ele chegou. Nada acima e alterado.
+        bcc = _resolver_bcc(to_email) if with_bcc else []
+        if bcc:
+            payload["bcc"] = bcc
         if queue_id:
             payload["tags"] = [f"queue:{queue_id}"]
         # Adicionar header customizado com tracking_id para correlacao
@@ -160,7 +217,8 @@ class BrevoSender:
                     logger.info("Email enviado via Brevo",
                         extra={"to": to_email, "queue_id": queue_id,
                                "message_id": msg_id, "tracking_id": tracking_id,
-                               "attempt": _attempt})
+                               "attempt": _attempt,
+                               "bcc": ",".join(b["email"] for b in bcc)})
 
                     # Atualizar approval_queue com tracking_id e brevo_message_id
                     if queue_id:

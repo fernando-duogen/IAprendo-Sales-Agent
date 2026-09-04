@@ -471,11 +471,16 @@ def render_diagnostico() -> None:
         "error_rate_24h": ("Erros 24h", "history"),
         "api_quotas": ("Quotas de API", "speed"),
         "pipeline_config": ("Config autonomia", "security"),
+        "email_config": ("Email/BCC", "mail"),
     }
 
-    # Render 2 linhas x 5 colunas
-    check_order = list(check_labels.keys())
-    for row_start in (0, 5):
+    # Render em linhas de 5. Antes era `for row_start in (0, 5)` — fixo em 10
+    # checks: qualquer check novo do health_check RODAVA mas nunca aparecia na
+    # tela, sem erro nenhum. Agora a grade acompanha o que existe, e o que o
+    # health_check devolver sem rotulo cai no fim com o proprio nome.
+    check_order = [n for n in check_labels if n in checks]
+    check_order += [n for n in checks if n not in check_labels]
+    for row_start in range(0, len(check_order), 5):
         cols = st.columns(5)
         for i, name in enumerate(check_order[row_start:row_start + 5]):
             with cols[i]:
