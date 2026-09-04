@@ -209,6 +209,15 @@ with tab_aprovacao:
                 st.session_state["_approved_send_result"] = (
                     _r.get("sent", 0), _r.get("skipped", 0), _r.get("failed", 0),
                 )
+                # O motivo REAL ja voltava em details[i]["error"] (body 4xx do
+                # Brevo) e era jogado fora: a tela dizia so "1 falha(s) no
+                # envio. Verifique os logs." — e o dono nao tem acesso ao log.
+                from workflows.send_approved import resumo_falhas
+                _motivo = resumo_falhas(_r.get("details"))
+                if _motivo:
+                    st.session_state["_approved_send_error"] = _motivo
+                else:
+                    st.session_state.pop("_approved_send_error", None)
             except Exception as _e_send:
                 # -1 = a CHAMADA falhou; nao sabemos quantas mensagens falharam.
                 # Antes virava "1 falha", o que mentia quando eram 30 — e a causa

@@ -329,8 +329,19 @@ def send_approved_messages(limit: int = 50, only_queue_id: str = None) -> Dict[s
                     extra={"queue_id": queue_id, "error": str(e)})
         else:
             failed += 1
-            details.append({"queue_id": queue_id, "status": "failed", "error": result.get("error", "")})
-            logger.error("Falha ao enviar", extra={"queue_id": queue_id, "error": result.get("error", "")})
+            # status_code junto do error: o brevo_sender ja devolve os dois
+            # (tools/brevo_sender.py, ramo "Erro Brevo (cliente, sem retry)"),
+            # mas so o body vinha ate aqui — e a tela nao tinha como dizer se
+            # foi 400 de payload, 401 de credencial ou 402 de cota.
+            details.append({
+                "queue_id": queue_id,
+                "status": "failed",
+                "error": result.get("error", ""),
+                "status_code": result.get("status_code"),
+            })
+            logger.error("Falha ao enviar", extra={
+                "queue_id": queue_id, "error": result.get("error", ""),
+                "status": result.get("status_code")})
 
     summary = {"sent": sent, "failed": failed, "skipped": skipped, "details": details}
     logger.info("Envio concluido", extra=summary)
@@ -341,3 +352,27 @@ if __name__ == "__main__":
     result = send_approved_messages()
     r = result
     print("Enviados:", r["sent"], "Falhas:", r["failed"], "Pulados:", r["skipped"])
+
+
+def resumo_falhas(details: list, limite: int = 3) -> str:
+    """'{status} {body}' de cada envio que falhou — para a tela mostrar o motivo.
+
+    Mora aqui, e nao na pagina, porque este modulo e o dono do formato de
+    `details`. O brevo_sender devolve status_code + body do 4xx
+    (ramo "Erro Brevo (cliente, sem retry)"); ate 28/08/2026 esse motivo chegava
+    ao dashboard e era descartado: a tela dizia so "1 falha(s) no envio.
+    Verifique os logs" — e quem opera nao tem acesso ao log.
+    """
+    falhas = [d for d in (details or [])
+              if d.get("status") == "failed" and (d.get("error") or d.get("status_code"))]
+    if not falhas:
+        return ""
+    partes = []
+    for d in falhas[:limite]:
+        _st = d.get("status_code")
+        _corpo = str(d.get("error") or "").strip() or "(sem detalhe)"
+        partes.append(f"{_st} {_corpo}" if _st else _corpo)
+    resumo = " | ".join(partes)
+    if len(falhas) > limite:
+        resumo += f" (+{len(falhas) - limite} outra(s))"
+    return resumo[:500]
