@@ -108,8 +108,10 @@ class WriterAgent(BaseAgent):
 
         results: List[Dict[str, Any]] = []
         skipped = 0
-        for company in companies:
+        _prog = kwargs.get("on_progress")
+        for _i, company in enumerate(companies, start=1):
             try:
+                self._tick(_prog, "write", _i, len(companies), company)
                 company_id = company.get("id")
 
                 # Anti-duplicata: pular se ja tem mensagem pendente ou aprovada na fila

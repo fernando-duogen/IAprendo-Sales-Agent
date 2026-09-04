@@ -42,6 +42,14 @@ _CANON_COLS = ["escola", "inep", "uf", "municipio", "dep_adm", "porte",
                "niveis", "latitude", "longitude", "fonte_dados",
                "nivel_tecnologico", "mat_fund_af", "mat_medio"]
 
+# Colunas do preview — UMA lista para os dois backends. Quando cada preview
+# tinha a sua, a tela local e a online mostravam coisas diferentes e so dava pra
+# perceber trocando de ambiente. INEP entrou porque e a chave que o operador
+# copia para o fluxo "Colar INEPs"; mat_fund_af porque sem ela nao da pra
+# conferir na tela se o filtro de Anos Finais trouxe o que prometeu.
+PREVIEW_COLS = ["inep", "escola", "municipio", "uf", "dep_adm", "porte",
+                "mat_fund_af", "mat_medio"]
+
 
 @st.cache_data(show_spinner="Carregando base mesclada (185k escolas)...")
 def load_csv() -> Optional[pd.DataFrame]:
@@ -147,20 +155,36 @@ class CsvMecSource(MecSource):
             m &= df["porte"].str.strip().isin(f["portes"])
         inc_fund, inc_medio = bool(f.get("inc_fund")), bool(f.get("inc_medio"))
         if inc_fund or inc_medio:
+            # Mesma regra do backend online (utils/nivel_ensino): anos finais
+            # sai da matricula real, nao do texto "Fundamental" — que cobre do
+            # 1o ao 9o e trazia metade de escola de anos iniciais.
+            from utils.nivel_ensino import mask_fund_af, mask_medio
             nm = pd.Series(False, index=df.index)
             if inc_fund:
-                nm = nm | df["niveis"].str.contains("Fundamental", na=False)
+                nm = nm | mask_fund_af(df, "mat_fund_af", "niveis")
             if inc_medio:
-                nm = nm | df["niveis"].str.contains("M.dio", na=False, regex=True)
+                nm = nm | mask_medio(df, "niveis")
             m &= nm
+
+        # Busca livre: INEP exato (so digitos) ou pedaco do nome.
+        termo = str(f.get("q") or "").strip()
+        if termo:
+            if termo.isdigit():
+                m &= df["inep"].astype(str).str.strip() == termo
+            else:
+                import unicodedata
+
+                def _n(s):
+                    return (unicodedata.normalize("NFKD", str(s))
+                            .encode("ASCII", "ignore").decode("ASCII").lower())
+                m &= df["escola"].astype(str).map(_n).str.contains(_n(termo), na=False)
         return m
 
     def count(self, filters: Dict[str, Any]) -> int:
         return int(self._mask(filters).sum())
 
     def preview(self, filters: Dict[str, Any], n: int = 15) -> pd.DataFrame:
-        cols = ["escola", "municipio", "uf", "dep_adm", "porte"]
-        return self.df[self._mask(filters)][cols].head(n).copy()
+        return self.df[self._mask(filters)][PREVIEW_COLS].head(n).copy()
 
     def points(self, filters: Dict[str, Any], limit: int = 10000) -> pd.DataFrame:
         return self.df[self._mask(filters)].head(limit).copy()
@@ -250,7 +274,7 @@ class CatalogMecSource(MecSource):
     def preview(self, filters: Dict[str, Any], n: int = 15) -> pd.DataFrame:
         from database.supabase_client import db
         rows = db.query_mec_catalog(filters, limit=n, columns="*")
-        return self._rows_to_df(rows)[["escola", "municipio", "uf", "dep_adm", "porte"]]
+        return self._rows_to_df(rows)[PREVIEW_COLS]
 
     def points(self, filters: Dict[str, Any], limit: int = 10000) -> pd.DataFrame:
         from database.supabase_client import db

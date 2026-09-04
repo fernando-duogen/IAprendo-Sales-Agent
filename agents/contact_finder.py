@@ -57,8 +57,10 @@ class ContactFinderAgent(BaseAgent):
         """
         force = bool(kwargs.get("force", False))
         results: List[Dict[str, Any]] = []
-        for company in companies:
+        _prog = kwargs.get("on_progress")
+        for _i, company in enumerate(companies, start=1):
             try:
+                self._tick(_prog, "contacts", _i, len(companies), company)
                 found = self.find_contacts(company, force=force)
                 if found:
                     results.extend(found)

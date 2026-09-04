@@ -10,6 +10,150 @@ from dashboard.theme import metric_card, section_header, alert_banner, COLORS
 from dashboard._mec_source import get_mec_source
 
 
+_SIT_ICONE = {
+    "nova": "✅", "ja_no_crm": "ℹ️", "nao_existe": "❌", "invalido": "⚠️",
+}
+_SIT_LABEL = {
+    "nova": "Pronta para importar", "ja_no_crm": "Ja no CRM",
+    "nao_existe": "Nao encontrada", "invalido": "Codigo invalido",
+}
+
+
+def render_colar_ineps() -> None:
+    """Importa um lote EXATO de escolas a partir de codigos INEP colados.
+
+    Contrato desta tela — cada ponto veio de uma falha observada:
+      - valida ANTES de importar e mostra o destino de cada linha;
+      - o botao diz o numero exato que sera importado, e esse numero e o
+        tamanho da lista colada — nunca o total do filtro geografico, que e o
+        que torna "importar" assustador (milhares num clique);
+      - "ja no CRM" e sucesso, nao erro: a escola esta la, que era o objetivo.
+    """
+    with st.expander("📋 Colar codigos INEP (importar escolas especificas)",
+                     expanded=True, icon=":material/content_paste:"):
+        st.caption("Um codigo por linha (8 digitos). Vale colar de planilha — "
+                   "virgula, ponto-e-virgula e texto em volta sao ignorados.")
+
+        texto = st.text_area(
+            "Codigos INEP:", height=120, key="mec_inep_paste",
+            placeholder="35106446\n31311723\n42003903",
+        )
+        linhas = _quebrar_linhas(texto)
+
+        b1, b2 = st.columns([1, 3])
+        with b1:
+            conferir = st.button(
+                f"Conferir {len(linhas)} codigo(s)" if linhas else "Conferir",
+                disabled=not linhas, key="mec_inep_check",
+                icon=":material/fact_check:", use_container_width=True,
+            )
+        with b2:
+            if linhas:
+                st.caption(f"{len(linhas)} linha(s) reconhecida(s) no texto colado.")
+
+        if conferir:
+            from database.supabase_client import db as _db
+            with st.spinner("Conferindo os codigos na base do MEC..."):
+                st.session_state["mec_inep_check_result"] = _db.check_ineps_for_import(linhas)
+
+        resultado = st.session_state.get("mec_inep_check_result")
+        if not resultado:
+            return
+
+        import pandas as pd
+        st.dataframe(
+            pd.DataFrame([{
+                "": _SIT_ICONE.get(r["situacao"], ""),
+                "INEP": r.get("inep") or r.get("entrada"),
+                "Escola": r.get("nome") or "—",
+                "Cidade/UF": (f"{r.get('cidade')}/{r.get('uf')}"
+                              if r.get("cidade") else "—"),
+                "Fund. 6º-9º": r.get("mat_fund_af"),
+                "Situacao": _SIT_LABEL.get(r["situacao"], r["situacao"]),
+            } for r in resultado]),
+            use_container_width=True, hide_index=True,
+            column_config={
+                "": st.column_config.TextColumn(width="small"),
+                "Fund. 6º-9º": st.column_config.NumberColumn(
+                    "Fund. 6º-9º", help="Matriculas no 6º ao 9º ano (Censo)."),
+            },
+        )
+
+        novas = [r for r in resultado if r["situacao"] == "nova"]
+        ja = [r for r in resultado if r["situacao"] == "ja_no_crm"]
+        ruins = [r for r in resultado if r["situacao"] in ("nao_existe", "invalido")]
+
+        if ja:
+            st.info(f"ℹ️ {len(ja)} ja estava(m) no CRM — nada a fazer com essa(s).")
+        if ruins:
+            st.warning(
+                "⚠️ " + " · ".join(
+                    f"`{r.get('entrada')}`: {r['motivo']}" for r in ruins[:5])
+                + (f" (+{len(ruins) - 5})" if len(ruins) > 5 else "")
+            )
+
+        if not novas:
+            if resultado and not ruins:
+                st.success("✅ Todas as escolas coladas ja estao no CRM.")
+            return
+
+        if st.button(f"⬇️ Importar {len(novas)} escola(s)", type="primary",
+                     key="mec_inep_import", icon=":material/download:"):
+            _importar_ineps(novas)
+
+
+def _quebrar_linhas(texto: str) -> list:
+    """Separa o texto colado em entradas, uma por codigo.
+
+    Tolerante de proposito: planilha cola com tab, CSV com virgula, e gente cola
+    "35106446 - Mobile SP". Cada pedaco vira UMA entrada e a validacao decide —
+    e melhor a tela dizer "isto nao e um INEP" do que o texto sumir calado.
+    """
+    import re
+    if not texto or not texto.strip():
+        return []
+    pedacos = re.split(r"[\n;,\t]+", texto)
+    return [p.strip() for p in pedacos if p.strip()]
+
+
+def _importar_ineps(novas: list) -> None:
+    """Importa as escolas conferidas, uma a uma, com resultado por linha."""
+    from database.supabase_client import db as _db
+
+    barra = st.progress(0.0)
+    status = st.empty()
+    ok, falhou = [], []
+    for i, item in enumerate(novas, start=1):
+        nome = (item.get("nome") or item["inep"])[:45]
+        status.caption(f"Importando {i}/{len(novas)} — {nome}")
+        res = _db.import_company_from_catalog(item["inep"], source="dashboard_inep")
+        (ok if res.get("ok") else falhou).append({**item, "res": res})
+        barra.progress(i / len(novas))
+    barra.empty()
+    status.empty()
+
+    from dashboard.helpers.school_lookup import invalidate_crm_schools
+    invalidate_crm_schools()
+    # A conferencia na tela agora esta velha (as importadas viraram "ja_no_crm").
+    # Deixar o resultado antigo permitiria clicar "Importar" de novo sobre uma
+    # lista ja processada.
+    st.session_state.pop("mec_inep_check_result", None)
+
+    if ok:
+        st.success(
+            f"✅ {len(ok)} escola(s) importada(s): "
+            + ", ".join((r.get("nome") or r["inep"])[:32] for r in ok[:4])
+            + (f" (+{len(ok) - 4})" if len(ok) > 4 else "")
+            + " — agora selecione-as em **Preparar escolas**."
+        )
+    if falhou:
+        st.error(
+            f"❌ {len(falhou)} nao importada(s): "
+            + " · ".join(f"`{r['inep']}`: {r['res'].get('message', '?')}"
+                         for r in falhou[:4])
+        )
+
+
 def render_buscar_brasil(embedded: bool = True) -> None:
     """Filtros MEC + metricas + preview + importacao (igual a pagina Importar)."""
     PORTE_PT = {
@@ -43,9 +187,22 @@ def render_buscar_brasil(embedded: bool = True) -> None:
     total_base = source.total()
 
     # =============================================================================
+    # COLAR INEPs — caminho direto para um lote pequeno e conhecido
+    # =============================================================================
+    # Vem ANTES dos filtros de proposito. Quem ja sabe QUAIS escolas quer nao
+    # deveria ter que descrever essas escolas por UF/cidade/porte e torcer para
+    # o recorte geografico conter exatamente elas — foi o que consumiu ~65min de
+    # um operador para importar 3 escolas (e terminou em zero importadas).
+    render_colar_ineps()
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # =============================================================================
     # FILTROS
     # =============================================================================
     section_header("Filtros", "filter_list")
+    st.caption("Para descobrir escolas por regiao. Se voce ja tem os codigos, "
+               "use **Colar codigos INEP** acima.")
 
     st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
     fc1, fc2, fc3 = st.columns(3)
@@ -92,14 +249,29 @@ def render_buscar_brasil(embedded: bool = True) -> None:
         sel_porte_raw = [porte_raw_vals[porte_labels.index(lbl)] for lbl in sel_porte_labels]
 
     with fc5:
-        inc_fundamental = st.checkbox("Ensino Fundamental Anos Finais", value=True)
-        inc_medio = st.checkbox("Ensino Medio", value=True)
+        # O rotulo antigo ("Ensino Fundamental Anos Finais") filtrava por
+        # PERFIL_ENSINO contendo "Fundamental" — que e 1o ao 9o. Metade do
+        # resultado era escola so de anos iniciais. Rotulo e filtro agora
+        # dizem a mesma coisa (utils/nivel_ensino).
+        from utils.nivel_ensino import LABEL_FUND_AF, HELP_FUND_AF
+        inc_fundamental = st.checkbox(LABEL_FUND_AF, value=True,
+                                      key="mec_flt_fund", help=HELP_FUND_AF)
+        inc_medio = st.checkbox("Ensino Medio", value=True, key="mec_flt_medio")
+
+    # Busca direta: achar UMA escola conhecida nao pode depender de acertar a
+    # cidade dela num dropdown de milhares de itens.
+    busca = st.text_input(
+        "Buscar por nome ou codigo INEP:", key="mec_flt_q",
+        placeholder="ex: Bernoulli   ou   31311723",
+        help="Digite parte do nome da escola ou o codigo INEP exato (8 digitos).",
+    )
 
     st.markdown('</div>', unsafe_allow_html=True)
 
     filters = {
         "ufs": sel_ufs, "cities": sel_cities, "deps": sel_dep,
         "portes": sel_porte_raw, "inc_fund": inc_fundamental, "inc_medio": inc_medio,
+        "q": busca,
     }
 
     # --- Metricas ao vivo ---
@@ -157,8 +329,9 @@ def render_buscar_brasil(embedded: bool = True) -> None:
     if n_filtered > 0:
         preview = source.preview(filters, n=15)
         preview = preview.rename(columns={
-            "escola": "Escola", "municipio": "Cidade", "uf": "UF",
+            "inep": "INEP", "escola": "Escola", "municipio": "Cidade", "uf": "UF",
             "dep_adm": "Tipo", "porte": "Porte",
+            "mat_fund_af": "Fund. 6º-9º", "mat_medio": "Medio",
         })
         if "Porte" in preview.columns:
             preview["Porte"] = preview["Porte"].astype(str).str.strip().map(PORTE_PT).fillna(preview["Porte"])
@@ -168,7 +341,19 @@ def render_buscar_brasil(embedded: bool = True) -> None:
             label_singular="escola elegivel", label_plural="escolas elegiveis",
         )
         st.caption(f"Mostrando primeiras 15 — total importavel: {n_filtered:,}".replace(",", "."))
-        st.dataframe(preview, use_container_width=True, hide_index=True)
+        st.dataframe(
+            preview, use_container_width=True, hide_index=True,
+            column_config={
+                "INEP": st.column_config.TextColumn(
+                    "INEP", help="Copie para o campo 'Colar codigos INEP' acima "
+                                 "se quiser importar so algumas."),
+                "Fund. 6º-9º": st.column_config.NumberColumn(
+                    "Fund. 6º-9º",
+                    help="Matriculas no 6º ao 9º ano (Censo). Vazio = escola sem "
+                         "dado de matricula na base."),
+                "Medio": st.column_config.NumberColumn("Medio"),
+            },
+        )
     else:
         alert_banner("Ajuste os filtros para ver o preview.", "info")
 
@@ -187,9 +372,11 @@ def render_buscar_brasil(embedded: bool = True) -> None:
         resumo.append(f"<strong>Cidade(s):</strong> {', '.join(sel_cities[:5]) + (' e mais...' if len(sel_cities) > 5 else '') if sel_cities else 'Todas'}")
         resumo.append(f"<strong>Tipo:</strong> {', '.join(sel_dep) if sel_dep else 'Todos'}")
         resumo.append(f"<strong>Porte:</strong> {', '.join(sel_porte_labels) if sel_porte_labels else 'Todos'}")
+        if busca:
+            resumo.append(f"<strong>Busca:</strong> {busca}")
         niveis_sel = []
         if inc_fundamental:
-            niveis_sel.append("Fund. Anos Finais")
+            niveis_sel.append("Fund. 6º ao 9º (com matricula)")
         if inc_medio:
             niveis_sel.append("Ensino Medio")
         resumo.append(f"<strong>Niveis:</strong> {', '.join(niveis_sel) if niveis_sel else 'Nenhum'}")

@@ -11,7 +11,7 @@ Executa as etapas do pipeline na ordem correta:
 
 NUNCA envia sem aprovacao humana.
 """
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 from datetime import datetime
 from database.supabase_client import db
 from agents.qualifier import QualifierAgent
@@ -53,6 +53,7 @@ def run_pipeline(
     company_ids: Optional[List[str]] = None,
     steps: Optional[List[str]] = None,
     force: bool = False,
+    on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """
     Executa o pipeline diario completo.
@@ -67,6 +68,10 @@ def run_pipeline(
         company_ids: Lista de IDs de escolas para processar (None = todas)
         steps: Lista de etapas a executar (None = todas).
                Opcoes: "qualify", "enrich", "contacts", "write", "send"
+        on_progress: Callback opcional chamado a cada escola, com
+               {etapa, i, total, escola, company_id}. Serve para a tela mostrar
+               em qual escola o pipeline esta — sem ele, uma rodada longa e um
+               spinner mudo. Excecao no callback e engolida pelos agentes.
     """
     all_steps = ["qualify", "enrich", "contacts", "write", "send"]
     active_steps = set(steps) if steps else set(all_steps)
@@ -92,7 +97,7 @@ def run_pipeline(
         to_qualify = _get_schools("raw", qualify_limit, company_ids, force=force)
         if not dry_run and to_qualify:
             qualifier = QualifierAgent()
-            qualified = qualifier.execute(to_qualify, force=force)
+            qualified = qualifier.execute(to_qualify, force=force, on_progress=on_progress)
             report["steps"]["qualify"] = {"input": len(to_qualify), "output": len(qualified)}
         else:
             report["steps"]["qualify"] = {"input": len(to_qualify), "output": 0, "skipped": dry_run}
@@ -104,7 +109,7 @@ def run_pipeline(
         to_enrich = _get_schools("qualified", enrich_limit, company_ids, force=force)
         if not dry_run and to_enrich:
             enricher = EnricherAgent()
-            enriched = enricher.execute(to_enrich, force=force)
+            enriched = enricher.execute(to_enrich, force=force, on_progress=on_progress)
             report["steps"]["enrich"] = {"input": len(to_enrich), "output": len(enriched)}
         else:
             report["steps"]["enrich"] = {"input": len(to_enrich), "output": 0, "skipped": dry_run}
@@ -116,7 +121,7 @@ def run_pipeline(
         to_find_contact = _get_schools("enriched", enrich_limit, company_ids, force=force)
         if not dry_run and to_find_contact:
             contact_finder = ContactFinderAgent()
-            contacts_found = contact_finder.execute(to_find_contact, force=force)
+            contacts_found = contact_finder.execute(to_find_contact, force=force, on_progress=on_progress)
             report["steps"]["contacts"] = {"input": len(to_find_contact), "output": len(contacts_found)}
         else:
             report["steps"]["contacts"] = {"input": len(to_find_contact), "output": 0, "skipped": dry_run}
@@ -137,7 +142,7 @@ def run_pipeline(
         to_write = to_write[:write_limit]
         if not dry_run and to_write:
             writer = WriterAgent()
-            messages = writer.execute(to_write, mode=write_mode, force=force)
+            messages = writer.execute(to_write, mode=write_mode, force=force, on_progress=on_progress)
             report["steps"]["write"] = {"input": len(to_write), "output": len(messages)}
         else:
             report["steps"]["write"] = {"input": len(to_write), "output": 0, "skipped": dry_run}

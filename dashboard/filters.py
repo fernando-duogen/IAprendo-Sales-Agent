@@ -50,7 +50,9 @@ def school_filters(df: pd.DataFrame, key: str = "flt",
 
     c5, c6, c7 = st.columns([1.2, 1.6, 2])
     with c5:
-        f["inc_fund"] = st.checkbox("Fund. anos finais", value=True, key=f"{key}_fund")
+        from utils.nivel_ensino import HELP_FUND_AF
+        f["inc_fund"] = st.checkbox("Fund. 6º ao 9º", value=True, key=f"{key}_fund",
+                                    help=HELP_FUND_AF)
         f["inc_medio"] = st.checkbox("Ensino Medio", value=True, key=f"{key}_med")
     with c6:
         lo, hi = st.columns(2)
@@ -82,11 +84,14 @@ def apply_school_filters(df: pd.DataFrame, f: Dict[str, Any]) -> pd.DataFrame:
         out = out[out["owner_username"].isin(f["owners"])]
     # niveis de ensino
     if "education_levels" in out.columns and (f.get("inc_fund") or f.get("inc_medio")):
+        # Anos finais pela matricula real (utils/nivel_ensino) — o texto
+        # "Fundamental" cobre do 1o ao 9o e trazia escola de anos iniciais.
+        from utils.nivel_ensino import mask_fund_af, mask_medio
         mask = pd.Series(False, index=out.index)
         if f.get("inc_fund"):
-            mask |= out["education_levels"].str.contains("Fundamental", na=False)
+            mask |= mask_fund_af(out, "matriculas_fund_af", "education_levels")
         if f.get("inc_medio"):
-            mask |= out["education_levels"].str.contains("M.dio", na=False, regex=True)
+            mask |= mask_medio(out, "education_levels")
         out = out[mask]
     # faixa de alunos (alvo = fund_af + medio)
     if "matriculas_fund_af" in out.columns:

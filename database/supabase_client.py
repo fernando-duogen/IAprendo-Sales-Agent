@@ -56,6 +56,17 @@ class RecordNotFoundError(DatabaseError):
     pass
 
 
+def _norm_busca(texto: str) -> str:
+    """Forma normalizada de um termo de busca (sem acento, minusculo).
+
+    As colunas *_norm do mec_catalog sao gravadas assim; comparar o termo cru
+    contra elas faz "São José" nunca casar com "sao jose".
+    """
+    import unicodedata
+    return (unicodedata.normalize("NFKD", str(texto or ""))
+            .encode("ASCII", "ignore").decode("ASCII").lower().strip())
+
+
 # ============================================================================
 # CENSO -> COMPANY (matriculas/docentes) — usado por sync_company_matriculas_*
 # ============================================================================
@@ -422,10 +433,84 @@ class Database:
             return {'ok': False, 'id': None, 'inep': inep_code, 'already': False,
                     'name': None, 'message': f'Erro: {str(e)[:150]}'}
 
+    def check_ineps_for_import(self, codes: List[str]) -> List[Dict[str, Any]]:
+        """Diz, para cada codigo INEP colado, o que vai acontecer se importar.
+
+        Existe para que o operador veja o destino de CADA linha ANTES de clicar
+        — sem isso, colar 3 codigos e receber "3 nao encontradas" nao diz se o
+        erro foi digitacao, escola fora da base, ou escola que ja esta no CRM.
+
+        Cada item volta com `situacao`:
+            'nova'        -> esta no catalogo MEC e ainda nao esta no CRM
+            'ja_no_crm'   -> ja existe em companies (import seria no-op)
+            'nao_existe'  -> nao ha esse INEP no catalogo MEC
+            'invalido'    -> o texto colado nao e um codigo INEP (8 digitos)
+
+        Preserva a ORDEM e a quantidade da lista recebida: a tela mostra linha a
+        linha, entao sumir com uma entrada (duplicata, invalida) esconderia
+        justamente a que o operador precisa corrigir.
+        """
+        out: List[Dict[str, Any]] = []
+        validos = []
+        for raw in (codes or []):
+            texto = str(raw or "").strip()
+            digitos = "".join(ch for ch in texto if ch.isdigit())
+            # 8 digitos e o formato do codigo INEP de escola. Aceitar outros
+            # tamanhos faria a busca voltar vazia e o erro viraria
+            # "nao encontrada", escondendo que foi erro de digitacao.
+            if len(digitos) != 8:
+                out.append({"entrada": texto, "inep": digitos, "situacao": "invalido",
+                            "nome": None, "cidade": None, "uf": None,
+                            "motivo": "Nao parece um codigo INEP (esperado: 8 digitos)."})
+                continue
+            validos.append(digitos)
+            out.append({"entrada": texto, "inep": digitos, "situacao": None,
+                        "nome": None, "cidade": None, "uf": None, "motivo": None})
+
+        if not validos:
+            return out
+
+        catalogo: Dict[str, Dict[str, Any]] = {}
+        for row in self.fetch_in_chunks(
+                "mec_catalog",
+                "inep_code,name,city,state,admin_dependency,matriculas_fund_af,"
+                "matriculas_medio,total_matriculas,education_levels",
+                "inep_code", validos):
+            catalogo[str(row.get("inep_code")).strip()] = row
+
+        no_crm = set()
+        for row in self.fetch_in_chunks("companies", "inep_code", "inep_code", validos):
+            no_crm.add(str(row.get("inep_code")).strip())
+
+        for item in out:
+            if item["situacao"] is not None:
+                continue
+            inep = item["inep"]
+            linha = catalogo.get(inep)
+            if not linha:
+                item["situacao"] = "nao_existe"
+                item["motivo"] = "Nao existe na base do MEC (confira o codigo)."
+                continue
+            item.update({
+                "nome": linha.get("name"), "cidade": linha.get("city"),
+                "uf": linha.get("state"), "dep": linha.get("admin_dependency"),
+                "mat_fund_af": linha.get("matriculas_fund_af"),
+                "mat_medio": linha.get("matriculas_medio"),
+                "niveis": linha.get("education_levels"),
+            })
+            if inep in no_crm:
+                item["situacao"] = "ja_no_crm"
+                item["motivo"] = "Ja esta no CRM — nada a importar."
+            else:
+                item["situacao"] = "nova"
+                item["motivo"] = "Pronta para importar."
+        return out
+
     # ------------------------------------------------------------------
     # CATALOGO MEC — queries com filtros-LISTA (paridade com a UI local do
     # Importar/Mapa, que usa multiselects). filters = {
-    #   ufs:[], cities:[], deps:[], portes:[], inc_fund:bool, inc_medio:bool }
+    #   ufs:[], cities:[], deps:[], portes:[], inc_fund:bool, inc_medio:bool,
+    #   q:str (busca livre por nome ou INEP) }
     # ------------------------------------------------------------------
     @staticmethod
     def _apply_catalog_filters(q, filters: Optional[Dict[str, Any]]):
@@ -443,14 +528,29 @@ class Database:
             q = q.in_("admin_dependency", list(deps))
         if portes:
             q = q.in_("school_size", list(portes))
+        # Niveis: "Anos Finais" usa matricula real, nao o texto do nivel — metade
+        # das escolas que dizem "Fundamental" so tem anos iniciais. A regra (e os
+        # numeros que a justificam) mora em utils/nivel_ensino.
+        from utils.nivel_ensino import PG_FUND_AF, PG_MEDIO
         inc_fund = bool(f.get("inc_fund"))
         inc_medio = bool(f.get("inc_medio"))
         if inc_fund and inc_medio:
-            q = q.or_("levels_norm.ilike.%fundamental%,levels_norm.ilike.%medio%")
+            q = q.or_(f"{PG_FUND_AF},{PG_MEDIO}")
         elif inc_fund:
-            q = q.ilike("levels_norm", "%fundamental%")
+            q = q.or_(PG_FUND_AF)
         elif inc_medio:
             q = q.ilike("levels_norm", "%medio%")
+
+        # Busca livre por nome OU codigo INEP. Sem isto, achar uma escola
+        # especifica no preview exigia adivinhar a cidade dela num dropdown de
+        # milhares de itens.
+        termo = str(f.get("q") or "").strip()
+        if termo:
+            so_digitos = "".join(ch for ch in termo if ch.isdigit())
+            if so_digitos and so_digitos == termo.strip():
+                q = q.eq("inep_code", so_digitos)
+            else:
+                q = q.ilike("name_norm", f"%{_norm_busca(termo)}%")
         return q
 
     def count_mec_catalog(self, filters: Optional[Dict[str, Any]]) -> int:

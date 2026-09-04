@@ -30,8 +30,10 @@ class QualifierAgent(BaseAgent):
             logger.warning("Rate limit Anthropic atingido, abortando qualificacao")
             return []
         results: List[Dict[str, Any]] = []
-        for company in companies:
+        _prog = kwargs.get("on_progress")
+        for _i, company in enumerate(companies, start=1):
             try:
+                self._tick(_prog, "qualify", _i, len(companies), company)
                 result = self.qualify_school(company)
                 if result:
                     results.append(result)

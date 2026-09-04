@@ -78,6 +78,31 @@ class BaseAgent(ABC):
             extra={'agent': agent_name}
         )
 
+    @staticmethod
+    def _tick(on_progress, etapa: str, i: int, total: int,
+              company: Optional[Dict[str, Any]]) -> None:
+        """Avisa quem chamou QUAL escola esta sendo processada agora.
+
+        Existe porque a tela mostrava um spinner unico ("Executando...") por
+        vezes minutos a fio: sem saber em qual escola esta, nem se avancou, o
+        operador nao consegue distinguir lentidao de travamento — e recarrega a
+        pagina no meio da rodada.
+
+        Reporta ANTES de processar o item (o nome na tela e o que esta rodando,
+        nao o que acabou), e nunca propaga excecao: falha de barra de progresso
+        nao pode derrubar um pipeline que ja gastou chamadas de API.
+        """
+        if not on_progress:
+            return
+        try:
+            on_progress({
+                "etapa": etapa, "i": i, "total": total,
+                "escola": (company or {}).get("name") or "?",
+                "company_id": (company or {}).get("id"),
+            })
+        except Exception:
+            pass
+
     @abstractmethod
     def execute(
         self,

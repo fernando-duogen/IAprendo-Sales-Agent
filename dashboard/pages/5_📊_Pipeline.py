@@ -786,6 +786,20 @@ def render_execucao():
         dry_run = st.checkbox("Modo simulado (dry run)", value=False, key="pipe_dry_run",
                                help="Apenas simula, nao executa de verdade.")
 
+    # Teto por rodada. Antes, o limite era o tamanho da selecao: selecionar
+    # "todas" e clicar Preparar disparava a cascata em milhares de escolas num
+    # clique — cada uma gastando chamadas de IA e de APIs pagas, sem volta.
+    # Padrao 5: baixo o bastante pra rodada de teste ser barata e rapida.
+    # value= sem consultar session_state: com key=, o Streamlit ja persiste a
+    # escolha entre reruns, e passar os dois juntos dispara o aviso de
+    # "default value + Session State API".
+    max_rodada = st.number_input(
+        "Maximo de escolas nesta rodada:", min_value=1, max_value=500,
+        value=5, step=5, key="pipe_max_rodada",
+        help="Protege contra rodar a cascata em centenas de escolas sem querer. "
+             "Aumente conscientemente quando a rodada de teste tiver dado certo.",
+    )
+
     # Forcar reprocessar — destaque visual maior, perto dos botoes
     force_reprocess = st.checkbox(
         "🔁 **Forcar reprocessar** (use pra rodar enrich numa escola ja enriched, etc)",
@@ -894,10 +908,11 @@ def render_execucao():
                 return
 
         # Executar pipeline
+        _n = min(sel_total, int(max_rodada))
         kwargs = {
-            "qualify_limit": sel_total,
-            "enrich_limit": sel_total,
-            "write_limit": sel_total,
+            "qualify_limit": _n,
+            "enrich_limit": _n,
+            "write_limit": _n,
             "send_approved": False,
             "dry_run": dry_run,
             "write_mode": write_mode,
@@ -908,11 +923,26 @@ def render_execucao():
         if extra_kwargs:
             kwargs.update(extra_kwargs)
 
+        _ETAPA_PT = {"qualify": "avaliando", "enrich": "enriquecendo",
+                     "contacts": "buscando contatos", "write": "gerando mensagem"}
+        _barra = st.progress(0.0)
+        _linha = st.empty()
+
+        def _mostrar_progresso(ev: dict) -> None:
+            _i, _tot = ev.get("i") or 0, ev.get("total") or 1
+            _linha.caption(
+                f"**{_ETAPA_PT.get(ev.get('etapa'), ev.get('etapa'))}** "
+                f"{_i}/{_tot} — {str(ev.get('escola'))[:55]}"
+            )
+            _barra.progress(min(_i / max(_tot, 1), 1.0))
+
         with st.spinner(
-            f"Executando '{step_name}' em {sel_total} escola(s)"
+            f"Executando '{step_name}' em {_n} escola(s)"
             f"{' (modo FORCAR)' if force_reprocess else ''}..."
         ):
-            report = run_pipeline(**kwargs)
+            report = run_pipeline(on_progress=_mostrar_progresso, **kwargs)
+        _barra.empty()
+        _linha.empty()
 
         # Salvar resultado em session_state pra persistir entre reruns
         st.session_state["pipeline_last_run"] = {
@@ -938,7 +968,17 @@ def render_execucao():
 
     # Acao COMPOSTA (mockup 'Preparar escolas'): 1 botao roda a cascata toda;
     # as etapas tecnicas viram detalhe avancado (blueprint v1.1 §4 Prospectar).
-    if st.button(f"▶ Preparar {sel_total} escola(s) — avaliar → buscar contatos → gerar mensagens",
+    # O rotulo mostra o numero EFETIVO (selecao limitada pelo teto). Prometer
+    # "Preparar 300" e processar 5 e pior que o teto nao existir.
+    _n_efetivo = min(sel_total, int(max_rodada))
+    _sufixo_teto = f" (de {sel_total} selecionadas)" if _n_efetivo < sel_total else ""
+    if _n_efetivo < sel_total:
+        st.info(
+            f"ℹ️ Voce selecionou **{sel_total}** escolas e o teto desta rodada e "
+            f"**{max_rodada}**. Vao rodar **{_n_efetivo}**. Aumente o teto acima "
+            f"para processar mais de uma vez."
+        )
+    if st.button(f"▶ Preparar {_n_efetivo} escola(s){_sufixo_teto} — avaliar → buscar contatos → gerar mensagens",
                  disabled=no_selection, type="primary", use_container_width=True,
                  key="btn_preparar_tudo",
                  help="Roda a cascata completa. Ao final, as mensagens vao para "
