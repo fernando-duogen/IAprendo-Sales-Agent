@@ -30,6 +30,37 @@ from utils.logger import logger
 from utils.stage_sync import STAGE_MAP
 
 
+# Valores aceitos pela propriedade decision_maker_type no HubSpot. Mandar algo
+# fora desta lista faz o HubSpot recusar a propriedade (ou guardar lixo, em
+# campo de texto livre).
+_HS_DECISION_MAKER_TYPES = frozenset({
+    "diretor", "vice", "coordenador", "gestor_ti", "outro",
+})
+
+# Nome local -> nome do HubSpot. `utils/role_classifier` produz `vice_diretor` e
+# `coordenador_pedagogico`: e o MESMO papel com outro nome, nao "outro". Sem
+# este mapa, 36 contatos reais do CRM (34 coordenadores + 2 vices, medido em
+# 04/09/2026) chegariam no HubSpot como "outro" e a informacao se perderia.
+_HS_DECISION_MAKER_ALIAS = {
+    "vice_diretor": "vice",
+    "coordenador_pedagogico": "coordenador",
+}
+
+
+def _hubspot_decision_maker_type(valor: Optional[str]) -> Optional[str]:
+    """Converte o decision_maker_type local no valor aceito pelo HubSpot.
+
+    Papel conhecido com nome diferente e traduzido; papel que nao existe la
+    (administrativo, secretaria) vira "outro"; vazio devolve None para a
+    propriedade nem ser enviada.
+    """
+    bruto = str(valor or "").strip().lower()
+    if not bruto:
+        return None
+    bruto = _HS_DECISION_MAKER_ALIAS.get(bruto, bruto)
+    return bruto if bruto in _HS_DECISION_MAKER_TYPES else "outro"
+
+
 class HubSpotSync:
     """Sincronizacao unidirecional Supabase -> HubSpot."""
 
@@ -225,12 +256,16 @@ class HubSpotSync:
             "firstname": firstname,
             "lastname": lastname,
             "jobtitle": contact.get("role", ""),
-            "phone": contact.get("phone", ""),
         }
+        # phone so quando ha numero: mandar "" apagaria um telefone que ja
+        # exista no HubSpot (283 dos 342 contatos do CRM estao sem telefone).
+        if str(contact.get("phone") or "").strip():
+            props["phone"] = contact["phone"]
         if contact.get("linkedin_url"):
             props["hs_linkedinid"] = contact["linkedin_url"]
-        if contact.get("decision_maker_type"):
-            props["decision_maker_type"] = contact["decision_maker_type"]
+        _dm = _hubspot_decision_maker_type(contact.get("decision_maker_type"))
+        if _dm:
+            props["decision_maker_type"] = _dm
         if contact.get("outreach_priority") is not None:
             props["outreach_priority"] = str(contact["outreach_priority"])
         return props
